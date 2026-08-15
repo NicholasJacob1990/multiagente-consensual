@@ -730,6 +730,7 @@ const COMMANDS = [
   { cmd: '/consensus', args: '<prompt>',           desc: 'Consensus + judge',       method: 'mesh/consensus' },
   { cmd: '/ensemble',  args: '<task>',             desc: 'Code cross-review',       method: 'mesh/ensemble' },
   { cmd: '/debate',    args: '<topic>',            desc: 'Adversarial debate',      method: 'mesh/debate' },
+  { cmd: '/team',      args: '<objective>',        desc: 'Team + judge synthesis',  method: 'mesh/team' },
   { cmd: '/plan',      args: '<descrição>',        desc: 'Plan & Review iterativo', method: 'mesh/plan' },
   { cmd: '/clear',     args: '',                   desc: 'Clear chat',              method: null },
   { cmd: '/help',      args: '',                   desc: 'Show commands',           method: null },
@@ -857,6 +858,31 @@ function parseTerminalCommand(input) {
         if (topic) return { op: 'debate', method: 'mesh/debate', params: { topic, rounds, judge, order }, display: `debate (${rounds}r)` };
         return null;
       }
+      case '/team': {
+        if (!rest) return null;
+        const judge = meshConfig.judge;
+        return {
+          op: 'team',
+          method: 'mesh/team',
+          params: {
+            name: 'panel-team',
+            includeSelf: true,
+            steps: [
+              {
+                mode: 'parallel',
+                agents: AGENTS,
+                prompt: `Objetivo comum:\n${rest}\n\nAnalise o objetivo sob sua melhor especialidade e proponha uma contribuição concreta.`,
+              },
+              {
+                mode: 'sequential',
+                agents: [judge],
+                prompt: `Consolide as contribuições abaixo em uma resposta única, preserve dissensos materiais e indique próximos passos.\n\n{{previous}}`,
+              },
+            ],
+          },
+          display: `team (${AGENTS.length} agents, judge ${judge})`,
+        };
+      }
       case '/plan': {
         // Plan & Review iterativo: author writes PLAN.md, reviewer critica com persona
         // rotativa, author revisa. Para quando converge ou bate o round limit.
@@ -912,6 +938,7 @@ function showHelp() {
       <code>/consensus &lt;prompt&gt;</code> — All agents + judge synthesis<br>
       <code>/ensemble &lt;task&gt;</code> — NxN code cross-review (--lang=py --rounds=5)<br>
       <code>/debate &lt;topic&gt;</code> — Adversarial debate (--rounds=4)<br>
+      <code>/team &lt;objective&gt;</code> — Parallel specialist team + judge synthesis<br>
       <code>/plan &lt;descrição&gt;</code> — Plan&amp;Review iterativo: PLAN.md em ~/.a2a/plans/ (--rounds=3 --reviewer=codex --lenses=engineer,security,ops)<br>
       <code>--continue &lt;cmd&gt;</code> — Reusa contexto da rodada anterior<br>
       <code>--reset-session</code> — Limpa o contexto persistido<br>

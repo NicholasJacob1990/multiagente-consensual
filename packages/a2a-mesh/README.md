@@ -8,6 +8,8 @@ Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
+![Painel local do A2A Mesh com os quatro peers online](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel.png)
+
 O servidor se vincula exclusivamente a `127.0.0.1`. Credenciais, `.env`, sessões e históricos não
 são distribuídos. As CLIs usam a autenticação já existente na máquina do usuário.
 
@@ -40,6 +42,32 @@ a2a-mesh open
 O Grok é um peer nativo com rota fixa pelo `cursor-agent`, modelo obrigatório
 `cursor-grok-4.6-high` e limite padrão de dois processos simultâneos. A execução usa `stream-json`,
 confirma `system/init.model` e falha de forma explícita se faltar o evento final `result`.
+
+## Comandos do painel
+
+Abra o painel autenticado com `a2a-mesh open`. Texto comum é enviado a todos
+os agentes. Use comandos curtos para escolher outro modo:
+
+| Comando | Ação |
+|---|---|
+| `/call <agente> <prompt>` | Chama Claude, Codex, Gemini ou Grok |
+| `/broadcast <prompt>` | Consulta todos em paralelo, sem síntese |
+| `/consensus <questão>` | Consulta todos e pede síntese ao juiz |
+| `/debate <tema>` | Executa rodadas adversariais e julgamento |
+| `/ensemble <tarefa>` | Gera código, faz revisão cruzada e sintetiza |
+| `/team <objetivo>` | Reúne contribuições paralelas e síntese do juiz |
+| `/plan <descrição>` | Alterna autor e revisor sobre um plano persistido |
+| `/help` | Mostra a ajuda completa no próprio painel |
+
+Exemplo:
+
+```text
+/debate --rounds=6 --judge=claude --order=rotate
+PostgreSQL ou SQLite para este produto?
+```
+
+O consenso do painel é consultivo. Use o comando principal `/consenso` para
+aprovar um arquivo real por hash e recibos independentes.
 
 O instalador mescla o MCP em `~/.cursor/mcp.json` sem apagar outras entradas. Uma configuração
 `a2a-mesh` divergente é preservada, salvo uso explícito de `--replace-mcp`.

@@ -6,6 +6,26 @@ instalações independentes existentes.
 
 O manual completo atualizado acompanha o pacote em `assets/Manual-completo-comandos-multiagente.pdf`.
 
+## Escolha rápida
+
+![Painel local do A2A Mesh com Claude, Codex, Gemini e Grok online](docs/images/a2a-mesh-panel.png)
+
+Você não precisa decorar os 30 comandos. Comece pelo resultado desejado:
+
+| Se você quer... | Use... | Resultado |
+|---|---|---|
+| deixar o sistema escolher o fluxo | `/multiagente` | prévia da estratégia e dos agentes |
+| comparar modelos rapidamente | `/a2a-broadcast` | respostas independentes lado a lado |
+| fazer um debate curto | `/a2a-debate` | argumentos, juiz e síntese consultiva |
+| aprovar a versão exata de um arquivo | `/consenso` | veredito auditável por hash |
+| redigir, criticar e corrigir em várias versões | `/loop-debate-agentes` | sucessivas versões até o gate |
+| produzir parecer, petição ou recurso | `/redacao-juridica-consensual` | minuta limpa, redline e auditoria |
+| distribuir papéis e dependências | `/workflow-agentes` | workflow com handoffs rastreáveis |
+
+Consulte o [guia prático dos comandos](docs/guia-de-comandos.md) para ver a
+diferença entre debate, consenso e loop, os comandos próprios do painel e
+exemplos completos de código e redação jurídica.
+
 ## Instalação única com NPM/NPX
 
 O instalador NPM é separado do ZIP hospedado do Cowork. Depois de publicado no registry, a
@@ -85,7 +105,7 @@ não apaga credenciais, sessões nem os backups preservados nessa raiz separada.
 
 ## Sincronização entre CLIs
 
-Os 29 pontos de entrada públicos podem ser reparados sem excluir comandos particulares:
+Os 30 pontos de entrada públicos podem ser reparados sem excluir comandos particulares:
 
 ```bash
 python3 scripts/sync_cli_surface.py
@@ -140,18 +160,18 @@ ser gravado na pasta compartilhada.
 
 ## Comandos principais
 
-- `/multiagente-consensual:multiagente` — entrada única e diagnóstico de ativação
-- `/multiagente-consensual:consenso`
-- `/multiagente-consensual:loop-debate-agentes`
-- `/multiagente-consensual:redacao-juridica-consensual`
-- `/multiagente-consensual:workflow-agentes`
-- `/multiagente-consensual:pipeline-agentes`
-- `/multiagente-consensual:dag-agentes`
-- `/multiagente-consensual:swarm-agentes`
-- `/multiagente-consensual:map-reduce-agentes`
-- `/multiagente-consensual:torneio-agentes`
-- `/multiagente-consensual:votacao-agentes`
-- `/multiagente-consensual:roteamento-adaptativo`
+| Família | Comandos | Quando usar |
+|---|---|---|
+| Entrada e gates | `/multiagente`, `/consenso` | roteamento automático e aprovação por hash |
+| Melhoria de artefatos | `/loop-debate-agentes`, `/redacao-juridica-consensual` | crítica, réplica, revisão e novas versões |
+| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os quatro peers locais |
+| Workflows | `/workflow-agentes`, `/pipeline-agentes`, `/dag-agentes`, `/swarm-agentes`, `/map-reduce-agentes` | papéis, dependências e paralelismo |
+| Seleção | `/torneio-agentes`, `/votacao-agentes`, `/roteamento-adaptativo` | comparar candidatas ou escolher modelos |
+| Conselhos | `/council`, `/council-high`, `/llm-council`, `/multi-debate`, `/pal-council`, `/sage-debate` | deliberação consultiva especializada |
+
+Os exemplos usam a forma curta. Quando a CLI exibir o namespace do plugin, use
+`/multiagente-consensual:nome-do-comando`. No Kimi Code, use
+`/skill:nome-do-comando`.
 
 As cinco skills principais também podem ser acionadas em linguagem natural. Se o roteamento
 automático não ocorrer, use `/multiagente-consensual:multiagente` seguido do objetivo. O comando
