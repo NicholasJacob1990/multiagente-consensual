@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  A2A_PACKAGE,
   ALL_TARGETS,
   marketplaceDocuments,
   parseArgs,
@@ -61,8 +62,14 @@ test("--with-a2a planeja o pacote complementar sem escrever no dry-run", async (
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.a2a.status, "installed");
-  assert.equal(report.a2a.package, "@nicholasjacob90/a2a-mesh@1.0.1");
-  assert.ok(report.actions.some((action) => action.binary.endsWith("npm") && action.argv.includes("@nicholasjacob90/a2a-mesh@1.0.1")));
+  assert.equal(report.a2a.package, "@nicholasjacob90/a2a-mesh@1.1.0");
+  assert.ok(report.actions.some((action) => action.binary.endsWith("npm") && action.argv.includes("@nicholasjacob90/a2a-mesh@1.1.0")));
   assert.equal(fs.existsSync(home), false);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("pin do instalador coincide com a versão local do pacote A2A", async () => {
+  const packageFile = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..", "packages", "a2a-mesh", "package.json");
+  const packageDocument = JSON.parse(fs.readFileSync(packageFile, "utf8"));
+  assert.equal(A2A_PACKAGE, `@nicholasjacob90/a2a-mesh@${packageDocument.version}`);
 });

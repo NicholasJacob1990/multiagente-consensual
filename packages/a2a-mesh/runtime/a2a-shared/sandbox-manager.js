@@ -33,6 +33,15 @@ const AGENT_COMMANDS = Object.freeze({
     args: (process.env.A2A_SANDBOX_GEMINI_ARGS || '').split(/\s+/).filter(Boolean),
     env: (env) => ({ ...env, A2A_SUPPRESS_HOOKS: env.A2A_SUPPRESS_HOOKS || '1' }),
   },
+  grok: {
+    command: process.env.A2A_SANDBOX_GROK_CMD || 'cursor-agent',
+    args: (process.env.A2A_SANDBOX_GROK_ARGS || '--force --sandbox disabled --trust --model cursor-grok-4.6-high').split(/\s+/).filter(Boolean),
+    env: (env) => {
+      const clean = { ...env, NO_COLOR: env.A2A_SANDBOX_COLOR === '1' ? undefined : '1' };
+      for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'XAI_API_KEY']) delete clean[key];
+      return clean;
+    },
+  },
 });
 
 function normalizeAgent(agent) {

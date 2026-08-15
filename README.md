@@ -41,7 +41,7 @@ arquivo, pois o aplicativo hospedado não aceita instalação silenciosa pela CL
 ## Servidor A2A e painel local
 
 `--with-a2a` instala o pacote complementar `@nicholasjacob90/a2a-mesh`, registra o MCP `a2a-mesh`
-no Codex e no Claude Code quando essas CLIs forem selecionadas e inicia três servidores vinculados
+no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia quatro servidores vinculados
 somente a `127.0.0.1`:
 
 | Agente | Porta |
@@ -49,10 +49,14 @@ somente a `127.0.0.1`:
 | Codex | 3141 |
 | Claude | 3142 |
 | Gemini/Antigravity | 3143 |
+| Grok 4.6 High via Cursor | 3144 |
 
 O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
 `http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
 chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento.
+
+O peer `grok` usa exclusivamente `cursor-agent --model cursor-grok-4.6-high`. O runtime confirma o
+modelo observado no stream, não usa fallback silencioso e só aceita a resposta após o evento terminal.
 
 ```bash
 a2a-mesh status

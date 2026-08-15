@@ -5,12 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
-const DEFAULT_PORTS = {
-  codex: 3141,
-  claude: 3142,
-  gemini: 3143,
-};
+import { DEFAULT_PORTS } from './agent-catalog.js';
 
 function parseJsonSafe(raw) {
   if (!raw || typeof raw !== 'string') return null;

@@ -1,11 +1,11 @@
 ---
-description: Envia o mesmo prompt para codex+claude+gemini em paralelo
+description: Envia o mesmo prompt para codex+claude+gemini+grok em paralelo
 argument-hint: <prompt>
 entrypoint: workflow-agentes
 profile: a2a_broadcast
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_broadcast` com o prompt abaixo. Retorne as três respostas (codex, claude, gemini) lado a lado, mantendo as separações.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_broadcast` com o prompt abaixo. Retorne as quatro respostas (codex, claude, gemini, grok) lado a lado, mantendo as separações.
 
 $ARGUMENTS
 

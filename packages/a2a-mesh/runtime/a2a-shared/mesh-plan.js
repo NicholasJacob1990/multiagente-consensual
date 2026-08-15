@@ -22,6 +22,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
+import { capTimeoutForAgent } from './agent-catalog.js';
 
 const DEFAULT_ROUNDS = 3;
 const DEFAULT_AUTHOR = 'claude';
@@ -30,7 +31,6 @@ const DEFAULT_TIMEOUT_MS = 1200000; // 20 min per agent call
 const PLANS_DIR = path.join(os.homedir(), '.a2a', 'plans');
 const PLAN_REVIEW_CHARS = Math.max(1000, parseInt(process.env.A2A_PLAN_REVIEW_CHARS, 10) || 30000);
 const PLAN_FINDINGS_CHARS = Math.max(1000, parseInt(process.env.A2A_PLAN_FINDINGS_CHARS, 10) || 12000);
-const GEMINI_PLAN_TIMEOUT_MS = Math.max(1000, parseInt(process.env.A2A_GEMINI_PLAN_TIMEOUT_MS, 10) || 900000);
 
 function truncateForPrompt(text, limit, label = 'content') {
   const value = String(text || '');
@@ -39,7 +39,7 @@ function truncateForPrompt(text, limit, label = 'content') {
 }
 
 function timeoutForAgent(agent, timeoutMs) {
-  return agent === 'gemini' ? Math.min(timeoutMs, GEMINI_PLAN_TIMEOUT_MS) : timeoutMs;
+  return capTimeoutForAgent(agent, 'plan', timeoutMs);
 }
 
 // Per-round reviewer personas. Adapted from claudex/scripts/personas.sh.

@@ -3,7 +3,9 @@
 // ============================================
 
 import fs from 'fs';
+import os from 'node:os';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import { ACTIVE_STATES, TERMINAL_STATES, WAITING_STATES } from './task-states.js';
@@ -31,12 +33,22 @@ export function createTaskManager({
   meshBus = null,
 } = {}) {
 
-  const resolvedDir = new URL(dataDir, import.meta.url).pathname;
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const resolvedDir = dataDir
+    ? (path.isAbsolute(dataDir) ? dataDir : path.resolve(moduleDir, dataDir))
+    : path.join(os.homedir(), '.local', 'state', 'a2a-mesh', 'tasks', selfId || 'unknown');
   const tasksFile = path.join(resolvedDir, 'tasks.json');
   const taskEmitter = new EventEmitter();
 
   function ensureDir() {
     if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
+  }
+
+  function writeTasksFile(serializable) {
+    ensureDir();
+    const temporary = path.join(resolvedDir, `.tasks.${process.pid}.${Date.now()}.tmp`);
+    fs.writeFileSync(temporary, JSON.stringify(serializable, null, 2), { mode: 0o600 });
+    fs.renameSync(temporary, tasksFile);
   }
 
   function loadTasks() {
@@ -71,7 +83,7 @@ export function createTaskManager({
           // Persist corrected states immediately so they don't reappear as zombies
           try {
             const serializable = [...tasks.values()].map(({ process: _p, ...rest }) => rest);
-            fs.writeFileSync(tasksFile, JSON.stringify(serializable, null, 2));
+            writeTasksFile(serializable);
           } catch (e) {
             console.warn('[task-manager] Failed to persist zombie recovery:', e.message);
           }
@@ -120,7 +132,7 @@ export function createTaskManager({
     try {
       ensureDir();
       const serializable = [...tasks.values()].map(({ process: _p, ...rest }) => rest);
-      fs.writeFileSync(tasksFile, JSON.stringify(serializable, null, 2));
+      writeTasksFile(serializable);
     } catch (e) {
       console.error('Erro ao salvar tarefas:', e.message);
     }
@@ -147,6 +159,8 @@ export function createTaskManager({
     const id = randomUUID();
     const sessionId = metadata.sessionId || randomUUID();
     const taskMetadata = mergeProviderSessionMetadata(metadata, { sessionId, agentId: selfId });
+    const parsedDepth = Number.parseInt(String(taskMetadata.maxDepth ?? maxDepth), 10);
+    taskMetadata.maxDepth = Math.max(0, Math.min(maxDepth, Number.isFinite(parsedDepth) ? parsedDepth : maxDepth));
     const providerSession = extractProviderSession(taskMetadata);
 
     const task = {
@@ -172,7 +186,7 @@ export function createTaskManager({
           parentTaskId: metadata.parentTaskId,
           calledBy: metadata.calledBy,
           meshChain: metadata.meshChain,
-          depth: metadata.maxDepth ?? maxDepth,
+          depth: taskMetadata.maxDepth,
           inputText: message.parts?.map(p => p.text).join('\n'),
           metadata: taskMetadata,
           ...providerSession,
@@ -243,7 +257,12 @@ export function createTaskManager({
       const reason = `Task failed: stuck in '${task.status.state}' for ${Math.round(ageMs / 60000)}min (reaper)`;
       // Best-effort: kill any lingering child process before flipping state.
       if (task.process) {
-        try { task.process.kill('SIGKILL'); } catch { /* already gone */ }
+        try {
+          if (task.process.pid) {
+            try { process.kill(-task.process.pid, 'SIGKILL'); } catch { /* not a group leader */ }
+          }
+          task.process.kill('SIGKILL');
+        } catch { /* already gone */ }
       }
       updateTask(task, {
         status: {

@@ -1,7 +1,7 @@
 {
   "name": "@nicholasjacob90/a2a-mesh",
-  "version": "1.0.1",
-  "description": "Servidor A2A local, bridge MCP e painel web para Codex, Claude e Gemini.",
+  "version": "1.1.0",
+  "description": "Servidor A2A local, bridge MCP e painel web para Codex, Claude, Gemini e Grok via Cursor.",
   "type": "module",
   "bin": {
     "a2a-mesh": "npm/cli.mjs",
@@ -36,6 +36,8 @@
     "codex",
     "claude",
     "gemini",
+    "grok",
+    "cursor",
     "dashboard"
   ],
   "author": "Nicholas Jacob",

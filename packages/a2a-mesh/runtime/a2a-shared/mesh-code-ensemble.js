@@ -8,6 +8,7 @@ import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
 import { isMeshErrorText } from './mesh-calls.js';
 import { classifySubmission } from './cli-tool-wrapper.js';
+import { capTimeoutForAgent } from './agent-catalog.js';
 
 function formatError(err) {
   return err instanceof Error ? err.message : String(err);
@@ -26,7 +27,6 @@ function normalizeTimeoutMs(value, fallback, { min = 1000, max = 3600000 } = {})
 
 const CODE_PREVIEW_CHARS = normalizePositiveInt(process.env.A2A_ENSEMBLE_CODE_PREVIEW_CHARS, 12000);
 const REVIEW_PREVIEW_CHARS = normalizePositiveInt(process.env.A2A_ENSEMBLE_REVIEW_PREVIEW_CHARS, 6000);
-const GEMINI_ENSEMBLE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_GEMINI_ENSEMBLE_TIMEOUT_MS, 900000);
 
 function truncateForPrompt(text, limit, label = 'content') {
   const value = String(text || '');
@@ -36,7 +36,7 @@ function truncateForPrompt(text, limit, label = 'content') {
 }
 
 function timeoutForAgent(agent, timeoutMs) {
-  return agent === 'gemini' ? Math.min(timeoutMs, GEMINI_ENSEMBLE_TIMEOUT_MS) : timeoutMs;
+  return capTimeoutForAgent(agent, 'ensemble', timeoutMs);
 }
 
 function codeBlockForPrompt(agent, code) {
@@ -86,7 +86,7 @@ function appendSelfToMeshChain(meshChain, selfId) {
  * @param {Object} [config.meshStore] - MeshStore (optional)
  * @param {Object} [config.meshBus] - MeshEventBus (optional)
  */
-export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '' }) {
+export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '', peerDiscovery = null }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
   const DEFAULT_ENSEMBLE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_ENSEMBLE_MS, 2400000); // 40 min
   const MAX_SELF_CALL_DEPTH = normalizePositiveInt(process.env.A2A_MAX_SELF_CALL_DEPTH, 3);
@@ -102,7 +102,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
    * @returns {Object} Ensemble result with final_code
    */
   async function execute(params, callContext = {}) {
-    const { task, language = 'python', rounds: rawRounds = 1, judge = 'claude', timeout_ms } = params;
+    const { task, language = 'python', rounds: rawRounds = 1, judge = 'claude', timeout_ms, agents: requestedAgents } = params;
     if (!task) throw new Error('task is required');
     const timeoutMs = normalizeTimeoutMs(timeout_ms, DEFAULT_ENSEMBLE_TIMEOUT_MS);
     const parentDepth = normalizePositiveInt(callContext.depth, maxDepth);
@@ -113,9 +113,23 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     const ensembleId = randomUUID();
     const threadId = resolveThreadId(params, callContext, `ensemble-${ensembleId}`);
     const { prompt: taskForPrompt } = enrichPromptIfContinuation(task, { meshChain: parentChain, threadId }, meshStore);
-    const agents = Object.keys(peers).filter(a => peers[a]);
-    if (agents.length === 0) throw new Error('No agents available in mesh');
-    const allParticipants = [...agents, selfId]; // self also participates
+    const hasExplicitAgents = Array.isArray(requestedAgents) && requestedAgents.length > 0;
+    const invalidAgents = hasExplicitAgents
+      ? [...new Set(requestedAgents)].filter((agent) => agent !== selfId && !peers[agent])
+      : [];
+    if (invalidAgents.length > 0) throw new Error(`Unknown ensemble agents: ${invalidAgents.join(', ')}`);
+    let defaultPeerIds = Object.keys(peers);
+    if (!hasExplicitAgents && peerDiscovery) {
+      await peerDiscovery.checkAllHealth();
+      defaultPeerIds = Object.keys(peerDiscovery.getOnlinePeers());
+      if (defaultPeerIds.length === 0) throw new Error('No online peer agents available for ensemble');
+    }
+    const requested = hasExplicitAgents ? requestedAgents : [...defaultPeerIds, selfId];
+    const allParticipants = [...new Set(requested)]
+      .filter((agent) => agent === selfId || Boolean(peers[agent]));
+    if (allParticipants.length === 0) throw new Error('No valid agents available in mesh');
+    const agents = allParticipants.filter((agent) => agent !== selfId);
+    const includeSelf = allParticipants.includes(selfId);
 
     const context = {
       depth: parentDepth - 1,
@@ -168,9 +182,9 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     // Run peer broadcast + self response in parallel
     const [peerWriteResults, selfWriteResult] = await Promise.all([
       callAllAgents(agents, writePrompt, context, timeoutMs),
-      generateSelfResponse(writePrompt, context, timeoutMs),
+      includeSelf ? generateSelfResponse(writePrompt, context, timeoutMs) : Promise.resolve(null),
     ]);
-    const writeResults = [...peerWriteResults, selfWriteResult];
+    const writeResults = [...peerWriteResults, ...(selfWriteResult ? [selfWriteResult] : [])];
     phases.push({ phase: 'write', durationMs: Date.now() - writeStart, results: writeResults });
 
     // Emit each agent's write result

@@ -539,6 +539,7 @@
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-claude" class="dot dot-gray"></span><span style="color:#8b949e">Claude</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-codex" class="dot dot-gray"></span><span style="color:#8b949e">Codex</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-gemini" class="dot dot-gray"></span><span style="color:#8b949e">Gemini</span></span>
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-grok" class="dot dot-gray"></span><span style="color:#8b949e">Grok</span></span>
     </div>
   </div>
   <div class="flex items-center gap-2">
@@ -628,7 +629,15 @@
 // State
 // ============================================
 const BASE = window.location.origin;
-const PORTS = { claude: 3142, codex: 3141, gemini: 3143 };
+const PORTS = { claude: 3142, codex: 3141, gemini: 3143, grok: 3144 };
+function peerEndpoint(port, path = '') {
+  const url = new URL(BASE);
+  url.port = String(port);
+  url.pathname = path;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
 const SELF_REFERENCE_PATTERNS = [
   /A2A Mesh Claude Codex Gemini/i,
   /HISTÓRICO:\s*\d+\s+EVENTOS/i,
@@ -637,12 +646,12 @@ const SELF_REFERENCE_PATTERNS = [
   /Seq SSE\s*[●○]/i,
 ];
 const AGENT_COLORS = {
-  claude: 'purple', codex: 'amber', gemini: 'blue',
+  claude: 'purple', codex: 'amber', gemini: 'blue', grok: 'green',
   system: 'gray', error: 'red', synthesis: 'gold',
   judge: 'gold',
 };
 const AGENT_DOT_COLORS = {
-  claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa',
+  claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa', grok: '#34d399',
 };
 
 let autoScroll = true;
@@ -684,8 +693,8 @@ let historyDraft = '';
 // Config State (chips)
 // ============================================
 const CONFIG_OPTIONS = {
-  agent:    ['codex', 'gemini', 'claude'],
-  judge:    ['claude', 'codex', 'gemini'],
+  agent:    ['codex', 'gemini', 'claude', 'grok'],
+  judge:    ['claude', 'codex', 'gemini', 'grok'],
   rounds:   [1, 3, 5, 7, 10],
   language: ['python', 'javascript', 'typescript', 'rust', 'go', 'java'],
   order:    ['rotate', 'fixed', 'random'],
@@ -726,7 +735,7 @@ const COMMANDS = [
   { cmd: '/help',      args: '',                   desc: 'Show commands',           method: null },
 ];
 
-const AGENTS = ['claude', 'codex', 'gemini'];
+const AGENTS = ['claude', 'codex', 'gemini', 'grok'];
 
 // ---- Session continuation (mirrors ~/bin/mesh-call) ----
 function genTaskId(prefix) {
@@ -808,6 +817,7 @@ function parseTerminalCommand(input) {
           if (AGENTS.includes(agent)) {
             return { op: 'call', method: 'mesh/call', params: { agent, prompt: agentMatch[2] }, display: `call ${agent}` };
           }
+          return { error: `Agente desconhecido: ${agent}. Opções: ${AGENTS.join(', ')}` };
         }
         // Try without explicit agent — default to codex
         if (rest) return { op: 'call', method: 'mesh/call', params: { agent: meshConfig.agent, prompt: rest }, display: `call ${meshConfig.agent}` };
@@ -896,7 +906,7 @@ function showHelp() {
   bubble.innerHTML = `
     <div style="font-size:0.75rem; color:#8b949e; line-height:1.8;">
       <strong style="color:#c9d1d9;">Terminal Commands</strong><br>
-      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Call one agent (claude, codex, gemini)<br>
+      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Call one agent (claude, codex, gemini, grok)<br>
       <code>/broadcast &lt;prompt&gt;</code> — Ask all agents<br>
       <code>/ask &lt;prompt&gt;</code> — Alias for broadcast<br>
       <code>/consensus &lt;prompt&gt;</code> — All agents + judge synthesis<br>
@@ -943,6 +953,10 @@ async function handleTerminalSubmit() {
   hideAutocomplete();
 
   if (!parsed) return;
+  if (parsed.error) {
+    addSystemMessage(parsed.error, 'red');
+    return;
+  }
   if (!parsed.method) return; // /clear, /help, /reset-session already handled
 
   // Add user message to chat
@@ -1590,6 +1604,7 @@ function agentFromMeta(data) {
     if (s.includes('claude')) return 'claude';
     if (s.includes('codex')) return 'codex';
     if (s.includes('gemini')) return 'gemini';
+    if (s.includes('grok')) return 'grok';
   }
   return null;
 }
@@ -1599,6 +1614,7 @@ function detectAgent(text) {
   if (t.includes('claude')) return 'claude';
   if (t.includes('codex')) return 'codex';
   if (t.includes('gemini')) return 'gemini';
+  if (t.includes('grok')) return 'grok';
   return null;
 }
 
@@ -2044,12 +2060,12 @@ function addResultBubble(op, text) {
 // Health Polling
 // ============================================
 async function pollHealth() {
-  const agents = ['claude', 'codex', 'gemini'];
+  const agents = ['claude', 'codex', 'gemini', 'grok'];
   for (const agent of agents) {
     const port = PORTS[agent];
     const dot = document.getElementById(`dot-${agent}`);
     try {
-      const r = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(3000) });
+      const r = await fetch(peerEndpoint(port, '/health'), { signal: AbortSignal.timeout(3000) });
       dot.className = r.ok ? 'dot dot-green' : 'dot dot-red';
     } catch {
       dot.className = 'dot dot-red';

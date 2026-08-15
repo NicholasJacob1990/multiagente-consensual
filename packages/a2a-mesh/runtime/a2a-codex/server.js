@@ -20,6 +20,7 @@ import { createA2AServer, extractPromptText, extractArtifacts } from '../a2a-sha
 import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
+import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
 import {
   buildDisabledSkillsOverride,
   prepareCodexRuntimeHome,
@@ -67,13 +68,14 @@ const {
   dispatchTool,
   normalizeToolOutput,
   cliToolWrapper,
+  peerDiscovery,
 } = await createSharedRuntime({
   selfId: SELF_ID,
   authToken: A2A_AUTH_TOKEN,
   maxDepth: A2A_MESH_MAX_DEPTH,
   maxTasks: MAX_TASKS,
   maxConcurrent: MAX_CONCURRENT_TASKS,
-  dataDir: process.env.A2A_CODEX_DATA_DIR || '../data/',
+  dataDir: process.env.A2A_CODEX_DATA_DIR,
 });
 
 // ============================================
@@ -236,7 +238,8 @@ MCPs AND SKILLS: you have access to the same MCPs configured in ~/.codex/config.
 
 A2A AGENTS AVAILABLE:
 - claude: Anthropic Claude (Opus) — strong at synthesis, analysis, complex reasoning, writing
-- gemini: Google Gemini (gemini-3-pro) — strong at reasoning, data analysis, research, detailed explanations
+- gemini: Google Gemini — strong at reasoning, data analysis, research, detailed explanations
+- grok: xAI Grok 4.6 High, exclusively through Cursor CLI — strong at adversarial review and exposing fragile assumptions
 
 WHEN TO USE EACH A2A TOOL:
 - a2a_call: Query ONE specific agent for a directed task (e.g. "claude, synthesize these findings")
@@ -269,7 +272,7 @@ RULES:
 - Do NOT delegate trivial tasks you can solve yourself
 
 MESH DASHBOARD:
-- Web dashboard: http://localhost:{PORT}/ui (PORT = 3141 codex, 3142 claude, 3143 gemini)
+- Web dashboard: http://localhost:{PORT}/ui (ports: 3141 codex, 3142 claude, 3143 gemini, 3144 grok)
 - Any server serves the same dashboard
 - Features: agent status, interactive chat, traces, timeline, stats
 - Real-time SSE: task events appear live on the dashboard
@@ -376,7 +379,8 @@ async function executeCodexAPIWithTools(task, onChunk, runContext = {}) {
 // CLI FALLBACK
 // ============================================
 
-function executeCodexCLI(task, onChunk) {
+function executeCodexCLI(task, onChunk, runContext = {}) {
+  const signal = runContext.signal;
   const currentDepth = task.metadata?.maxDepth ?? A2A_MESH_MAX_DEPTH;
   const toolContext = {
     depth: currentDepth,
@@ -403,6 +407,7 @@ function executeCodexCLI(task, onChunk) {
   let allText = '';
 
   function runCLIRound(currentPrompt, round) {
+    if (signal?.aborted || task.status?.state === 'canceled') return;
     const outputFile = `/tmp/a2a-codex-${task.id}-r${round}.txt`;
 
     const cliArgs = [
@@ -420,7 +425,7 @@ function executeCodexCLI(task, onChunk) {
 
     const child = spawn('codex', cliArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, NO_COLOR: '1', CODEX_HOME: CODEX_RUNTIME_HOME },
+      env: bridgeEnvironmentForTask(task, SELF_ID, { ...process.env, NO_COLOR: '1', CODEX_HOME: CODEX_RUNTIME_HOME }),
       // detached so the whole process tree can be reaped via process.kill(-pid).
       detached: true,
     });
@@ -453,6 +458,7 @@ function executeCodexCLI(task, onChunk) {
     child.on('close', async (code) => {
       task.process = null;
       clearTimeout(timeout);
+      if (signal?.aborted || task.status?.state === 'canceled') return;
 
       let output = '';
       let outputFromFile = false;
@@ -510,7 +516,7 @@ function executeCodexCLI(task, onChunk) {
         tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
-        runCLIRound(followUp, round + 1);
+        if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
         return;
       }
 
@@ -528,6 +534,7 @@ function executeCodexCLI(task, onChunk) {
 
     child.on('error', (err) => {
       task.process = null;
+      if (signal?.aborted || task.status?.state === 'canceled') return;
       const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro ao executar Codex: ${err.message}` }] };
       tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
       if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
@@ -548,11 +555,11 @@ function executeCodexTask(task, onChunk, runContext = {}) {
       console.error('executeCodexAPIWithTools error, falling back to CLI:', err.message);
       tm.updateTask(task, { status: { state: 'working' } });
       console.log(`[CLI fallback] Task ${task.id} retrying via Codex CLI`);
-      executeCodexCLI(task, onChunk);
+      if (!runContext.signal?.aborted) executeCodexCLI(task, onChunk, runContext);
     });
     return;
   }
-  return executeCodexCLI(task, onChunk);
+  return executeCodexCLI(task, onChunk, runContext);
 }
 
 // ============================================
@@ -599,6 +606,7 @@ createA2AServer({
   meshCaller,
   meshStore,
   meshBus,
+  peerDiscovery,
   teamExecutor,
   consensusExecutor,
   ensembleExecutor: codeEnsembleExecutor,

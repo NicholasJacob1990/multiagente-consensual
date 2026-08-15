@@ -2,7 +2,7 @@
  * MeshStore — Shared SQLite store for A2A mesh network
  *
  * Uses better-sqlite3 for synchronous, WAL-mode access.
- * All 3 servers (claude, codex, gemini) share the same mesh.db.
+ * All native servers share the same mesh.db.
  */
 
 import { createRequire } from 'module';

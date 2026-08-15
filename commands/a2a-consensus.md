@@ -6,7 +6,7 @@ profile: a2a_consensus
 approval-ceiling: consultivo
 ---
 
-Use a ferramenta de consenso do servidor MCP `a2a-mesh` sobre:
+Use a ferramenta de consenso do servidor MCP `a2a-mesh` sobre o conjunto de agentes pedido. Se o usuário indicar quórum, encaminhe o valor explicitamente; sem valor informado, use a maioria estrita dos participantes efetivamente online:
 
 $ARGUMENTS
 

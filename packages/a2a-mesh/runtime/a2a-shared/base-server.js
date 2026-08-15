@@ -11,6 +11,7 @@ import { A2A_PROTOCOL_VERSION, A2A_VERSION_HEADER, checkVersionHeader } from './
 import { TERMINAL_STATES } from './task-states.js';
 import { createSandboxManager } from './sandbox-manager.js';
 import { mergeRequestTaskMetadata } from './provider-session.js';
+import { DEFAULT_PORTS, publicAgentCatalog } from './agent-catalog.js';
 
 // --- Shared helpers ---
 
@@ -67,13 +68,11 @@ function parseBody(req) {
   });
 }
 
-function sendJSON(res, data, status = 200) {
+function sendJSON(res, data, status = 200, extraHeaders = {}) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, A2A-Token, A2A-Protocol-Version',
     [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
+    ...extraHeaders,
   });
   res.end(JSON.stringify(data));
 }
@@ -101,10 +100,60 @@ function safeTokenEquals(provided, expected) {
   return timingSafeEqual(a, b);
 }
 
-function checkAuth(req, authToken) {
+function parseCookie(req, name) {
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(rest.join('='));
+  }
+  return '';
+}
+
+function clampMeshDepth(value, maximum) {
+  const parsed = Number.parseInt(String(value ?? maximum), 10);
+  if (!Number.isFinite(parsed)) return maximum;
+  return Math.max(0, Math.min(maximum, parsed));
+}
+
+function isAllowedLoopbackHost(req, port) {
+  const raw = String(req.headers.host || '');
+  if (!raw) return false;
+  try {
+    const parsed = new URL(`http://${raw}`);
+    const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]' || parsed.hostname === '::1';
+    const matchingPort = !parsed.port || Number(parsed.port) === Number(port);
+    return local && matchingPort;
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedBrowserOrigin(req, port) {
+  const raw = String(req.headers.origin || '');
+  if (!raw) return true;
+  try {
+    const parsed = new URL(raw);
+    const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]' || parsed.hostname === '::1';
+    const allowedPorts = new Set([Number(port), ...Object.values(DEFAULT_PORTS)]);
+    for (const agentId of Object.keys(DEFAULT_PORTS)) {
+      const configured = Number.parseInt(process.env[`A2A_${agentId.toUpperCase()}_PORT`] || '', 10);
+      if (Number.isFinite(configured)) allowedPorts.add(configured);
+    }
+    const allowedPort = Boolean(parsed.port) && allowedPorts.has(Number(parsed.port));
+    return local && allowedPort;
+  } catch {
+    return false;
+  }
+}
+
+function checkAuth(req, authToken, port) {
   const auth = req.headers['authorization'] || req.headers['a2a-token'] || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
-  const allowLocalBypass = process.env.A2A_ALLOW_NO_TOKEN === 'true' && isLoopbackRequest(req);
+  const headerToken = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
+  const token = headerToken || parseCookie(req, 'A2A-Token');
+  const allowLocalBypass = process.env.A2A_ALLOW_NO_TOKEN === 'true'
+    && isLoopbackRequest(req)
+    && isAllowedLoopbackHost(req, port)
+    && isAllowedBrowserOrigin(req, port);
 
   // Explicit opt-in for local development/testing bypass.
   if (allowLocalBypass) return true;
@@ -124,6 +173,32 @@ function ensureTaskAbortController(task) {
     enumerable: false,
   });
   return task._abortController;
+}
+
+export function signalTaskProcess(task, signal) {
+  const child = task?.process;
+  if (!child || child.exitCode !== null) return false;
+  let sent = false;
+  if (child.pid && typeof process.kill === 'function') {
+    try {
+      process.kill(-child.pid, signal);
+      sent = true;
+    } catch { /* child is not a process-group leader */ }
+  }
+  try {
+    sent = child.kill(signal) || sent;
+  } catch { /* process already exited */ }
+  return sent;
+}
+
+export function scheduleForcedTaskTermination(tasks, {
+  graceMs = Number.parseInt(process.env.A2A_KILL_GRACE_MS || '5000', 10),
+  exit = () => process.exit(0),
+} = {}) {
+  return setTimeout(() => {
+    for (const task of tasks) signalTaskProcess(task, 'SIGKILL');
+    exit();
+  }, graceMs);
 }
 
 function abortTaskExecution(task, reason = 'Task cancelled') {
@@ -148,11 +223,7 @@ function abortTaskExecution(task, reason = 'Task cancelled') {
     // detached:true (negative pid signals the whole group on POSIX).
     const sendSignal = (sig) => {
       try {
-        if (child.killed || child.exitCode !== null) return;
-        child.kill(sig);
-        if (pid && typeof process.kill === 'function') {
-          try { process.kill(-pid, sig); } catch { /* not a group leader */ }
-        }
+        signalTaskProcess(task, sig);
       } catch (err) {
         if (process.env.A2A_DEBUG === 'true') {
           console.warn('[task-abort] kill signal failed', {
@@ -384,7 +455,6 @@ async function handleTaskSendSubscribe(req, res, ctx) {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
     [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
   });
 
@@ -400,7 +470,8 @@ async function handleTaskSendSubscribe(req, res, ctx) {
   const meshBusRef = ctx.meshBus;
   if (meshBusRef) {
     dialogueHandler = (event) => {
-      if (event.type === 'dialogue' && !res.writableEnded) {
+      const belongsToTask = event.taskId === task.id || event.payload?.parentTaskId === task.id;
+      if (event.type === 'dialogue' && belongsToTask && !res.writableEnded) {
         sendSSE(res, 'task-dialogue', {
           id: task.id,
           taskId: event.taskId,
@@ -615,6 +686,7 @@ export function createA2AServer(config) {
     ensembleExecutor = null,
     debateExecutor = null,
     planExecutor = null,
+    healthDetails = null,
     executeTask,
   } = config;
 
@@ -647,9 +719,17 @@ export function createA2AServer(config) {
     const url = new URL(req.url, `http://localhost:${port}`);
     const method = req.method;
 
+    if (!isLoopbackRequest(req) || !isAllowedLoopbackHost(req, port)) {
+      return sendError(res, 403, 'Forbidden: A2A mesh accepts only loopback hosts');
+    }
+
     if (method === 'OPTIONS') {
+      if (!isAllowedBrowserOrigin(req, port)) {
+        return sendError(res, 403, 'Forbidden origin');
+      }
+      const origin = String(req.headers.origin || '');
       res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+        ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, A2A-Token, A2A-Protocol-Version',
         [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
@@ -666,6 +746,9 @@ export function createA2AServer(config) {
         return sendJSON(res, agentCard);
       }
       if (url.pathname === '/health' && method === 'GET') {
+        if (!isAllowedBrowserOrigin(req, port)) return sendError(res, 403, 'Forbidden origin');
+        const origin = String(req.headers.origin || '');
+        const details = typeof healthDetails === 'function' ? healthDetails() : (healthDetails || {});
         return sendJSON(res, {
           status: 'ok', model, mode: useApi ? 'api' : 'cli',
           protocolVersion: A2A_PROTOCOL_VERSION,
@@ -674,11 +757,34 @@ export function createA2AServer(config) {
           // failing to emit terminal states. lastReaped > 0 = active leak.
           reaper: typeof tm.getReaperStats === 'function' ? tm.getReaperStats() : null,
           mesh: meshBus ? meshBus.getStatus() : null,
+          ...details,
+        }, 200, origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {});
+      }
+
+      // Browser session bootstrap: the CLI opens a one-use URL containing the
+      // already-known token. Only a matching token may create the HttpOnly
+      // cookie; the redirect immediately removes it from the address bar.
+      if ((url.pathname === '/ui' || url.pathname === '/sandbox') && method === 'GET' && url.searchParams.has('token')) {
+        const presentedToken = url.searchParams.get('token') || '';
+        if (!authToken || !safeTokenEquals(presentedToken, authToken)) {
+          return sendError(res, 401, 'Unauthorized: invalid UI bootstrap token');
+        }
+        res.writeHead(303, {
+          Location: url.pathname,
+          'Set-Cookie': `A2A-Token=${encodeURIComponent(authToken)}; HttpOnly; SameSite=Strict; Path=/`,
+          'Cache-Control': 'no-store, must-revalidate',
+          'X-Frame-Options': 'DENY',
+          'Content-Security-Policy': "frame-ancestors 'none'; base-uri 'none'",
+          [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
         });
+        return res.end();
       }
 
       // Auth guard
-      if (!checkAuth(req, authToken)) {
+      if (!isAllowedBrowserOrigin(req, port)) {
+        return sendError(res, 403, 'Forbidden origin');
+      }
+      if (!checkAuth(req, authToken, port)) {
         return sendError(res, 401, 'Unauthorized: invalid or missing token');
       }
 
@@ -697,7 +803,7 @@ export function createA2AServer(config) {
         const rpcResult = await rpcAdapter.handle(rawBody);
         if (rpcResult === null) {
           // All requests were notifications — no response per JSON-RPC 2.0 spec
-          res.writeHead(204, { 'Access-Control-Allow-Origin': '*', [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
+          res.writeHead(204, { [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
           return res.end();
         }
         return sendJSON(res, rpcResult);
@@ -717,14 +823,14 @@ export function createA2AServer(config) {
         return await handleTaskSendSubscribe(req, res, ctx);
       }
 
-      const taskIdMatch = url.pathname.match(/^\/tasks\/([a-f0-9-]+)$/);
+      const taskIdMatch = url.pathname.match(/^\/tasks\/([a-zA-Z0-9_-]+)$/);
       if (taskIdMatch && method === 'GET') {
         const task = tm.tasks.get(taskIdMatch[1]);
         if (!task) return sendError(res, 404, `Task ${taskIdMatch[1]} not found`);
         return sendJSON(res, { jsonrpc: '2.0', result: tm.taskToJSON(task) });
       }
 
-      const cancelMatch = url.pathname.match(/^\/tasks\/([a-f0-9-]+)\/cancel$/);
+      const cancelMatch = url.pathname.match(/^\/tasks\/([a-zA-Z0-9_-]+)\/cancel$/);
       if (cancelMatch && method === 'POST') {
         const task = tm.tasks.get(cancelMatch[1]);
         if (!task) return sendError(res, 404, `Task ${cancelMatch[1]} not found`);
@@ -804,10 +910,14 @@ export function createA2AServer(config) {
         return sendJSON(res, { peers: peerDiscovery.getAllPeers() });
       }
 
+      if (url.pathname === '/mesh/catalog' && method === 'GET') {
+        return sendJSON(res, { agents: publicAgentCatalog() });
+      }
+
       if (url.pathname === '/mesh/call' && method === 'POST') {
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -823,7 +933,7 @@ export function createA2AServer(config) {
       if (url.pathname === '/mesh/broadcast' && method === 'POST') {
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -841,7 +951,7 @@ export function createA2AServer(config) {
         if (!consensusExecutor) return sendError(res, 503, 'Consensus executor not available');
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -854,7 +964,7 @@ export function createA2AServer(config) {
         if (!debateExecutor) return sendError(res, 503, 'Debate executor not available');
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -867,7 +977,7 @@ export function createA2AServer(config) {
         if (!ensembleExecutor) return sendError(res, 503, 'Code ensemble executor not available');
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -880,7 +990,7 @@ export function createA2AServer(config) {
         if (!teamExecutor) return sendError(res, 503, 'Team executor not available');
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth, meshChain: body.meshChain || [],
+          depth: clampMeshDepth(body.depth, maxDepth), meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
           selfId, peers, meshBus, meshStore, authToken,
@@ -902,7 +1012,7 @@ export function createA2AServer(config) {
         if (!planExecutor) return sendError(res, 503, 'Plan executor not available');
         const body = await parseBody(req);
         const mctx = {
-          depth: body.depth ?? maxDepth,
+          depth: clampMeshDepth(body.depth, maxDepth),
           meshChain: body.meshChain || [],
           taskId: body.taskId || `direct-${Date.now()}`,
           selfCallDepth: body.selfCallDepth || 0,
@@ -916,7 +1026,7 @@ export function createA2AServer(config) {
         const sandboxPath = new URL('./mesh-sandbox.html', import.meta.url).pathname;
         try {
           const html = fs.readFileSync(sandboxPath, 'utf8');
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0', [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'", [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
           return res.end(html);
         } catch (e) {
           return sendError(res, 500, `Sandbox UI not found: ${e.message}`);
@@ -954,7 +1064,6 @@ export function createA2AServer(config) {
             'Content-Type': 'text/event-stream; charset=utf-8',
             'Cache-Control': 'no-cache, no-transform',
             'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*',
             [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
           });
           res.write(': connected\n\n');
@@ -981,7 +1090,7 @@ export function createA2AServer(config) {
         const uiPath = new URL('./mesh-ui.html', import.meta.url).pathname;
         try {
           const html = fs.readFileSync(uiPath, 'utf8');
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0', [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'", [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION });
           return res.end(html);
         } catch (e) {
           return sendError(res, 500, `UI not found: ${e.message}`);
@@ -1022,7 +1131,7 @@ export function createA2AServer(config) {
       for (const task of tm.tasks.values()) {
         if (task.process) {
           try {
-            task.process.kill('SIGTERM');
+            abortTaskExecution(task, 'Server shutting down');
           } catch (err) {
             if (process.env.A2A_DEBUG === 'true') {
               console.warn('[shutdown] Failed to kill task process', {
@@ -1077,10 +1186,14 @@ export function createA2AServer(config) {
         }
       }
       server.close();
+      // Keep the parent alive for the grace window. The forced timer is
+      // intentionally referenced; otherwise process.exit would strand
+      // detached CLI descendants that ignored SIGTERM.
+      scheduleForcedTaskTermination(tm.tasks.values());
     } catch (e) {
       console.error('Error during shutdown:', e.message);
+      process.exit(1);
     }
-    process.exit(0);
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

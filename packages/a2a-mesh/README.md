@@ -2,7 +2,7 @@
 
 Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 
-- servidores A2A locais para Codex, Claude e Gemini;
+- servidores A2A locais para Codex, Claude, Gemini e Grok 4.6 High via Cursor;
 - bridge MCP `a2a-mesh`;
 - painel web de chamadas, debates, consenso, ensemble, equipes e planos;
 - sandbox visual com uma sessão de CLI por agente;
@@ -35,6 +35,14 @@ a2a-mesh open
 | Codex | `127.0.0.1:3141` | `http://127.0.0.1:3141/ui` | `http://127.0.0.1:3141/sandbox` |
 | Claude | `127.0.0.1:3142` | `http://127.0.0.1:3142/ui` | `http://127.0.0.1:3142/sandbox` |
 | Gemini | `127.0.0.1:3143` | `http://127.0.0.1:3143/ui` | `http://127.0.0.1:3143/sandbox` |
+| Grok | `127.0.0.1:3144` | `http://127.0.0.1:3144/ui` | `http://127.0.0.1:3144/sandbox` |
+
+O Grok é um peer nativo com rota fixa pelo `cursor-agent`, modelo obrigatório
+`cursor-grok-4.6-high` e limite padrão de dois processos simultâneos. A execução usa `stream-json`,
+confirma `system/init.model` e falha de forma explícita se faltar o evento final `result`.
+
+O instalador mescla o MCP em `~/.cursor/mcp.json` sem apagar outras entradas. Uma configuração
+`a2a-mesh` divergente é preservada, salvo uso explícito de `--replace-mcp`.
 
 ## Administração
 

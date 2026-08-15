@@ -156,7 +156,7 @@ Cada registro deve conter tentativa, ciclo, fase, `snapshot_sha256`, `candidate_
 - `cli_adapter`: para qualquer combinação confirmada de Claude, Codex, Gemini, Antigravity, Grok e OpenCode;
 - adaptador equivalente previamente configurado, sem substituição silenciosa.
 
-O A2A Mesh aceita três agentes, 1–5 rodadas de revisão e juiz Claude, Codex ou Gemini. Quando o adaptador não comportar os ciclos confirmados, não reduzir a configuração: usar orquestração direta ou pausar e explicar a limitação. Se o A2A não devolver candidatos, pareceres e hashes individualizados, registrar `rastreabilidade_reduzida` e não usá-lo em execução que exija auditoria integral; preferir orquestração direta.
+O A2A Mesh aceita subconjunto configurável de Codex, Claude, Gemini e Grok 4.6 High via Cursor, até 12 ciclos de revisão e qualquer peer elegível como juiz. O executor honra `agents`; não acrescenta participantes omitidos silenciosamente. Quando o adaptador não comportar os ciclos confirmados, não reduzir a configuração: usar orquestração direta ou pausar e explicar a limitação. Se o A2A não devolver candidatos, pareceres e hashes individualizados, registrar `rastreabilidade_reduzida` e não usá-lo em execução que exija auditoria integral; preferir orquestração direta.
 
 ## 9. Falhas, custo e sucesso
 

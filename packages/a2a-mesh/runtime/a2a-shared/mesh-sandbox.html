@@ -273,9 +273,17 @@
     <pre class="terminal" id="term-gemini"></pre>
     <div class="input-row"><textarea id="input-gemini" placeholder="Digite para Gemini... Shift+Enter quebra linha"></textarea><button class="send" onclick="sendInput('gemini')">Send</button></div>
   </section>
+  <section class="pane" data-agent="grok">
+    <div class="pane-header">
+      <div class="agent"><span class="dot"></span>Grok 4.6 High · Cursor CLI</div>
+      <div class="pane-actions"><button onclick="startAgent('grok')">Start</button><button class="danger" onclick="killAgent('grok')">Kill</button></div>
+    </div>
+    <pre class="terminal" id="term-grok"></pre>
+    <div class="input-row"><textarea id="input-grok" placeholder="Digite para Grok... Shift+Enter quebra linha"></textarea><button class="send" onclick="sendInput('grok')">Send</button></div>
+  </section>
 </main>
 <script>
-const agents = ['claude', 'codex', 'gemini'];
+const agents = ['claude', 'codex', 'gemini', 'grok'];
 const sessions = new Map();
 const streams = new Map();
 let meshEvents = null;

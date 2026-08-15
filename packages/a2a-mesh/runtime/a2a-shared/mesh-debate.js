@@ -7,6 +7,7 @@ import { resolveSelfUrl } from './peer-registry.js';
 import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
 import { isMeshErrorText } from './mesh-calls.js';
+import { capTimeoutForAgent } from './agent-catalog.js';
 
 function formatError(err) {
   return err instanceof Error ? err.message : String(err);
@@ -26,7 +27,6 @@ function normalizeTimeoutMs(value, fallback, { min = 1000, max = 3600000 } = {})
 const DEBATE_HISTORY_ENTRY_CHARS = normalizePositiveInt(process.env.A2A_DEBATE_HISTORY_ENTRY_CHARS, 4000);
 const DEBATE_JUDGE_ENTRY_CHARS = normalizePositiveInt(process.env.A2A_DEBATE_JUDGE_ENTRY_CHARS, 6000);
 const DEBATE_JUDGE_MAX_ENTRIES = normalizePositiveInt(process.env.A2A_DEBATE_JUDGE_MAX_ENTRIES, 24);
-const GEMINI_DEBATE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_GEMINI_DEBATE_TIMEOUT_MS, 900000);
 
 function truncateForPrompt(text, limit, label = 'content') {
   const value = String(text || '');
@@ -35,7 +35,7 @@ function truncateForPrompt(text, limit, label = 'content') {
 }
 
 function timeoutForAgent(agent, timeoutMs) {
-  return agent === 'gemini' ? Math.min(timeoutMs, GEMINI_DEBATE_TIMEOUT_MS) : timeoutMs;
+  return capTimeoutForAgent(agent, 'debate', timeoutMs);
 }
 
 function normalizeMeshChain(meshChain) {

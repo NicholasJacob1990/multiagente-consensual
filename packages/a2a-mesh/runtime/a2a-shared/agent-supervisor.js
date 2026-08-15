@@ -7,13 +7,16 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { AGENT_IDS as CATALOG_AGENT_IDS } from './agent-catalog.js';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
-const AGENT_IDS = new Set(['codex', 'claude', 'gemini']);
+const AGENT_IDS = new Set(CATALOG_AGENT_IDS);
 const inFlightStarts = new Map();
 
 function getAgentDirectory(agentId) {
-  const baseDir = process.env.A2A_BASE_DIR || path.join(os.homedir(), 'Aplicativos');
+  const packagedRuntimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const baseDir = process.env.A2A_BASE_DIR || packagedRuntimeRoot;
   return path.join(baseDir, `a2a-${agentId}`);
 }
 
@@ -85,6 +88,8 @@ async function startLocalAgent(agentId, baseUrl, timeoutMs) {
       ...process.env,
       A2A_PORT: url.port,
       [`A2A_${agentId.toUpperCase()}_PORT`]: url.port,
+      [`A2A_${agentId.toUpperCase()}_DATA_DIR`]: process.env[`A2A_${agentId.toUpperCase()}_DATA_DIR`]
+        || path.join(os.homedir(), '.local', 'state', 'a2a-mesh', 'tasks', agentId),
     },
   });
   child.once('error', (error) => { spawnError = error; });

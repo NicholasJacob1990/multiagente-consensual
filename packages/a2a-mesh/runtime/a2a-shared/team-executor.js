@@ -1,13 +1,14 @@
 // ============================================
 // A2A Team Executor — Multi-step workflow orchestration
 // ============================================
-// Shared module: imported by each A2A server (claude, codex, gemini)
+// Shared module: imported by every native A2A server.
 // Each server injects its own context (selfId, peers, meshBus)
 
 import { randomUUID } from 'crypto';
 import { resolveSelfUrl } from './peer-registry.js';
 import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
+import { capTimeoutForAgent } from './agent-catalog.js';
 
 function normalizePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -24,7 +25,6 @@ const MAX_SELF_CALL_DEPTH = normalizePositiveInt(process.env.A2A_MAX_SELF_CALL_D
 const TEAM_PROMPT_CHARS = normalizePositiveInt(process.env.A2A_TEAM_PROMPT_CHARS, 30000);
 const TEAM_CONTEXT_CHARS = normalizePositiveInt(process.env.A2A_TEAM_CONTEXT_CHARS, 20000);
 const TEAM_RESPONSE_CONTEXT_CHARS = normalizePositiveInt(process.env.A2A_TEAM_RESPONSE_CONTEXT_CHARS, 8000);
-const GEMINI_TEAM_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_GEMINI_TEAM_TIMEOUT_MS, 900000);
 
 function truncateForPrompt(text, limit, label = 'content') {
   const value = String(text || '');
@@ -33,7 +33,7 @@ function truncateForPrompt(text, limit, label = 'content') {
 }
 
 function timeoutForAgent(agent, timeoutMs) {
-  return agent === 'gemini' ? Math.min(timeoutMs, GEMINI_TEAM_TIMEOUT_MS) : timeoutMs;
+  return capTimeoutForAgent(agent, 'team', timeoutMs);
 }
 
 /**
@@ -48,7 +48,7 @@ function timeoutForAgent(agent, timeoutMs) {
  * @param {number} context.depth - Current mesh depth
  * @param {Array}  context.meshChain - Chain of caller IDs
  * @param {string} context.taskId - Parent task ID
- * @param {string} context.selfId - This server's ID (claude/codex/gemini)
+ * @param {string} context.selfId - This server's catalog ID
  * @param {Object} context.peers - { agentId: url } map (excludes self)
  * @param {Object} context.meshBus - MeshEventBus instance (optional)
  * @returns {string} Formatted markdown result

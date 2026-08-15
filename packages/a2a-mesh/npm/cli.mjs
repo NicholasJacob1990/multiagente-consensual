@@ -9,14 +9,21 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { AGENT_CATALOG } from "../runtime/a2a-shared/agent-catalog.js";
+import {
+  inspectCursorMcp,
+  removeCursorMcp,
+  upsertCursorMcp,
+} from "../runtime/a2a-shared/cursor-mcp-config.js";
 
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const RUNTIME_ROOT = path.join(PACKAGE_ROOT, "runtime");
-export const AGENTS = Object.freeze({
-  codex: { port: 3141, entry: path.join(RUNTIME_ROOT, "a2a-codex", "server.js") },
-  claude: { port: 3142, entry: path.join(RUNTIME_ROOT, "a2a-claude", "server.js") },
-  gemini: { port: 3143, entry: path.join(RUNTIME_ROOT, "a2a-gemini", "server.js") },
-});
+export const AGENTS = Object.freeze(Object.fromEntries(
+  Object.entries(AGENT_CATALOG).map(([id, definition]) => [id, {
+    ...definition,
+    entry: path.join(RUNTIME_ROOT, `a2a-${id}`, "server.js"),
+  }]),
+));
 
 function usage() {
   return `A2A Mesh — servidores locais, MCP e painel multiagente
@@ -30,7 +37,7 @@ Uso:
 
 Opções:
   --home <pasta>       usar outra HOME
-  --targets <lista>    registrar MCP em codex,claude (padrão: ambos)
+  --targets <lista>    registrar MCP em codex,claude,cursor (padrão: todos)
   --launchd            instalar serviço de usuário no macOS
   --no-start           instalar sem iniciar os servidores
   --replace-mcp        substituir configuração MCP de mesmo nome
@@ -50,7 +57,7 @@ export function parseArgs(argv) {
   const args = {
     command: argv[0] || "help",
     home: os.homedir(),
-    targets: ["codex", "claude"],
+    targets: ["codex", "claude", "cursor"],
     launchd: false,
     start: true,
     replaceMcp: false,
@@ -76,7 +83,7 @@ export function parseArgs(argv) {
     else if (value === "--purge") args.purge = true;
     else throw new Error(`opção desconhecida: ${value}`);
   }
-  const invalid = args.targets.filter((target) => !["codex", "claude"].includes(target));
+  const invalid = args.targets.filter((target) => !["codex", "claude", "cursor"].includes(target));
   if (invalid.length) throw new Error(`alvos MCP não suportados: ${invalid.join(",")}`);
   return args;
 }
@@ -125,6 +132,33 @@ function executable(binary, env = process.env) {
   return null;
 }
 
+export function agentCliAvailability(env = process.env) {
+  return Object.fromEntries(Object.entries(AGENTS).map(([name, definition]) => [name, {
+    available: Boolean(executable(definition.cliBinary, env)),
+    binary: definition.cliBinary,
+  }]));
+}
+
+export function cursorModelAvailability(env = process.env) {
+  const definition = AGENTS.grok;
+  const binary = executable(definition.cliBinary, env);
+  if (!binary) return { available: false, binary: null, model: definition.model, reason: `CLI ausente: ${definition.cliBinary}` };
+  const probe = command(binary, ["--list-models"], { env });
+  const models = probe.status === 0
+    ? probe.stdout.split(/\r?\n/).map((line) => line.trim().split(/\s+-\s+|\s+/)[0]).filter(Boolean)
+    : [];
+  const available = models.includes(definition.model);
+  return {
+    available,
+    binary,
+    model: definition.model,
+    models,
+    reason: available ? null : (probe.status === 0
+      ? `modelo indisponível: ${definition.model}`
+      : `falha ao consultar modelos do Cursor: ${probe.error || probe.stderr.trim() || `status ${probe.status}`}`),
+  };
+}
+
 function command(binary, argv, options = {}) {
   if (options.dryRun) return { status: 0, stdout: "", stderr: "", simulated: true };
   const result = spawnSync(binary, argv, {
@@ -148,25 +182,29 @@ function ensureToken(tokenFile, dryRun) {
 
 function serverEnvironment(home) {
   const paths = pathsFor(home);
+  const agentEnvironment = {};
+  for (const [id, definition] of Object.entries(AGENTS)) {
+    const upper = id.toUpperCase();
+    agentEnvironment[`A2A_${upper}_PORT`] = String(definition.port);
+    agentEnvironment[`A2A_${upper}_DATA_DIR`] = path.join(paths.dataRoot, id);
+  }
   return {
     ...process.env,
+    PATH: [path.join(home, ".local", "bin"), process.env.PATH || ""].filter(Boolean).join(path.delimiter),
     HOME: home,
     A2A_BASE_DIR: RUNTIME_ROOT,
     A2A_AUTH_TOKEN_FILE: paths.tokenFile,
     A2A_BIND_HOST: "127.0.0.1",
-    A2A_ALLOW_NO_TOKEN: "true",
+    A2A_ALLOW_NO_TOKEN: process.env.A2A_ALLOW_NO_TOKEN || "false",
     A2A_AUTO_START: "true",
-    A2A_ENABLE_SHELL_EXEC: process.env.A2A_ENABLE_SHELL_EXEC || "true",
-    A2A_SHELL_FULL_ACCESS: process.env.A2A_SHELL_FULL_ACCESS || "true",
-    A2A_CODEX_PORT: String(AGENTS.codex.port),
-    A2A_CLAUDE_PORT: String(AGENTS.claude.port),
-    A2A_GEMINI_PORT: String(AGENTS.gemini.port),
-    A2A_CODEX_DATA_DIR: path.join(paths.dataRoot, "codex"),
-    A2A_CLAUDE_DATA_DIR: path.join(paths.dataRoot, "claude"),
-    A2A_GEMINI_DATA_DIR: path.join(paths.dataRoot, "gemini"),
+    A2A_ENABLE_SHELL_EXEC: process.env.A2A_ENABLE_SHELL_EXEC || "false",
+    A2A_SHELL_FULL_ACCESS: process.env.A2A_SHELL_FULL_ACCESS || "false",
+    ...agentEnvironment,
     CODEX_CLI_MODEL: process.env.CODEX_CLI_MODEL || "gpt-5.6-sol",
     CODEX_MODEL: process.env.CODEX_MODEL || "gpt-5.6-sol",
     CODEX_REASONING_EFFORT: process.env.CODEX_REASONING_EFFORT || "xhigh",
+    CLAUDE_CLI_MODEL: process.env.CLAUDE_CLI_MODEL || "claude-opus-5",
+    A2A_GROK_MODEL: "cursor-grok-4.6-high",
     USE_CLI: process.env.USE_CLI || "force",
   };
 }
@@ -217,9 +255,21 @@ async function startServers(args, { foreground = false } = {}) {
   fs.mkdirSync(paths.dataRoot, { recursive: true });
   const existing = [];
   const started = [];
+  const unavailable = [];
   const pids = {};
   const children = [];
+  const runtimeEnvironment = serverEnvironment(args.home);
+  const availability = agentCliAvailability(runtimeEnvironment);
+  const grokAvailability = availability.grok.available ? cursorModelAvailability(runtimeEnvironment) : null;
   for (const [name, definition] of Object.entries(AGENTS)) {
+    if (!availability[name].available) {
+      unavailable.push({ name, reason: `CLI ausente: ${definition.cliBinary}` });
+      continue;
+    }
+    if (name === "grok" && !grokAvailability?.available) {
+      unavailable.push({ name, reason: grokAvailability?.reason || `modelo indisponível: ${definition.model}` });
+      continue;
+    }
     const current = await health(definition.port);
     if (current) {
       existing.push(name);
@@ -233,7 +283,7 @@ async function startServers(args, { foreground = false } = {}) {
     const child = spawn(process.execPath, [definition.entry], {
       cwd: path.dirname(definition.entry),
       detached: !foreground,
-      env: { ...serverEnvironment(args.home), A2A_PORT: String(definition.port) },
+      env: { ...runtimeEnvironment, A2A_PORT: String(definition.port) },
       stdio: ["ignore", log, log],
     });
     fs.closeSync(log);
@@ -245,7 +295,7 @@ async function startServers(args, { foreground = false } = {}) {
     started.push(name);
   }
   if (!foreground) writeJson(paths.pidFile, { createdAt: new Date().toISOString(), pids });
-  return { started, existing, pids, children };
+  return { started, existing, unavailable, pids, children };
 }
 
 function processAlive(pid) {
@@ -289,6 +339,11 @@ async function statusReport(args) {
 }
 
 function mcpGet(target, env) {
+  if (target === "cursor") {
+    if (!executable("cursor-agent", env)) return { present: false, missingCli: true, output: "" };
+    const state = inspectCursorMcp({ home: env.HOME, nodePath: process.execPath, bridge: pathsFor(env.HOME).bridge });
+    return { present: state.present, missingCli: false, output: JSON.stringify(state.entry || {}), state };
+  }
   if (!executable(target, env)) return { present: false, missingCli: true, output: "" };
   const argv = target === "codex" ? ["mcp", "get", "a2a-mesh", "--json"] : ["mcp", "get", "a2a-mesh"];
   const result = command(target, argv, { env });
@@ -300,6 +355,20 @@ function registerMcp(args) {
   const env = { ...process.env, HOME: args.home };
   const results = {};
   for (const target of args.targets) {
+    if (target === "cursor") {
+      if (!executable("cursor-agent", env)) {
+        results[target] = { status: "missing-cli" };
+        continue;
+      }
+      results[target] = upsertCursorMcp({
+        home: args.home,
+        nodePath: process.execPath,
+        bridge,
+        replace: args.replaceMcp,
+        dryRun: args.dryRun,
+      });
+      continue;
+    }
     const current = mcpGet(target, env);
     if (current.missingCli) {
       results[target] = { status: "missing-cli" };
@@ -333,6 +402,15 @@ function unregisterMcp(args) {
   const env = { ...process.env, HOME: args.home };
   const results = {};
   for (const target of args.targets) {
+    if (target === "cursor") {
+      results[target] = removeCursorMcp({
+        home: args.home,
+        nodePath: process.execPath,
+        bridge,
+        dryRun: args.dryRun,
+      });
+      continue;
+    }
     const current = mcpGet(target, env);
     if (current.missingCli || !current.present) {
       results[target] = { status: current.missingCli ? "missing-cli" : "absent" };
@@ -355,6 +433,16 @@ function unregisterMcp(args) {
 function launchAgentXml(home) {
   const cli = fileURLToPath(import.meta.url);
   const escaped = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  const servicePath = [...new Set([
+    path.join(home, ".local", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+    ...String(process.env.PATH || "").split(path.delimiter).filter(Boolean),
+  ])].join(path.delimiter);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -363,6 +451,10 @@ function launchAgentXml(home) {
     <string>${escaped(process.execPath)}</string><string>${escaped(cli)}</string><string>serve</string>
     <string>--home</string><string>${escaped(home)}</string>
   </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>${escaped(servicePath)}</string>
+    <key>HOME</key><string>${escaped(home)}</string>
+  </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
 </dict></plist>
@@ -416,6 +508,15 @@ async function doctor(args) {
     checks.push({ name: `file:${path.basename(path.dirname(file))}/${path.basename(file)}`, ok: fs.existsSync(file) });
   }
   checks.push({ name: "token", ok: fs.existsSync(pathsFor(args.home).tokenFile) });
+  const env = serverEnvironment(args.home);
+  for (const [name, definition] of Object.entries(AGENTS)) {
+    const binary = executable(definition.cliBinary, env);
+    checks.push({ name: `cli:${name}`, ok: Boolean(binary), detail: binary });
+  }
+  if (executable(AGENTS.grok.cliBinary, env)) {
+    const model = cursorModelAvailability(env);
+    checks.push({ name: "model:grok", ok: model.available, detail: model.reason || model.model });
+  }
   for (const target of args.targets) {
     const value = mcpGet(target, { ...process.env, HOME: args.home });
     checks.push({ name: `mcp:${target}`, ok: value.present && value.output.includes(pathsFor(args.home).bridge), warning: value.present });
@@ -457,9 +558,14 @@ async function serve(args) {
 
 function openPanel(args) {
   const url = `http://127.0.0.1:3142/${args.sandbox ? "sandbox" : "ui"}`;
+  const tokenFile = pathsFor(args.home).tokenFile;
+  if (!fs.existsSync(tokenFile)) throw new Error(`token da mesh não encontrado: ${tokenFile}`);
+  const token = fs.readFileSync(tokenFile, "utf8").trim();
+  if (!token) throw new Error(`token da mesh vazio: ${tokenFile}`);
+  const bootstrapUrl = `${url}?token=${encodeURIComponent(token)}`;
   if (!args.dryRun) {
     const opener = process.platform === "darwin" ? "open" : "xdg-open";
-    const result = command(opener, [url]);
+    const result = command(opener, [bootstrapUrl]);
     if (result.status !== 0) throw new Error(`não foi possível abrir ${url}`);
   }
   return { ok: true, command: "open", simulation: args.dryRun, url };

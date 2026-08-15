@@ -18,14 +18,15 @@ import { createA2AServer, extractPromptText, extractArtifacts } from '../a2a-sha
 import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
+import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
 
 // ============================================
 // CONFIG
 // ============================================
 
 const PORT = parseInt(process.env.A2A_PORT || '3142', 10);
-const CLAUDE_API_MODEL = process.env.CLAUDE_API_MODEL || process.env.CLAUDE_MODEL || 'claude-opus-4-6';
-const CLAUDE_CLI_MODEL = process.env.CLAUDE_CLI_MODEL || 'default';  // Max plan uses 'default'
+const CLAUDE_API_MODEL = process.env.CLAUDE_API_MODEL || process.env.CLAUDE_MODEL || 'claude-opus-5';
+const CLAUDE_CLI_MODEL = process.env.CLAUDE_CLI_MODEL || 'claude-opus-5';
 const CLAUDE_PERMISSION_MODE = process.env.CLAUDE_PERMISSION_MODE || 'bypassPermissions';
 const CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS = process.env.CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS !== 'false';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -54,13 +55,14 @@ const {
   dispatchTool,
   normalizeToolOutput,
   cliToolWrapper,
+  peerDiscovery,
 } = await createSharedRuntime({
   selfId: SELF_ID,
   authToken: A2A_AUTH_TOKEN,
   maxDepth: A2A_MESH_MAX_DEPTH,
   maxTasks: MAX_TASKS,
   maxConcurrent: MAX_CONCURRENT_TASKS,
-  dataDir: process.env.A2A_CLAUDE_DATA_DIR || './data/',
+  dataDir: process.env.A2A_CLAUDE_DATA_DIR,
 });
 
 // ============================================
@@ -251,8 +253,9 @@ FERRAMENTAS LOCAIS: read_file, shell_exec, search_content, list_directory, direc
 MCPs E SKILLS DISPONÍVEIS: você tem acesso ao mesmo conjunto que o Claude Code interativo (ver ~/.claude/mcp.json e ~/.claude/skills/). Use quando a task pedir ou quando claramente acelera a resposta. Exemplos: firecrawl pra extrair web, playwright pra automação browser, sei/tribunais pra dados jurídicos, perplexity pra pesquisa, qmd/mem0 pra memória persistente, iudex pra workflows do projeto.
 
 AGENTES A2A DISPONÍVEIS:
-- codex: OpenAI Codex (gpt-5.2-codex) — especialista em geração e análise de código, debugging, refactoring
-- gemini: Google Gemini (gemini-3-pro) — forte em raciocínio, análise de dados, pesquisa, explicações detalhadas
+- codex: OpenAI Codex (gpt-5.6-sol, esforço xhigh) — especialista em geração e análise de código, debugging e refactoring
+- gemini: Google Gemini — forte em raciocínio, análise de dados, pesquisa e explicações detalhadas
+- grok: xAI Grok 4.6 High, exclusivamente via Cursor CLI — forte em revisão adversarial e busca de pressupostos frágeis
 
 QUANDO USAR CADA TOOL A2A:
 - a2a_call: Consultar UM agente específico para tarefa direcionada (ex: "codex, refatore esta função")
@@ -285,7 +288,7 @@ REGRAS:
 - NÃO delegue tarefas triviais que você mesmo pode resolver
 
 MESH DASHBOARD:
-- Dashboard web: http://localhost:{PORT}/ui (onde PORT = 3141 codex, 3142 claude, 3143 gemini)
+- Dashboard web: http://localhost:{PORT}/ui (portas: 3141 codex, 3142 claude, 3143 gemini, 3144 grok)
 - Qualquer server serve o mesmo dashboard
 - Features: status dos agents, chat interativo, traces, timeline, stats
 - SSE real-time: eventos de tasks aparecem ao vivo no dashboard
@@ -406,7 +409,8 @@ async function executeClaudeAPIWithTools(task, onChunk, runContext = {}) {
 // CLI FALLBACK
 // ============================================
 
-function executeClaudeCLI(task, onChunk) {
+function executeClaudeCLI(task, onChunk, runContext = {}) {
+  const signal = runContext.signal;
   const currentDepth = task.metadata?.maxDepth ?? A2A_MESH_MAX_DEPTH;
   const toolContext = {
     depth: currentDepth,
@@ -433,7 +437,8 @@ function executeClaudeCLI(task, onChunk) {
   let allText = '';
 
   function runCLIRound(currentPrompt, round) {
-    const cleanEnv = { ...process.env, NO_COLOR: '1' };
+    if (signal?.aborted || task.status?.state === 'canceled') return;
+    const cleanEnv = bridgeEnvironmentForTask(task, SELF_ID, { ...process.env, NO_COLOR: '1' });
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
     // Always remove API key so CLI uses Max subscription auth instead of API credits
@@ -480,6 +485,7 @@ function executeClaudeCLI(task, onChunk) {
 
     child.on('close', async (code) => {
       task.process = null;
+      if (signal?.aborted || task.status?.state === 'canceled') return;
       const rawOutput = stdout.trim() || stderr.trim();
       // Strip CLI bootstrap noise (transport errors, skill conflicts, prompt echo)
       // before treating stdout as the model's answer.
@@ -507,7 +513,7 @@ function executeClaudeCLI(task, onChunk) {
         tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
-        runCLIRound(followUp, round + 1);
+        if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
         return;
       }
 
@@ -525,6 +531,7 @@ function executeClaudeCLI(task, onChunk) {
 
     child.on('error', (err) => {
       task.process = null;
+      if (signal?.aborted || task.status?.state === 'canceled') return;
       const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro ao executar Claude: ${err.message}` }] };
       tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
       if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
@@ -546,12 +553,12 @@ function executeClaudeTask(task, onChunk, runContext = {}) {
       console.error('executeClaudeAPIWithTools error, falling back to CLI:', err.message);
       tm.updateTask(task, { status: { state: 'working' } });
       console.log(`[CLI fallback] Task ${task.id} retrying via Claude CLI`);
-      executeClaudeCLI(task, onChunk);
+      if (!runContext.signal?.aborted) executeClaudeCLI(task, onChunk, runContext);
     });
     return;
   }
   console.log(`[CLI mode] Task ${task.id} using Claude CLI${forceCLI ? ' (forced)' : ''}`);
-  return executeClaudeCLI(task, onChunk);
+  return executeClaudeCLI(task, onChunk, runContext);
 }
 
 // ============================================
@@ -599,6 +606,7 @@ createA2AServer({
   meshCaller,
   meshStore,
   meshBus,
+  peerDiscovery,
   teamExecutor,
   consensusExecutor,
   ensembleExecutor: codeEnsembleExecutor,

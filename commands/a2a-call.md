@@ -1,11 +1,11 @@
 ---
-description: Chama um agente do mesh diretamente (codex|claude|gemini)
-argument-hint: <codex|claude|gemini> <prompt>
+description: Chama um agente do mesh diretamente (codex|claude|gemini|grok)
+argument-hint: <codex|claude|gemini|grok> <prompt>
 entrypoint: workflow-agentes
 profile: a2a_call
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_call`. O primeiro token de `$ARGUMENTS` é o nome do agente (`codex`, `claude` ou `gemini`); o restante é o prompt. Retorne integralmente a resposta do agente.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_call`. O primeiro token de `$ARGUMENTS` é o nome do agente (`codex`, `claude`, `gemini` ou `grok`); o restante é o prompt. Retorne integralmente a resposta do agente. `grok` significa sempre Grok 4.6 High pela rota Cursor.
 
 $ARGUMENTS
 

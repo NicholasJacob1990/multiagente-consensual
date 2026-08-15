@@ -334,10 +334,16 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
         }
       }
 
-      // Fallback: use accumulated text from progress chunks
+      // Partial progress is diagnostic evidence, never a completed response.
+      // Promoting it would let a dropped stream or killed model count as a
+      // valid vote in debate/consensus/ensemble.
       if (lastText) {
-        circuitBreaker.onSuccess(agent);
-        return { response: lastText, retryable: false };
+        if (tripCircuit) circuitBreaker.onFailure(agent);
+        return {
+          error: 'Stream ended without a terminal task status',
+          partial: lastText,
+          retryable: true,
+        };
       }
 
       if (tripCircuit) circuitBreaker.onFailure(agent);

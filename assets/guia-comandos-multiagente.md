@@ -229,8 +229,8 @@ avança quando passa pelos gates configurados.
 | Necessidade | Comece com |
 |---|---|
 | Fazer uma pergunta a um único agente do mesh | `/a2a-call` |
-| Comparar três respostas rápidas | `/a2a-broadcast` |
-| Dar papéis diferentes a Codex, Claude e Gemini | `/a2a-team` |
+| Comparar até quatro respostas rápidas | `/a2a-broadcast` |
+| Dar papéis diferentes a Codex, Claude, Gemini e Grok | `/a2a-team` |
 | Debater um tema sem produzir versões sucessivas | `/a2a-debate` ou `/council` |
 | Conselho multimodelo com crítica adversarial | `/llm-council` |
 | Obter consenso verificável sobre arquivos ou decisão | `/consenso` |
@@ -591,13 +591,15 @@ Exemplos naturais:
 
 ## 4. Comandos A2A Mesh
 
-O A2A Mesh é o caminho mais direto entre Codex, Claude e Gemini.
+O A2A Mesh é o caminho mais direto entre Codex, Claude, Gemini e Grok 4.6 High.
+O Grok é executado exclusivamente pelo Cursor CLI, na porta 3144 e com o modelo
+fixo `cursor-grok-4.6-high`; não há fallback silencioso.
 
 ![Modos do A2A Mesh](diagramas-comandos-multiagente/03-a2a-mesh.png)
 
 ### 4.1 `/a2a-status`
 
-**Serve para:** verificar se os três backends estão ativos antes de um trabalho.
+**Serve para:** verificar quais dos quatro backends estão ativos antes de um trabalho.
 
 ```text
 /a2a-status
@@ -615,31 +617,32 @@ Mostra agente, porta, modelo, modo CLI/API, tarefas ativas e estado `ok` ou
 ```
 
 Fluxo: prompt → agente escolhido → resposta integral. Os nomes aceitos pelo mesh
-são `codex`, `claude` e `gemini`.
+são `codex`, `claude`, `gemini` e `grok`.
 
 **Caso concreto:** você está no Claude, mas quer uma segunda opinião pontual do
 Codex sobre um diff, sem convocar o restante do painel.
 
 ### 4.3 `/a2a-broadcast`
 
-**Serve para:** enviar o mesmo prompt aos três agentes em paralelo.
+**Serve para:** enviar o mesmo prompt aos quatro agentes em paralelo.
 
 ```text
 /a2a-broadcast Identifique a causa mais provável deste deadlock e proponha um teste.
 ```
 
-Fluxo: um prompt → três respostas independentes → apresentação lado a lado. Não
+Fluxo: um prompt → quatro respostas independentes → apresentação lado a lado. Não
 há crítica entre os agentes nem síntese obrigatória.
 
 **Caso concreto:** levantar rapidamente três hipóteses antes de iniciar uma
-investigação de código.
+investigação de código. Agentes podem ser selecionados caso a caso.
 
 ### 4.4 `/a2a-team`
 
 **Serve para:** formar uma equipe com papéis complementares.
 
 ```text
-/a2a-team codex=testador, claude=arquiteto, gemini=pesquisador. Planejem a
+/a2a-team codex=testador, claude=arquiteto, gemini=pesquisador, grok=oponente.
+Planejem a
 migração do banco e consolidem um plano executável.
 ```
 
@@ -647,11 +650,11 @@ Se você não definir os papéis, a ferramenta os escolhe conforme o objetivo. O
 resultado é consolidado, mas não deve ser tratado como consenso auditado.
 
 **Caso concreto:** Claude desenha a arquitetura, Codex cobre implementação e
-testes, e Gemini pesquisa compatibilidade.
+testes, Gemini pesquisa compatibilidade e Grok procura pressupostos frágeis.
 
 ### 4.5 `/a2a-debate`
 
-**Serve para:** realizar um debate em múltiplas interações entre os três agentes.
+**Serve para:** realizar um debate em múltiplas interações entre os agentes selecionados.
 
 ```text
 /a2a-debate Monólito modular ou microsserviços para uma equipe de cinco pessoas?
@@ -662,7 +665,7 @@ argumentos; não mantém versões de um documento nem aplica meta, piso ou audit
 
 ### 4.6 `/a2a-consensus`
 
-**Serve para:** pedir um veredito conjunto rápido aos três agentes do mesh.
+**Serve para:** pedir um veredito conjunto rápido aos agentes selecionados do mesh.
 
 ```text
 /a2a-consensus Qual estratégia de cache atende melhor estes requisitos?
@@ -670,11 +673,13 @@ argumentos; não mantém versões de um documento nem aplica meta, piso ou audit
 
 Entrega veredito e divergências por agente. Use `/consenso` quando precisar de
 hash do artefato, rodadas configuráveis, estabilidade, arquivos manifestados ou
-dissenso formal ponto a ponto.
+dissenso formal ponto a ponto. Por padrão, o A2A exige maioria estrita de
+respostas válidas; o quórum pode ser configurado explicitamente.
 
 ### 4.7 `/a2a-ensemble`
 
-**Serve para:** gerar código com Codex, Claude e Gemini e fazer um juiz consolidar
+**Serve para:** gerar código com um conjunto configurável de Codex, Claude,
+Gemini e Grok e fazer um juiz consolidar
 as propostas.
 
 ```text
@@ -682,7 +687,7 @@ as propostas.
 revisão e use Gemini como juiz.
 ```
 
-Aceita de 1 a 5 rodadas de revisão; Claude é o juiz padrão quando você não
+Aceita até 12 ciclos de revisão; Claude é o juiz padrão quando você não
 escolhe outro. O merge é uma síntese de código, não consenso auditado.
 
 Use o perfil `ensemble_nxn_v1` de `/loop-debate-agentes` se precisar de número
@@ -2090,8 +2095,8 @@ sigilosos em prompts enviados a provedores não autorizados.
 | # | Comando | Resultado principal |
 |---:|---|---|
 | 1 | `/a2a-call` | Resposta de um agente do mesh |
-| 2 | `/a2a-broadcast` | Três respostas paralelas |
-| 3 | `/a2a-team` | Equipe de três agentes com papéis |
+| 2 | `/a2a-broadcast` | Até quatro respostas paralelas |
+| 3 | `/a2a-team` | Equipe configurável de agentes com papéis |
 | 4 | `/a2a-consensus` | Veredito rápido e divergências |
 | 5 | `/a2a-debate` | Transcript de debate e síntese |
 | 6 | `/a2a-ensemble` | Código consolidado por juiz |

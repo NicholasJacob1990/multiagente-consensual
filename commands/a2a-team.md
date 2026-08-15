@@ -1,11 +1,11 @@
 ---
-description: Monta equipe com papéis distintos entre codex/claude/gemini
+description: Monta equipe com papéis distintos entre codex/claude/gemini/grok
 argument-hint: <objetivo da equipe>
 entrypoint: workflow-agentes
 profile: a2a_team
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_team` com o objetivo abaixo. Deixe a tool decidir os papéis a menos que `$ARGUMENTS` já contenha designações explícitas (ex.: "codex=tester, claude=arquiteto, gemini=pesquisador"). Retorne o output final consolidado.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_team` com o objetivo abaixo. Deixe a tool decidir os papéis a menos que `$ARGUMENTS` já contenha designações explícitas (ex.: "codex=tester, claude=arquiteto, gemini=pesquisador, grok=oponente"). Retorne o output final consolidado.
 
 $ARGUMENTS
 

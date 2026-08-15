@@ -7,7 +7,7 @@
  * a2a_call, a2a_broadcast, a2a_team
  *
  * Independente de qualquer agente. Chama os peers diretamente via HTTP.
- * Configurado uma vez em cada CLI (Claude Code, Codex CLI, Gemini CLI).
+ * Configurado nas CLIs elegíveis (Claude Code, Codex CLI e Cursor CLI).
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -20,6 +20,8 @@ import http from 'http';
 import { loadPeerRegistry } from './peer-registry.js';
 import { checkAgentHealth, ensureAgentOnline } from './agent-supervisor.js';
 import { loadA2AAuthToken } from './auth-token.js';
+import { AGENT_IDS } from './agent-catalog.js';
+import { consensusBridgeParams, ensembleBridgeParams } from './bridge-params.js';
 
 // ============================================
 // CONFIG
@@ -31,6 +33,22 @@ function getAllPeers() {
 
 const INITIAL_PEERS = getAllPeers();
 const A2A_AUTH_TOKEN = loadA2AAuthToken();
+
+function bridgeContext() {
+  const parsedDepth = Number.parseInt(process.env.A2A_MESH_BRIDGE_REMAINING_DEPTH || '7', 10);
+  let meshChain = [];
+  try {
+    const parsed = JSON.parse(process.env.A2A_MESH_BRIDGE_CHAIN || '[]');
+    if (Array.isArray(parsed)) meshChain = parsed.filter((item) => typeof item === 'string' && item);
+  } catch {
+    meshChain = [];
+  }
+  return {
+    depth: Number.isFinite(parsedDepth) ? Math.max(0, parsedDepth) : 7,
+    meshChain,
+    calledBy: process.env.A2A_MESH_BRIDGE_CALLER || 'mcp-bridge',
+  };
+}
 
 // ============================================
 // HTTP CLIENT
@@ -70,6 +88,11 @@ function peerRequest(baseUrl, path, body) {
 }
 
 async function sendToAgent(agentId, prompt) {
+  const context = bridgeContext();
+  if (context.depth <= 0) return `Error: max mesh depth exceeded (chain: ${context.meshChain.join(' → ')})`;
+  if (context.meshChain.includes(agentId)) {
+    return `Error: mesh cycle refused (${[...context.meshChain, agentId].join(' → ')})`;
+  }
   const ALL_PEERS = getAllPeers();
   const url = ALL_PEERS[agentId];
   if (!url) return `Unknown agent: ${agentId}. Available: ${Object.keys(ALL_PEERS).join(', ')}`;
@@ -77,6 +100,11 @@ async function sendToAgent(agentId, prompt) {
     await ensureAgentOnline(agentId, url);
     const r = await peerRequest(url, '/tasks/send', {
       message: { role: 'user', parts: [{ type: 'text', text: prompt }] },
+      metadata: {
+        maxDepth: context.depth,
+        meshChain: context.meshChain,
+        calledBy: context.calledBy,
+      },
     });
     const task = r.result || r;
     return task.status?.message?.parts?.map(p => p.text).join('\n') || 'No response';
@@ -102,7 +130,7 @@ async function checkPeer(agentId, autoStart = false) {
 async function getCoordinator() {
   const peers = getAllPeers();
   const errors = [];
-  for (const agentId of ['claude', 'codex', 'gemini']) {
+  for (const agentId of AGENT_IDS) {
     const url = peers[agentId];
     if (!url) continue;
     try {
@@ -120,7 +148,7 @@ async function getCoordinator() {
 // ============================================
 
 const mcpServer = new Server(
-  { name: 'a2a-mesh', version: '1.0.0' },
+  { name: 'a2a-mesh', version: '1.1.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -190,6 +218,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           prompt: { type: 'string', description: 'Question or task to get consensus on' },
           agents: { type: 'array', items: { type: 'string' }, description: `Agent IDs to consult (default: all). Options: ${peerNames}` },
           judge: { type: 'string', description: `Agent to act as judge/synthesizer (default: claude). Options: ${peerNames}` },
+          quorum: { type: 'number', description: 'Minimum valid independent responses. Default: strict majority of participants.' },
         },
         required: ['prompt'],
       },
@@ -217,6 +246,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           task: { type: 'string', description: 'Coding task description' },
           language: { type: 'string', description: 'Programming language (default: python)' },
           rounds: { type: 'number', description: 'Review+revise cycles (default: 1, recommended max: 6, exceptional max: 12)' },
+          agents: { type: 'array', items: { type: 'string' }, description: `Exact participant set (default: all). Options: ${peerNames}` },
           judge: { type: 'string', description: `Judge agent (default: claude). Options: ${peerNames}` },
         },
         required: ['task'],
@@ -327,12 +357,9 @@ async function handleTeam(args) {
 }
 
 async function handleConsensus(args) {
+  const context = bridgeContext();
   const serverUrl = await getCoordinator();
-  const result = await peerRequest(serverUrl, '/mesh/consensus', {
-    prompt: args.prompt,
-    agents: args.agents,
-    judge: args.judge,
-  });
+  const result = await peerRequest(serverUrl, '/mesh/consensus', consensusBridgeParams(args, context));
 
   // Format the result
   const r = result.result || result;
@@ -365,6 +392,7 @@ async function handleConsensus(args) {
 }
 
 async function handleDebate(args) {
+  const context = bridgeContext();
   const serverUrl = await getCoordinator();
   const result = await peerRequest(serverUrl, '/rpc', {
     jsonrpc: '2.0', id: `debate-${Date.now()}`,
@@ -374,6 +402,8 @@ async function handleDebate(args) {
       rounds: Math.min(args.rounds || 4, 36),
       agents: args.agents,
       judge: args.judge,
+      depth: context.depth,
+      meshChain: context.meshChain,
     },
   });
 
@@ -407,16 +437,12 @@ async function handleDebate(args) {
 }
 
 async function handleEnsemble(args) {
+  const context = bridgeContext();
   const serverUrl = await getCoordinator();
   const result = await peerRequest(serverUrl, '/rpc', {
     jsonrpc: '2.0', id: `ensemble-${Date.now()}`,
     method: 'mesh/ensemble',
-    params: {
-      task: args.task,
-      language: args.language || 'python',
-      rounds: Math.min(args.rounds || 1, 12),
-      judge: args.judge,
-    },
+    params: ensembleBridgeParams(args, context),
   });
 
   if (result.error) {

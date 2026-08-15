@@ -54,7 +54,7 @@ function appendSelfToMeshChain(meshChain, selfId) {
  * @param {Object} [config.meshStore] - MeshStore (optional)
  * @param {Object} [config.meshBus] - MeshEventBus (optional)
  */
-export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '' }) {
+export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '', peerDiscovery = null, selfResponder = null }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
   const DEFAULT_CONSENSUS_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_CONSENSUS_MS, 2400000); // 40 min
   const MAX_SELF_CALL_DEPTH = normalizePositiveInt(process.env.A2A_MAX_SELF_CALL_DEPTH, 3);
@@ -69,7 +69,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
    * @returns {Object} Consensus result
    */
   async function execute(params, callContext = {}) {
-    const { prompt: rawPrompt, agents: requestedAgents, judge = 'claude', timeout_ms } = params;
+    const { prompt: rawPrompt, agents: requestedAgents, judge = 'claude', timeout_ms, quorum: requestedQuorum } = params;
     if (!rawPrompt) throw new Error('prompt is required');
     const timeoutMs = normalizeTimeoutMs(timeout_ms, DEFAULT_CONSENSUS_TIMEOUT_MS);
     const parentChain = normalizeMeshChain(callContext.meshChain);
@@ -79,8 +79,25 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
     const threadId = resolveThreadId(params, callContext, `consensus-${consensusId}`);
     const { prompt } = enrichPromptIfContinuation(rawPrompt, { meshChain: parentChain, threadId }, meshStore);
 
-    const agents = (requestedAgents || Object.keys(peers)).filter(a => peers[a]);
-    if (agents.length === 0) throw new Error('No valid agents specified');
+    const hasExplicitAgents = Array.isArray(requestedAgents) && requestedAgents.length > 0;
+    const invalidAgents = hasExplicitAgents
+      ? [...new Set(requestedAgents)].filter((agent) => agent !== selfId && !peers[agent])
+      : [];
+    if (invalidAgents.length > 0) throw new Error(`Unknown consensus agents: ${invalidAgents.join(', ')}`);
+    let defaultPeerIds = Object.keys(peers);
+    if (!hasExplicitAgents && peerDiscovery) {
+      await peerDiscovery.checkAllHealth();
+      defaultPeerIds = Object.keys(peerDiscovery.getOnlinePeers());
+      if (defaultPeerIds.length === 0) throw new Error('No online peer agents available for consensus');
+    }
+    const requested = hasExplicitAgents ? requestedAgents : [...defaultPeerIds, selfId];
+    const allParticipants = [...new Set(requested)]
+      .filter((agent) => agent === selfId || Boolean(peers[agent]));
+    if (allParticipants.length === 0) throw new Error('No valid agents specified');
+    const agents = allParticipants.filter((agent) => agent !== selfId);
+    const includeSelf = allParticipants.includes(selfId);
+    const defaultQuorum = Math.floor(allParticipants.length / 2) + 1;
+    const quorum = Math.min(allParticipants.length, normalizePositiveInt(requestedQuorum, defaultQuorum));
 
     const context = {
       // Consensus should be single-hop: participants/judge answer directly,
@@ -103,18 +120,19 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
     };
 
     // Phase 1: Broadcast to all peers AND generate self response in parallel
-    const allParticipants = [...agents, selfId];
     emitDialogue('collect', '*', 'system', `Fase COLLECT — consultando ${allParticipants.length} agentes (${allParticipants.join(', ')})`, { agents: allParticipants });
     const startTime = Date.now();
 
     // Run peer broadcast + self response in parallel
     const [peerResults, selfResponse] = await Promise.all([
       collectResponses(agents, prompt, context, timeoutMs),
-      generateSelfResponse(prompt, context, timeoutMs),
+      includeSelf
+        ? (selfResponder ? selfResponder(prompt, context, timeoutMs) : generateSelfResponse(prompt, context, timeoutMs))
+        : Promise.resolve(null),
     ]);
 
     // Combine: peers + self
-    const rawResults = [...peerResults, selfResponse];
+    const rawResults = [...peerResults, ...(selfResponse ? [selfResponse] : [])];
     const collectDurationMs = Date.now() - startTime;
 
     // Emit each agent's response
@@ -126,6 +144,28 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       }
     }
     emitDialogue('collect', '*', 'system', `Fase COLLECT concluída (${collectDurationMs}ms)`, { durationMs: collectDurationMs });
+
+    const validResponseCount = rawResults.filter((item) => !item.error && item.response && !isMeshErrorText(item.response)).length;
+    if (validResponseCount < quorum) {
+      const synthesis = {
+        answer: `Consenso não realizado: quórum insuficiente (${validResponseCount}/${quorum}; participantes=${allParticipants.length}).`,
+        confidence: 0,
+        dissent: 'Não houve respostas independentes suficientes para deliberar.',
+        agentAgreement: Object.fromEntries(rawResults.map((item) => [item.agent, item.error ? 'error' : 'unavailable'])),
+      };
+      emitDialogue('quorum', '*', 'error', synthesis.answer, { quorum, validResponseCount });
+      return {
+        consensusId,
+        prompt,
+        agents: allParticipants,
+        judge: null,
+        responses: rawResults,
+        synthesis,
+        approved: false,
+        quorum: { required: quorum, valid: validResponseCount, met: false },
+        timing: { collectDurationMs, judgeDurationMs: 0, totalMs: Date.now() - startTime },
+      };
+    }
 
     // Phase 2: Send to a PEER judge for real synthesis (not self-judge)
     // Pick a peer as judge to avoid self-judging bias
@@ -175,6 +215,8 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       judge: actualJudge || selfId,
       responses: rawResults,
       synthesis,
+      approved: synthesis.confidence > 0 && !isMeshErrorText(synthesis.answer),
+      quorum: { required: quorum, valid: validResponseCount, met: true },
       timing: { collectDurationMs, judgeDurationMs, totalMs: Date.now() - startTime },
     };
 
@@ -423,6 +465,7 @@ Be thorough but concise. The confidence score (0.0-1.0) should reflect how much 
       `**Prompt**: ${result.prompt}`,
       `**Agents**: ${result.agents.join(', ')}`,
       `**Judge**: ${result.judge}`,
+      `**Quorum**: ${result.quorum?.valid ?? '-'} / ${result.quorum?.required ?? '-'} (${result.quorum?.met === false ? 'not met' : 'met'})`,
       `**Confidence**: ${(result.synthesis.confidence * 100).toFixed(0)}%`,
       '',
       `### Synthesized Answer`,

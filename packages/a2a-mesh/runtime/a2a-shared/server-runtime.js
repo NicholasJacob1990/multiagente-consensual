@@ -82,7 +82,7 @@ export async function createSharedRuntime({
   maxDepth = 7,
   maxTasks = 200,
   maxConcurrent = 15,
-  dataDir = './data/',
+  dataDir = null,
 }) {
   const peers = loadPeerRegistry({ selfId });
   const selfUrl = resolveSelfUrl({ selfId, peers });
@@ -156,6 +156,7 @@ export async function createSharedRuntime({
       meshBus,
       authToken,
       selfUrl,
+      peerDiscovery,
     });
   }
 
@@ -169,6 +170,7 @@ export async function createSharedRuntime({
       meshBus,
       authToken,
       selfUrl,
+      peerDiscovery,
     });
   }
 

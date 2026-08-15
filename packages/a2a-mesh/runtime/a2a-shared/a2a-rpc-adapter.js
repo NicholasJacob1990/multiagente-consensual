@@ -30,6 +30,12 @@ export function createRPCAdapter(ctx) {
     maxDepth, selfId, peers, push, authToken = '',
   } = ctx;
 
+  function clampDepth(value) {
+    const parsed = Number.parseInt(String(value ?? maxDepth), 10);
+    if (!Number.isFinite(parsed)) return maxDepth;
+    return Math.max(0, Math.min(maxDepth, parsed));
+  }
+
   function ensureTaskAbortController(task) {
     if (task._abortController) return task._abortController;
     Object.defineProperty(task, '_abortController', {
@@ -242,7 +248,7 @@ export function createRPCAdapter(ctx) {
   // Mesh handlers
   async function handleMeshCall(params) {
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
@@ -252,7 +258,7 @@ export function createRPCAdapter(ctx) {
 
   async function handleMeshBroadcast(params) {
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
@@ -264,7 +270,7 @@ export function createRPCAdapter(ctx) {
   async function handleMeshTeam(params) {
     if (!teamExecutor) throw rpcError(-32601, 'Team executor not available');
     const mctx = {
-      depth: params.depth ?? maxDepth, meshChain: params.meshChain || [],
+      depth: clampDepth(params.depth), meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
       selfId, peers, meshBus, authToken,
@@ -282,7 +288,7 @@ export function createRPCAdapter(ctx) {
   async function handleMeshConsensus(params) {
     if (!consensusExecutor) throw rpcError(-32601, 'Consensus executor not available');
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
@@ -293,7 +299,7 @@ export function createRPCAdapter(ctx) {
   async function handleMeshEnsemble(params) {
     if (!ensembleExecutor) throw rpcError(-32601, 'Code ensemble executor not available');
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
@@ -304,7 +310,7 @@ export function createRPCAdapter(ctx) {
   async function handleMeshDebate(params) {
     if (!debateExecutor) throw rpcError(-32601, 'Debate executor not available');
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
@@ -315,7 +321,7 @@ export function createRPCAdapter(ctx) {
   async function handleMeshPlan(params) {
     if (!planExecutor) throw rpcError(-32601, 'Plan executor not available');
     const mctx = {
-      depth: params.depth ?? maxDepth,
+      depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,

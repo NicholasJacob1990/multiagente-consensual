@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const MARKETPLACE_NAME = "multiagente-npm";
 export const PLUGIN_NAME = "multiagente-consensual";
-export const A2A_PACKAGE = "@nicholasjacob90/a2a-mesh@1.0.1";
+export const A2A_PACKAGE = "@nicholasjacob90/a2a-mesh@1.1.0";
 export const ALL_TARGETS = Object.freeze([
   "codex",
   "claude",
@@ -503,7 +503,7 @@ function installA2a(context, args, targets) {
   );
   const cli = a2aCliPath(args.home);
   if (!context.dryRun && !fs.existsSync(cli)) throw new Error(`CLI A2A não foi instalada em ${cli}`);
-  const mcpTargets = targets.filter((target) => ["codex", "claude"].includes(target));
+  const mcpTargets = targets.filter((target) => ["codex", "claude", "cursor"].includes(target));
   const argv = [cli, "install", "--home", args.home, "--json"];
   if (mcpTargets.length) argv.push("--targets", mcpTargets.join(","));
   else argv.push("--targets", "");

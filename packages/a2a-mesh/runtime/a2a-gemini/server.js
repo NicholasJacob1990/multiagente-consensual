@@ -27,6 +27,7 @@ import { createA2AServer, extractPromptText, extractArtifacts } from '../a2a-sha
 import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
+import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -108,13 +109,14 @@ const {
   dispatchTool,
   normalizeToolOutput,
   cliToolWrapper,
+  peerDiscovery,
 } = await createSharedRuntime({
   selfId: SELF_ID,
   authToken: A2A_AUTH_TOKEN,
   maxDepth: A2A_MESH_MAX_DEPTH,
   maxTasks: MAX_TASKS,
   maxConcurrent: MAX_CONCURRENT_TASKS,
-  dataDir: process.env.A2A_GEMINI_DATA_DIR || './data/',
+  dataDir: process.env.A2A_GEMINI_DATA_DIR,
 });
 
 // ============================================
@@ -495,7 +497,8 @@ MCPs E SKILLS: você tem acesso a MCPs e skills configuradas no seu ambiente (ge
 
 AGENTES A2A DISPONÍVEIS:
 - claude: Anthropic Claude (Opus) — forte em síntese, análise complexa, escrita, raciocínio avançado
-- codex: OpenAI Codex (gpt-5.2-codex) — especialista em geração e análise de código, debugging, refactoring
+- codex: OpenAI Codex (gpt-5.6-sol, esforço xhigh) — especialista em geração e análise de código, debugging, refactoring
+- grok: xAI Grok 4.6 High, exclusivamente via Cursor CLI — forte em revisão adversarial e identificação de pressupostos frágeis
 
 QUANDO USAR CADA TOOL A2A:
 - a2a_call: Consultar UM agente específico para tarefa direcionada (ex: "codex, refatore esta função")
@@ -519,7 +522,7 @@ REGRAS:
 - NÃO delegue tarefas triviais
 
 MESH DASHBOARD:
-- Dashboard web: http://localhost:{PORT}/ui (onde PORT = 3141 codex, 3142 claude, 3143 gemini)
+- Dashboard web: http://localhost:{PORT}/ui (portas: 3141 codex, 3142 claude, 3143 gemini, 3144 grok)
 - Qualquer server serve o mesmo dashboard
 - Features: status dos agents, chat interativo, traces, timeline, stats
 - SSE real-time: eventos de tasks aparecem ao vivo no dashboard
@@ -684,7 +687,8 @@ async function executeGeminiAPIWithTools(task, onChunk, runContext = {}) {
 // CLI FALLBACK
 // ============================================
 
-function executeGeminiCLI(task, onChunk, modelOverride) {
+function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
+  const signal = runContext.signal;
   const useModel = modelOverride || GEMINI_MODEL;
   const currentDepth = task.metadata?.maxDepth ?? A2A_MESH_MAX_DEPTH;
   const toolContext = {
@@ -712,6 +716,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
   let allText = '';
 
   function runCLIRound(currentPrompt, round) {
+    if (signal?.aborted || task.status?.state === 'canceled') return;
     const effectiveCliModel = USE_ANTIGRAVITY_CLI
       ? (useModel === GEMINI_FALLBACK_MODEL ? ANTIGRAVITY_FALLBACK_MODEL : ANTIGRAVITY_MODEL)
       : useModel;
@@ -728,7 +733,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
     const baseEnv = LOGIN_SHELL_ENV
       ? { ...LOGIN_SHELL_ENV, ...process.env }
       : process.env;
-    const cliEnv = { ...baseEnv, A2A_SUPPRESS_HOOKS: '1' };
+    const cliEnv = bridgeEnvironmentForTask(task, SELF_ID, { ...baseEnv, A2A_SUPPRESS_HOOKS: '1' });
     const geminiPermissionArgs = GEMINI_YOLO
       ? ['--yolo']
       : ['--approval-mode', GEMINI_APPROVAL_MODE];
@@ -824,6 +829,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
 
     child.on('close', async (code) => {
       task.process = null;
+      if (signal?.aborted || task.status?.state === 'canceled') return;
       // Gemini CLI -o json wraps response in { session_id, response, stats }.
       // Hooks/skills/warnings polluem stdout antes do JSON; extraímos só o objeto JSON e seu response.
       let output = stdout.trim();
@@ -894,7 +900,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
       if ((isQuotaError || isModelNotFound) && useModel !== GEMINI_FALLBACK_MODEL) {
         const trigger = capacityErrorDetected ? 'early-kill' : 'post-close';
         console.log(`[CLI fallback] Model ${useModel} ${isModelNotFound ? 'not found' : 'exhausted'} (${trigger}), retrying with ${GEMINI_FALLBACK_MODEL}`);
-        executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL);
+        executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL, runContext);
         return;
       }
 
@@ -911,7 +917,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
         const looksLikeError = output.includes('critical error') || output.includes('RetryableQuotaError') || output.includes('RESOURCE_EXHAUSTED') || output.includes('ModelNotFoundError');
         if (looksLikeError && useModel !== GEMINI_FALLBACK_MODEL) {
           console.log(`[CLI fallback] Output looks like error, retrying with ${GEMINI_FALLBACK_MODEL}`);
-          executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL);
+          executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL, runContext);
           return;
         }
         if (looksLikeError) {
@@ -937,7 +943,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
         tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
-        runCLIRound(followUp, round + 1);
+        if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
         return;
       }
 
@@ -955,6 +961,7 @@ function executeGeminiCLI(task, onChunk, modelOverride) {
 
     child.on('error', (err) => {
       task.process = null;
+      if (signal?.aborted || task.status?.state === 'canceled') return;
       const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro ao executar Gemini: ${err.message}` }] };
       tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
       if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
@@ -1486,7 +1493,7 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
       if (USE_CLI) {
         tm.updateTask(task, { status: { state: 'working' } });
         console.log(`[CLI fallback] Task ${task.id} retrying via Gemini CLI (model: ${GEMINI_CLI_MODEL})`);
-        executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL);
+        if (!runContext.signal?.aborted) executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL, runContext);
       } else {
         const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro API Gemini: ${err.message}` }] };
         tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
@@ -1496,7 +1503,7 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
     return;
   }
   // CLI-only mode (USE_CLI=force)
-  return executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL);
+  return executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL, runContext);
 }
 
 // ============================================
@@ -1546,6 +1553,7 @@ createA2AServer({
   meshCaller,
   meshStore,
   meshBus,
+  peerDiscovery,
   teamExecutor,
   consensusExecutor,
   ensembleExecutor: codeEnsembleExecutor,
