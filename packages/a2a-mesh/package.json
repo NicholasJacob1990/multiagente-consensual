@@ -1,0 +1,46 @@
+{
+  "name": "@nicholasjacob90/a2a-mesh",
+  "version": "1.0.1",
+  "description": "Servidor A2A local, bridge MCP e painel web para Codex, Claude e Gemini.",
+  "type": "module",
+  "bin": {
+    "a2a-mesh": "npm/cli.mjs",
+    "a2a-mesh-mcp": "runtime/a2a-shared/mesh-bridge-mcp.js"
+  },
+  "files": [
+    "npm/",
+    "runtime/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "prepack": "npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "better-sqlite3": "^13.0.2",
+    "dotenv": "^17.4.2",
+    "node-pty": "^1.1.0"
+  },
+  "keywords": [
+    "a2a",
+    "mcp",
+    "multi-agent",
+    "codex",
+    "claude",
+    "gemini",
+    "dashboard"
+  ],
+  "author": "Nicholas Jacob",
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public"
+  }
+}

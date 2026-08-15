@@ -46,3 +46,23 @@ test("dry-run isolado não cria arquivos", async () => {
   assert.equal(fs.existsSync(installRoot), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("--with-a2a planeja o pacote complementar sem escrever no dry-run", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-a2a-test-"));
+  const home = path.join(root, "home");
+  const installRoot = path.join(root, "marketplace");
+  const { spawnSync } = await import("node:child_process");
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "cli.mjs");
+  const result = spawnSync(
+    process.execPath,
+    [cli, "install", "--all", "--with-a2a", "--dry-run", "--json", "--home", home, "--install-root", installRoot, "--skip-registries", "--skip-bridge"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.a2a.status, "installed");
+  assert.equal(report.a2a.package, "@nicholasjacob90/a2a-mesh@1.0.1");
+  assert.ok(report.actions.some((action) => action.binary.endsWith("npm") && action.argv.includes("@nicholasjacob90/a2a-mesh@1.0.1")));
+  assert.equal(fs.existsSync(home), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});

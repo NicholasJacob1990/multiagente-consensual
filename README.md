@@ -15,6 +15,12 @@ instalação completa usa:
 npx @nicholasjacob90/multiagente-consensual install --all
 ```
 
+Para incluir também o runtime A2A local, o bridge MCP e o painel web:
+
+```bash
+npx @nicholasjacob90/multiagente-consensual install --all --with-a2a
+```
+
 Também é possível instalar ou reparar uma única superfície:
 
 ```bash
@@ -31,6 +37,33 @@ O `npx` copia o payload para uma raiz estável em
 Claude Code, sincroniza apenas as superfícies selecionadas, instala o bridge sem copiar credenciais
 e gera `cowork/multiagente-consensual.plugin`. O Cowork continua exigindo upload manual desse
 arquivo, pois o aplicativo hospedado não aceita instalação silenciosa pela CLI.
+
+## Servidor A2A e painel local
+
+`--with-a2a` instala o pacote complementar `@nicholasjacob90/a2a-mesh`, registra o MCP `a2a-mesh`
+no Codex e no Claude Code quando essas CLIs forem selecionadas e inicia três servidores vinculados
+somente a `127.0.0.1`:
+
+| Agente | Porta |
+|---|---:|
+| Codex | 3141 |
+| Claude | 3142 |
+| Gemini/Antigravity | 3143 |
+
+O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
+`http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
+chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento.
+
+```bash
+a2a-mesh status
+a2a-mesh doctor
+a2a-mesh open
+a2a-mesh open --sandbox
+```
+
+Use `--launchd` junto de `--with-a2a` para iniciar o mesh no login do macOS. Uma configuração MCP
+preexistente com o mesmo nome é preservada; `--replace-a2a-mcp` autoriza expressamente sua troca.
+O pacote não contém `.env`, chaves, cookies, sessões, bancos nem históricos da máquina de origem.
 
 Diagnóstico e atualização:
 

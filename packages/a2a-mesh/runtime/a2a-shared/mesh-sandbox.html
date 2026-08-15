@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent CLI Sandbox [v2026-05-09-unwrap]</title>
+<style>
+  * { box-sizing: border-box; }
+  * {
+    scrollbar-color: #374151 #030712;
+    scrollbar-width: thin;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #030712; }
+  ::-webkit-scrollbar-thumb { background: #374151; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+  html {
+    height: 100dvh;
+    background: #030712;
+  }
+  body {
+    margin: 0;
+    height: 100dvh;
+    min-height: 100dvh;
+    background: #030712;
+    color: #d1d5db;
+    font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+    overflow: hidden;
+  }
+  header {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid #161b22;
+    background: #080c14;
+    flex-shrink: 0;
+  }
+  h1 { margin: 0; font-size: 0.85rem; color: #a78bfa; }
+  .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  a, button {
+    font: inherit;
+    font-size: 0.75rem;
+    color: #c9d1d9;
+  }
+  a { text-decoration: none; color: #818cf8; }
+  button {
+    border: 1px solid #30363d;
+    background: #161b22;
+    border-radius: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  button:hover { background: #1f2937; }
+  button.danger { color: #fca5a5; border-color: #7f1d1d; }
+  button.primary { color: #fff; background: #4f46e5; border-color: #6366f1; }
+  .mode-runner {
+    height: 86px;
+    min-height: 86px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #161b22;
+    background: #0d1117;
+  }
+  .mode-runner textarea {
+    min-height: 68px;
+    max-height: 68px;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    background: #020617;
+    resize: none;
+    overflow-y: auto;
+  }
+  .mode-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(92px, 1fr));
+    gap: 6px;
+    min-width: 196px;
+  }
+  .mode-actions button { min-height: 0; }
+  main {
+    height: calc(100dvh - 124px);
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    background: #161b22;
+  }
+  .pane {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #030712;
+    overflow: hidden;
+  }
+  .pane-header {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 10px;
+    border-bottom: 1px solid #161b22;
+    background: #0d1117;
+    flex-shrink: 0;
+  }
+  .agent { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; font-weight: 700; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #4b5563; }
+  .pane.running .dot { background: #22c55e; box-shadow: 0 0 8px #22c55e80; }
+  .pane.exited .dot { background: #f87171; }
+  .pane-actions { display: flex; align-items: center; gap: 5px; }
+  .terminal {
+    flex: 1 1 0;
+    min-height: 220px;
+    overflow: auto;
+    padding: 10px;
+    background: #020617;
+    color: #d1d5db;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
+  .terminal:empty::before {
+    content: "Clique Start para abrir a CLI original deste agente.";
+    color: #4b5563;
+  }
+  .input-row {
+    display: flex;
+    min-height: 56px;
+    border-top: 1px solid #161b22;
+    background: #0d1117;
+    flex-shrink: 0;
+  }
+  textarea {
+    flex: 1;
+    min-width: 0;
+    min-height: 56px;
+    max-height: 96px;
+    resize: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #e5e7eb;
+    padding: 10px;
+    font: inherit;
+    font-size: 0.76rem;
+    line-height: 1.35;
+    overflow-y: auto;
+  }
+  .send {
+    align-self: stretch;
+    border-radius: 0;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .timeline-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 12px;
+    background: #07090f;
+    border-bottom: 1px solid #161b22;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+  }
+  .timeline-label {
+    color: #6b7280;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .timeline-events {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+  }
+  .timeline-event {
+    font-size: 0.65rem;
+    color: #9ca3af;
+    padding: 2px 8px;
+    border: 1px solid #1f2937;
+    border-radius: 999px;
+    background: #0d1117;
+    flex-shrink: 0;
+  }
+  .timeline-event.error { color: #fca5a5; border-color: #7f1d1d; }
+  .timeline-event.complete { color: #86efac; border-color: #14532d; }
+  .timeline-event.call { color: #93c5fd; border-color: #1e3a8a; }
+  /* Cards in panes for non-text mesh events (a2a_call etc.) */
+  .mesh-card {
+    display: inline-block;
+    margin: 4px 0;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #0d1117;
+    border: 1px solid #1f2937;
+    color: #9ca3af;
+    font-size: 0.7rem;
+  }
+  .mesh-card.error { color: #fca5a5; border-color: #7f1d1d; }
+  .mesh-card.complete { color: #86efac; border-color: #14532d; }
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    main { height: auto; min-height: calc(100dvh - 124px); grid-template-columns: 1fr; overflow-y: auto; }
+    .pane { min-height: 70dvh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent CLI Sandbox</h1>
+  <div class="header-actions">
+    <button class="primary" onclick="startAll()">Start all</button>
+    <button class="danger" onclick="killAll()">Kill all</button>
+    <a href="/ui">Voltar ao Mesh</a>
+  </div>
+</header>
+<section class="mode-runner">
+  <textarea id="mode-prompt" placeholder="Prompt para rodar no mesh. Ex.: analise este plano criticamente..."></textarea>
+  <div class="mode-actions">
+    <button class="primary" onclick="runMeshMode('debate')">Debate</button>
+    <button class="primary" onclick="runMeshMode('ensemble')">Ensemble</button>
+    <button onclick="runMeshMode('consensus')">Consensus</button>
+    <button onclick="runMeshMode('broadcast')">Broadcast</button>
+    <button onclick="runMeshMode('plan')">Plan</button>
+    <button onclick="clearMeshTrace()">Clear trace</button>
+  </div>
+</section>
+<section class="timeline-bar" id="timeline-bar" aria-label="Mesh status timeline">
+  <span class="timeline-label">timeline:</span>
+  <div class="timeline-events" id="timeline-events"></div>
+</section>
+<main>
+  <section class="pane" data-agent="claude">
+    <div class="pane-header">
+      <div class="agent"><span class="dot"></span>Claude CLI</div>
+      <div class="pane-actions"><button onclick="startAgent('claude')">Start</button><button class="danger" onclick="killAgent('claude')">Kill</button></div>
+    </div>
+    <pre class="terminal" id="term-claude"></pre>
+    <div class="input-row"><textarea id="input-claude" placeholder="Digite para Claude... Shift+Enter quebra linha"></textarea><button class="send" onclick="sendInput('claude')">Send</button></div>
+  </section>
+  <section class="pane" data-agent="codex">
+    <div class="pane-header">
+      <div class="agent"><span class="dot"></span>Codex CLI</div>
+      <div class="pane-actions"><button onclick="startAgent('codex')">Start</button><button class="danger" onclick="killAgent('codex')">Kill</button></div>
+    </div>
+    <pre class="terminal" id="term-codex"></pre>
+    <div class="input-row"><textarea id="input-codex" placeholder="Digite para Codex... Shift+Enter quebra linha"></textarea><button class="send" onclick="sendInput('codex')">Send</button></div>
+  </section>
+  <section class="pane" data-agent="gemini">
+    <div class="pane-header">
+      <div class="agent"><span class="dot"></span>Gemini CLI</div>
+      <div class="pane-actions"><button onclick="startAgent('gemini')">Start</button><button class="danger" onclick="killAgent('gemini')">Kill</button></div>
+    </div>
+    <pre class="terminal" id="term-gemini"></pre>
+    <div class="input-row"><textarea id="input-gemini" placeholder="Digite para Gemini... Shift+Enter quebra linha"></textarea><button class="send" onclick="sendInput('gemini')">Send</button></div>
+  </section>
+</main>
+<script>
+const agents = ['claude', 'codex', 'gemini'];
+const sessions = new Map();
+const streams = new Map();
+let meshEvents = null;
+
+function pane(agent) { return document.querySelector(`[data-agent="${agent}"]`); }
+function terminal(agent) { return document.getElementById(`term-${agent}`); }
+function input(agent) { return document.getElementById(`input-${agent}`); }
+
+function append(agent, text) {
+  const el = terminal(agent);
+  // Track accumulated raw text per pane so we can re-run unwrap on the FULL
+  // buffer each chunk. Without this, individual chunks like `\n"session_id"`
+  // don't trigger the envelope detector, and the accumulated textContent
+  // keeps the raw `{ "session_id": ..., "response": "..." }` wrapper visible.
+  // unwrapGeminiEnvelope is idempotent for plain text, so Claude/Codex panes
+  // are unaffected.
+  el._meshRawBuffer = (el._meshRawBuffer || '') + String(text == null ? '' : text);
+  el.textContent = unwrapGeminiEnvelope(el._meshRawBuffer);
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendAll(text) {
+  agents.forEach(agent => append(agent, text));
+}
+
+async function request(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error?.message || json.error || res.statusText);
+  return json;
+}
+
+function attach(agent, sessionId) {
+  if (streams.has(agent)) streams.get(agent).close();
+  const es = new EventSource(`/sandbox/sessions/${encodeURIComponent(sessionId)}/events`);
+  streams.set(agent, es);
+  es.addEventListener('data', (event) => append(agent, JSON.parse(event.data).data || ''));
+  es.addEventListener('exit', (event) => {
+    const data = JSON.parse(event.data);
+    append(agent, `\n[process exited: ${data.exitCode ?? 'unknown'}]\n`);
+    pane(agent).classList.remove('running');
+    pane(agent).classList.add('exited');
+  });
+  es.onerror = () => {
+    pane(agent).classList.remove('running');
+  };
+}
+
+function connectMeshEvents() {
+  if (meshEvents) meshEvents.close();
+  meshEvents = new EventSource(`/mesh/events`);
+  const handler = (event) => {
+    try { routeMeshEventToPane(JSON.parse(event.data)); }
+    catch (err) { appendAll(`\n[mesh trace parse error] ${err.message}\n`); }
+  };
+  meshEvents.addEventListener('mesh-event', handler);
+  meshEvents.addEventListener('peer-event', handler);
+  meshEvents.addEventListener('task-dialogue', handler);
+  meshEvents.addEventListener('task-status', handler);
+  meshEvents.onmessage = handler;
+  meshEvents.onerror = () => appendAll('\n[mesh trace] SSE disconnected; retrying...\n');
+}
+
+// --- Event routing ---
+// Two-level dispatch:
+//   1. Decide if the event is CONTENT (model output to mirror in a pane) or
+//      STATUS (orchestration metadata: setup, round headers, "elaborando…",
+//      task lifecycle). STATUS goes to the timeline-bar only.
+//   2. For CONTENT, the speaker pane is `payload.agent` (who wrote the text).
+//      `targetAgent` is the *recipient* of an a2a_call; never the speaker.
+//      Events with agent='*' or no resolvable agent are silenced (was: poured
+//      into all 3 panes via appendAll, which produced the symptom of headers
+//      appearing in every pane while only one pane held the actual answer).
+
+const CONTENT_ROLES = new Set(['response', 'argument', 'final', 'draft', 'review', 'verdict', 'synthesis', 'code']);
+
+// Roles that semantically carry the SAME final model output, just at different
+// stages of the protocol: `response` is the streaming chunk, `argument` is the
+// finalized turn. Server emits both with overlapping content — we collapse
+// them into a single bucket for dedup purposes only (rendering still uses the
+// original role).
+const MODEL_OUTPUT_ROLES = new Set(['response', 'argument']);
+const DIALOGUE_PREFIX_DEDUPE_MS = 5000;
+const recentDialoguePrefixes = new Map();
+
+function normalizeDialogueText(text) {
+  return String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+}
+
+// Cheap, deterministic 32-bit string hash (FNV-1a). We just need a stable
+// fingerprint of the text prefix to bucket near-identical content.
+function hashPrefix32(s) {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+function dialogueKindNorm(role) {
+  const r = String(role || '').toLowerCase();
+  return MODEL_OUTPUT_ROLES.has(r) ? 'model-output' : r;
+}
+
+// Returns true if (agent, kindNorm, hash(text[0..200])) was seen within TTL.
+// The rule lets the FIRST event through and drops every subsequent identical
+// burst — so if `response` arrives first with the streamed body, the later
+// `argument` carrying the same finalized body is silently dropped (and vice
+// versa: argument-first → drop following response).
+function shouldDropDuplicate(agent, kindNorm, text) {
+  const normalized = normalizeDialogueText(text);
+  if (!normalized || !agent) return false;
+  const key = `${agent}|${kindNorm}|${hashPrefix32(normalized.slice(0, 200))}`;
+  const now = Date.now();
+  for (const [seenKey, seenAt] of recentDialoguePrefixes) {
+    if (now - seenAt > DIALOGUE_PREFIX_DEDUPE_MS) recentDialoguePrefixes.delete(seenKey);
+  }
+  const seenAt = recentDialoguePrefixes.get(key);
+  recentDialoguePrefixes.set(key, now);
+  return Boolean(seenAt && now - seenAt <= DIALOGUE_PREFIX_DEDUPE_MS);
+}
+
+// Gemini sometimes emits a JSON envelope ({"session_id": "...", "response":
+// "...", "stats": {...}}) on the wire instead of plain text. Other agents
+// (Codex, Claude) emit raw text. Detect envelope shape and unwrap before
+// rendering — otherwise the pane shows `{"session_id":...,"response":...}`
+// raw, and the dedup hash differs from the equivalent plain-text emission.
+//
+// Recognized shapes:
+//   { response: "..." }   ← Gemini CLI
+//   { text: "..." }, { message }, { content }, { output_text }
+//   { candidates: [{ content: { parts: [{ text }] } }] }  ← Gemini API native
+function unwrapGeminiEnvelope(text) {
+  const value = String(text == null ? '' : text);
+  const trimmed = value.trimStart();
+  if (!trimmed.startsWith('{')) return value;
+  // Match common envelope keys; multi-line pretty-printed JSON is fine because
+  // the regex doesn't anchor to position 1.
+  if (!/"(?:response|session_id|candidates|output_text)"\s*:/.test(trimmed)) return value;
+  let parsed;
+  try { parsed = JSON.parse(trimmed); }
+  catch { parsed = null; /* may be partial mid-stream — fall through to regex extract */ }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const key of ['response', 'text', 'message', 'content', 'output_text']) {
+      const candidate = parsed[key];
+      if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+    }
+    const cands = parsed.candidates;
+    if (Array.isArray(cands) && cands.length > 0) {
+      const parts = cands[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        const joined = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+        if (joined.length > 0) return joined;
+      }
+    }
+  }
+  // Partial-JSON fallback (mid-stream): regex-extract `"response":"..."` even if `}` not yet arrived.
+  for (const key of ['response', 'text', 'message', 'content', 'output_text']) {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`);
+    const m = trimmed.match(re);
+    if (m && m[1]) {
+      try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
+    }
+  }
+  return value;
+}
+
+// Exposed on window for unit tests that load the HTML in jsdom.
+if (typeof window !== 'undefined') {
+  window.__sandboxHelpers = {
+    unwrapGeminiEnvelope,
+    shouldDropDuplicate,
+    dialogueKindNorm,
+    hashPrefix32,
+    _resetDedup: () => recentDialoguePrefixes.clear(),
+  };
+}
+
+function speakerAgent(data) {
+  const payload = data.payload || data;
+  // The speaker is the one EMITTING text. Order matters:
+  //   - payload.agent: set by mesh-debate / mesh-calls handleSSEEvent
+  //   - payload.from / payload.source: alternate naming
+  // We DELIBERATELY do not fall back to payload.targetAgent (recipient) or
+  // data.server (the server that published the event, which for a peer-event
+  // is the *originating* peer — close to speaker but not always the same).
+  const candidates = [payload.agent, payload.from, payload.source]
+    .filter(Boolean)
+    .map(v => String(v).toLowerCase())
+    .filter(v => v !== '*' && v !== 'mesh' && v !== 'system');
+  return candidates.find(a => agents.includes(a)) || null;
+}
+
+function classifyEvent(data) {
+  // Returns { kind: 'content'|'status'|'card'|'drop', text?, agent?, target?, label?, severity? }
+  const payload = data.payload || data;
+  const type = data.type || payload.type || 'event';
+  const role = (payload.role || '').toLowerCase();
+  const phase = (payload.phase || payload.state || payload.status || '').toLowerCase();
+  const operation = (payload.operation || '').toLowerCase();
+  const rawText = payload.text || payload.content || payload.message || payload.inputText || '';
+  // Unwrap Gemini envelope FIRST so downstream slicing/hashing/rendering all
+  // operate on plain text, not on `{"session_id":..., "response":...}` JSON.
+  const text = (rawText && typeof rawText === 'object') ? '' : unwrapGeminiEnvelope(String(rawText || ''));
+
+  // Drop heartbeats / parse noise
+  if (!type || type === 'heartbeat') return { kind: 'drop' };
+
+  if (type === 'a2a_call') {
+    return {
+      kind: 'card',
+      target: String(payload.targetAgent || '').toLowerCase(),
+      label: `↳ a2a_call from ${data.server || 'mesh'}`,
+      severity: 'call',
+    };
+  }
+  if (type === 'a2a_broadcast') {
+    return {
+      kind: 'broadcast-card',
+      targets: (payload.targetAgents || []).map(a => String(a).toLowerCase()),
+      label: `⇉ a2a_broadcast`,
+      severity: 'call',
+    };
+  }
+  if (['debate', 'consensus', 'code-ensemble', 'plan'].includes(type)) {
+    // Final summary events — show as timeline pill
+    return { kind: 'status', label: `${type} done`, severity: 'complete' };
+  }
+  if (['submitted', 'working', 'completed', 'failed', 'canceled'].includes(type)) {
+    return {
+      kind: 'status',
+      label: `task/${type}`,
+      severity: type === 'failed' ? 'error' : (type === 'completed' ? 'complete' : null),
+    };
+  }
+
+  if (type === 'dialogue') {
+    const speaker = speakerAgent(data);
+
+    // Error events go to the speaker's pane as a small card (not raw stream).
+    if (role === 'error' || phase === 'error') {
+      return {
+        kind: speaker ? 'pane-card' : 'status',
+        agent: speaker,
+        label: text ? `error: ${text.slice(0, 4000)}` : 'error',
+        severity: 'error',
+      };
+    }
+
+    // System / setup / phase headers ("elaborando argumento…", "Rodada N",
+    // "Fase JUDGE…"). These have agent='*' upstream — never tied to a pane.
+    // Show ONLY in the timeline bar so panes stay clean.
+    const isStatus = role === 'system'
+      || phase === 'setup' || phase === 'status' || phase === 'complete'
+      || (!CONTENT_ROLES.has(role) && !speaker);
+    if (isStatus) {
+      const label = text ? text.slice(0, 80) : `${operation || 'mesh'}/${phase || role || 'event'}`;
+      return {
+        kind: 'status',
+        label,
+        severity: phase === 'complete' ? 'complete' : null,
+      };
+    }
+
+    // Content (response chunk, argument, verdict, etc.) → speaker pane.
+    if (text && speaker) {
+      // Intra-pane dedup: server emits role='response' (streaming) AND
+      // role='argument' (finalized turn) with overlapping content — without
+      // this barrier the pane shows the full text twice consecutively.
+      // model-output roles share a bucket so response/argument collide on the
+      // dedup key; other content roles (verdict, synthesis, code) keep their
+      // own buckets and are unaffected.
+      const kindNorm = dialogueKindNorm(role);
+      if (shouldDropDuplicate(speaker, kindNorm, text)) {
+        return { kind: 'drop' };
+      }
+      return { kind: 'content', agent: speaker, text };
+    }
+    // Content without speaker — drop instead of polluting all panes.
+    return { kind: 'drop' };
+  }
+
+  // Unknown type with text and a speaker → render as content (defensive).
+  const speaker = speakerAgent(data);
+  if (speaker && rawText && typeof rawText !== 'object') {
+    return { kind: 'content', agent: speaker, text: String(rawText) };
+  }
+  // Unknown without speaker → status pill summarizing type only.
+  return { kind: 'status', label: type };
+}
+
+function timelineBar() { return document.getElementById('timeline-events'); }
+
+function pushTimeline(label, severity) {
+  const bar = timelineBar();
+  if (!bar) return;
+  const pill = document.createElement('span');
+  pill.className = 'timeline-event' + (severity ? ' ' + severity : '');
+  pill.textContent = label;
+  pill.title = label;
+  bar.appendChild(pill);
+  // Cap to last 40 pills so the bar doesn't grow unbounded.
+  while (bar.childElementCount > 40) bar.removeChild(bar.firstChild);
+  bar.scrollLeft = bar.scrollWidth;
+}
+
+function appendCardToPane(agent, label, severity) {
+  if (!agents.includes(agent)) return;
+  const el = terminal(agent);
+  const card = document.createElement('span');
+  card.className = 'mesh-card' + (severity ? ' ' + severity : '');
+  card.textContent = label;
+  el.appendChild(card);
+  el.appendChild(document.createTextNode('\n'));
+  el.scrollTop = el.scrollHeight;
+}
+
+function routeMeshEventToPane(data) {
+  // Honor persistent clear: ignore replayed history older than the last clear.
+  const clearedAt = localStorage.getItem('meshSandboxClearedAt');
+  if (clearedAt && data.timestamp && data.timestamp < clearedAt) return;
+
+  const decision = classifyEvent(data);
+  switch (decision.kind) {
+    case 'drop':
+      return;
+    case 'content':
+      append(decision.agent, decision.text);
+      return;
+    case 'pane-card':
+      if (decision.agent) appendCardToPane(decision.agent, decision.label, decision.severity);
+      else pushTimeline(decision.label, decision.severity);
+      return;
+    case 'card':
+      if (agents.includes(decision.target)) {
+        appendCardToPane(decision.target, decision.label, decision.severity);
+      } else {
+        pushTimeline(decision.label, decision.severity);
+      }
+      return;
+    case 'broadcast-card':
+      decision.targets.filter(a => agents.includes(a))
+        .forEach(a => appendCardToPane(a, decision.label, decision.severity));
+      pushTimeline(decision.label + ' → ' + decision.targets.join(','), decision.severity);
+      return;
+    case 'status':
+    default:
+      pushTimeline(decision.label || 'event', decision.severity);
+      return;
+  }
+}
+
+function clearMeshTrace() {
+  agents.forEach(agent => {
+    const el = terminal(agent);
+    el.textContent = '';
+    el._meshRawBuffer = '';
+    pane(agent).classList.remove('running', 'exited');
+  });
+  const bar = timelineBar();
+  if (bar) bar.textContent = '';
+  // Reset the dedup window — otherwise post-clear identical content would be
+  // suppressed because its hash is still in the recentDialoguePrefixes map.
+  recentDialoguePrefixes.clear();
+  // Persist a cutoff so any SSE replay or refresh ignores prior history.
+  localStorage.setItem('meshSandboxClearedAt', new Date().toISOString());
+}
+
+function modePayload(mode, prompt) {
+  switch (mode) {
+    case 'debate':
+      return { path: '/mesh/debate', body: { topic: prompt, rounds: 3, judge: 'claude', order: 'rotate' } };
+    case 'ensemble':
+      return { path: '/mesh/ensemble', body: { task: prompt, language: 'python', rounds: 1, judge: 'claude' } };
+    case 'consensus':
+      return { path: '/mesh/consensus', body: { prompt, judge: 'claude' } };
+    case 'broadcast':
+      return { path: '/mesh/broadcast', body: { prompt, includeSelf: true } };
+    case 'plan':
+      return { path: '/mesh/plan', body: { description: prompt, rounds: 1, author: 'claude', reviewer: 'codex' } };
+    default:
+      throw new Error(`Modo desconhecido: ${mode}`);
+  }
+}
+
+async function runMeshMode(mode) {
+  connectMeshEvents();
+  const el = document.getElementById('mode-prompt');
+  const prompt = el.value.trim();
+  if (!prompt) {
+    appendAll(`\n[mesh] Escreva um prompt antes de rodar ${mode}.\n`);
+    return;
+  }
+  clearMeshTrace();
+  appendAll(`\n[mesh] starting ${mode}...\n`);
+  const { path, body } = modePayload(mode, prompt);
+  try {
+    const result = await request(path, { method: 'POST', body: JSON.stringify(body) });
+    appendAll(`\n[mesh] ${mode} request finished.\n${JSON.stringify(result.result || result, null, 2).slice(0, 4000)}\n`);
+  } catch (err) {
+    appendAll(`\n[mesh] ${mode} failed: ${err.message}\n`);
+  }
+}
+
+async function startAgent(agent) {
+  const cols = Math.max(80, Math.floor((terminal(agent).clientWidth || 900) / 8));
+  const rows = Math.max(20, Math.floor((terminal(agent).clientHeight || 500) / 16));
+  const data = await request('/sandbox/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ agent, cols, rows, restart: true }),
+  });
+  sessions.set(agent, data.session.id);
+  const el = terminal(agent);
+  el.textContent = '';
+  el._meshRawBuffer = '';
+  pane(agent).classList.add('running');
+  pane(agent).classList.remove('exited');
+  attach(agent, data.session.id);
+}
+
+async function sendInput(agent) {
+  const id = sessions.get(agent);
+  if (!id) return startAgent(agent);
+  const el = input(agent);
+  const value = el.value;
+  if (!value) return;
+  el.value = '';
+  await request(`/sandbox/sessions/${encodeURIComponent(id)}/input`, {
+    method: 'POST',
+    body: JSON.stringify({ data: value.endsWith('\n') ? value : value + '\n' }),
+  });
+}
+
+async function killAgent(agent) {
+  const id = sessions.get(agent);
+  if (!id) return;
+  await fetch(`/sandbox/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  sessions.delete(agent);
+  pane(agent).classList.remove('running');
+}
+
+async function resizeAgent(agent) {
+  const id = sessions.get(agent);
+  if (!id) return;
+  const cols = Math.max(80, Math.floor((terminal(agent).clientWidth || 900) / 8));
+  const rows = Math.max(20, Math.floor((terminal(agent).clientHeight || 500) / 16));
+  await request(`/sandbox/sessions/${encodeURIComponent(id)}/resize`, {
+    method: 'POST',
+    body: JSON.stringify({ cols, rows }),
+  }).catch(() => {});
+}
+
+function startAll() { agents.forEach(startAgent); }
+function killAll() { agents.forEach(killAgent); }
+
+for (const agent of agents) {
+  input(agent).addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendInput(agent);
+    }
+  });
+}
+window.addEventListener('resize', () => agents.forEach(resizeAgent));
+connectMeshEvents();
+</script>
+</body>
+</html>

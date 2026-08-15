@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const MARKETPLACE_NAME = "multiagente-npm";
 export const PLUGIN_NAME = "multiagente-consensual";
+export const A2A_PACKAGE = "@nicholasjacob90/a2a-mesh@1.0.1";
 export const ALL_TARGETS = Object.freeze([
   "codex",
   "claude",
@@ -65,6 +66,7 @@ function usage() {
 
 Uso:
   multiagente-consensual install --all
+  multiagente-consensual install --all --with-a2a
   multiagente-consensual install <codex|claude|cursor|opencode|kimi|antigravity>
   multiagente-consensual update --all
   multiagente-consensual status [--all|alvo]
@@ -80,6 +82,8 @@ Opções:
   --install-root <dir>  alterar a raiz estável do marketplace
   --skip-registries     não registrar plugins no Codex/Claude Code
   --skip-bridge         não instalar o wrapper multiagent-bridge
+  --with-a2a            instalar servidores A2A, MCP e painel local
+  --replace-a2a-mcp     substituir uma configuração a2a-mesh já existente
   --purge               remover também payload estável e estado no uninstall
 `;
 }
@@ -101,6 +105,8 @@ export function parseArgs(argv) {
     installRoot: null,
     skipRegistries: false,
     skipBridge: false,
+    withA2a: false,
+    replaceA2aMcp: false,
     purge: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
@@ -111,6 +117,8 @@ export function parseArgs(argv) {
     else if (value === "--launchd") args.launchd = true;
     else if (value === "--skip-registries") args.skipRegistries = true;
     else if (value === "--skip-bridge") args.skipBridge = true;
+    else if (value === "--with-a2a") args.withA2a = true;
+    else if (value === "--replace-a2a-mcp") args.replaceA2aMcp = true;
     else if (value === "--purge") args.purge = true;
     else if (value === "--home") {
       args.home = path.resolve(nextValue(argv, index, value));
@@ -468,6 +476,51 @@ function installBridge(context, targets, launchd) {
   return { status: "installed", result };
 }
 
+function a2aInstallRoot(home) {
+  return path.join(home, ".local", "share", PLUGIN_NAME, "a2a");
+}
+
+function a2aCliPath(home) {
+  return path.join(
+    a2aInstallRoot(home),
+    "node_modules",
+    "@nicholasjacob90",
+    "a2a-mesh",
+    "npm",
+    "cli.mjs",
+  );
+}
+
+function installA2a(context, args, targets) {
+  if (!args.withA2a) return { status: "not-requested" };
+  const npm = executableOnPath("npm", context.env);
+  if (!npm) throw new Error("npm não foi encontrado para instalar o runtime A2A");
+  const root = a2aInstallRoot(args.home);
+  run(
+    npm,
+    ["install", "--prefix", root, "--no-audit", "--no-fund", "--save-exact", A2A_PACKAGE],
+    context,
+  );
+  const cli = a2aCliPath(args.home);
+  if (!context.dryRun && !fs.existsSync(cli)) throw new Error(`CLI A2A não foi instalada em ${cli}`);
+  const mcpTargets = targets.filter((target) => ["codex", "claude"].includes(target));
+  const argv = [cli, "install", "--home", args.home, "--json"];
+  if (mcpTargets.length) argv.push("--targets", mcpTargets.join(","));
+  else argv.push("--targets", "");
+  if (args.launchd) argv.push("--launchd");
+  if (args.replaceA2aMcp) argv.push("--replace-mcp");
+  const configured = run(process.execPath, argv, context);
+  return {
+    status: "installed",
+    package: A2A_PACKAGE,
+    root,
+    cli,
+    panel: "http://127.0.0.1:3142/ui",
+    sandbox: "http://127.0.0.1:3142/sandbox",
+    output: configured.stdout.trim(),
+  };
+}
+
 function buildCoworkArtifact(context) {
   const python = pythonBinary(context.env);
   if (!python) throw new Error("Python 3 não foi encontrado no PATH");
@@ -516,6 +569,7 @@ function installOrUpdate(args, targets) {
   if (!args.skipRegistries && targets.includes("codex")) registrations.codex = registerCodex(context);
   if (!args.skipRegistries && targets.includes("claude")) registrations.claude = registerClaude(context);
   const bridge = installBridge(context, targets, args.launchd);
+  const a2a = installA2a(context, args, targets);
   const coworkArtifact = buildCoworkArtifact(context);
   const managed = snapshotManagedFiles(context, targets);
   const state = {
@@ -529,6 +583,7 @@ function installOrUpdate(args, targets) {
     backup,
     registrations,
     bridge: bridge.status,
+    a2a,
     coworkArtifact,
     managedFiles: managed.files,
     managedTrees: managed.trees,
@@ -555,6 +610,7 @@ function status(args, targets) {
     installed: Boolean(state),
     state,
     routes,
+    a2a: state?.a2a || { status: "not-installed" },
     coworkArtifact: path.join(args.installRoot, "cowork", `${PLUGIN_NAME}.plugin`),
   };
 }
@@ -585,6 +641,24 @@ function doctor(args, targets) {
         { allowFailure: true },
       );
       checks.push({ name: "manifest", ok: lint.status === 0, output: (lint.stdout || lint.stderr).trim() });
+    }
+  }
+  const installedA2aCli = a2aCliPath(args.home);
+  if (args.withA2a || report.a2a?.status === "installed") {
+    if (!fs.existsSync(installedA2aCli)) {
+      checks.push({ name: "a2a-runtime", ok: false, message: "runtime A2A ausente" });
+    } else {
+      const a2aDoctor = run(
+        process.execPath,
+        [installedA2aCli, "doctor", "--home", args.home, "--json"],
+        context,
+        { allowFailure: true },
+      );
+      checks.push({
+        name: "a2a-runtime",
+        ok: a2aDoctor.status === 0,
+        output: (a2aDoctor.stdout || a2aDoctor.stderr).trim(),
+      });
     }
   }
   for (const [target, route] of Object.entries(report.routes)) {
@@ -641,6 +715,15 @@ function uninstall(args, targets) {
     stateRoot,
   };
   const result = { ok: true, command: "uninstall", simulation: args.dryRun, targets, removed: [], preserved: [], actions: context.actions };
+  const installedA2aCli = a2aCliPath(args.home);
+  if (targets.length === ALL_TARGETS.length && (state?.a2a?.status === "installed" || fs.existsSync(installedA2aCli))) {
+    const a2aArgs = [installedA2aCli, "uninstall", "--home", args.home, "--json"];
+    if (args.purge) a2aArgs.push("--purge");
+    if (args.dryRun) a2aArgs.push("--dry-run");
+    run(process.execPath, a2aArgs, context, { allowFailure: true });
+    if (args.purge && !args.dryRun) fs.rmSync(a2aInstallRoot(args.home), { recursive: true, force: true });
+    result.removed.push("a2a-mesh");
+  }
   if (targets.includes("codex") && executableOnPath("codex", context.env)) {
     run("codex", ["plugin", "remove", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`], context, { allowFailure: true });
   }
@@ -681,6 +764,7 @@ function printResult(result, json) {
   if (result.pluginVersion) console.log(`plugin=${result.pluginVersion}`);
   if (result.targets) console.log(`targets=${result.targets.join(",")}`);
   if (result.coworkArtifact) console.log(`cowork=${result.coworkArtifact}`);
+  if (result.a2a?.status === "installed") console.log(`a2a=${result.a2a.panel}`);
   if (result.backup?.path) console.log(`backup=${result.backup.path}`);
   if (result.preserved?.length) console.log(`preservados=${result.preserved.length}`);
 }

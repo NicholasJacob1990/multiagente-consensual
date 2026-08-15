@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A2A Mesh [v2026-05-09-unwrap]</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #030712; color: #e5e7eb; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace; margin: 0; height: 100vh; overflow: hidden; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #374151; }
+
+  /* Animations */
+  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes typing { from { width: 0; } to { width: 100%; } }
+  .slide-in { animation: slideIn 0.25s ease-out; }
+  .pulse { animation: pulse 1.5s ease-in-out infinite; }
+  .fade-in { animation: fadeIn 0.2s ease-out; }
+
+  /* Status dots */
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; transition: all 0.3s; }
+  .dot-green { background: #22c55e; box-shadow: 0 0 8px #22c55e60; }
+  .dot-red { background: #ef4444; box-shadow: 0 0 6px #ef444460; }
+  .dot-gray { background: #374151; }
+
+  /* Chat bubbles — modern minimal */
+  .bubble {
+    border-left: 2px solid;
+    padding: 8px 12px;
+    margin: 2px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .bubble-purple { border-color: #a78bfa; background: rgba(139, 92, 246, 0.08); }
+  .bubble-amber  { border-color: #fbbf24; background: rgba(251, 191, 36, 0.06); }
+  .bubble-blue   { border-color: #60a5fa; background: rgba(96, 165, 250, 0.06); }
+  .bubble-gray   { border-color: #4b5563; background: rgba(75, 85, 99, 0.15); }
+  .bubble-red    { border-color: #f87171; background: rgba(248, 113, 113, 0.08); }
+  .bubble-gold   { border-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+  .bubble-user   { border-color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+  .bubble-green  { border-color: #34d399; background: rgba(52, 211, 153, 0.06); }
+
+  /* Phase separator */
+  .phase-sep { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; color: #6b7280; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .phase-sep::before, .phase-sep::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #1f2937, transparent); }
+
+  /* Code blocks */
+  .msg-content {
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .msg-content pre {
+    background: #0d1117;
+    border: 1px solid #161b22;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: hidden;
+    font-size: 0.75rem;
+    margin: 6px 0;
+    line-height: 1.6;
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .msg-content pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .msg-content code:not(pre code) { background: #161b22; padding: 1px 5px; border-radius: 3px; font-size: 0.8em; color: #e2e8f0; }
+  .msg-content p { margin: 3px 0; }
+  .msg-content ul, .msg-content ol { margin: 3px 0; padding-left: 18px; }
+
+  /* Buttons */
+  .btn-sm { padding: 5px 12px; width: auto; font-size: 0.8125rem; }
+  .btn-ghost { background: transparent; border: 1px solid #21262d; color: #8b949e; }
+  .btn-ghost:hover { background: #161b22; border-color: #30363d; color: #c9d1d9; }
+
+  /* Config strip */
+  .config-strip {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 12px;
+    border-bottom: 1px solid #161b22;
+    font-size: 0.6875rem;
+    overflow-x: auto;
+    flex-shrink: 0;
+    min-height: 26px;
+  }
+  .config-strip::-webkit-scrollbar { height: 0; }
+  .config-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    background: #161b22;
+    color: #8b949e;
+    white-space: nowrap;
+    cursor: pointer;
+    font-size: 0.6875rem;
+    transition: all 0.15s;
+    user-select: none;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+  }
+  .config-chip:hover { background: #1f2937; color: #c9d1d9; border-color: #30363d; }
+  .config-chip .chip-label { color: #484f58; }
+  .config-chip .chip-value { color: #c9d1d9; font-weight: 500; }
+
+  /* ============================================ */
+  /* Layout — 2-column + bottom terminal panel */
+  /* ============================================ */
+  .app-layout {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 36px);
+  }
+
+  /* ============================================ */
+  /* Bottom Panel — tasks + stats + terminal */
+  /* ============================================ */
+  .bottom-panel {
+    flex-shrink: 0;
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+    display: flex;
+    flex-direction: column;
+  }
+  .task-strip {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    min-height: 28px;
+    /* Cap height so a noisy backlog of completed tasks can't push the chat
+       area off-screen. Single-row strip; horizontal scroll already handled
+       inside .task-strip-left. */
+    max-height: 32px;
+    border-bottom: 1px solid #161b22;
+    font-size: 0.625rem;
+    overflow: hidden;
+  }
+  .task-strip-left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 2px;
+    padding: 3px 6px 3px 12px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .task-strip-left::-webkit-scrollbar { height: 0; }
+  .task-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #161b22;
+    color: #8b949e;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.5625rem;
+    transition: background 0.15s;
+    cursor: default;
+  }
+  .task-pill:hover { background: #1f2937; }
+  .task-pill .task-dot {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+  }
+  .task-pill .task-id { color: #484f58; }
+  .task-pill .task-state { font-weight: 500; }
+  .task-pill-working .task-state { color: #fbbf24; }
+  .task-pill-working .task-dot { background: #fbbf24; animation: pulse 1.5s ease-in-out infinite; }
+  .task-pill-completed .task-state { color: #4ade80; }
+  .task-pill-completed .task-dot { background: #4ade80; }
+  .task-pill-failed .task-state { color: #f87171; }
+  .task-pill-failed .task-dot { background: #f87171; }
+  .task-pill-submitted .task-state { color: #60a5fa; }
+  .task-pill-submitted .task-dot { background: #60a5fa; animation: pulse 1.5s ease-in-out infinite; }
+
+  .live-activity {
+    flex-shrink: 0;
+    max-height: 28vh;
+    margin: 0 20px 8px;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    background: #080c14;
+    overflow: hidden;
+  }
+  .live-activity-body {
+    max-height: calc(28vh - 28px);
+    overflow-y: auto;
+  }
+  .live-activity-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    border-bottom: 1px solid #161b22;
+    color: #8b949e;
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .live-activity-row {
+    display: grid;
+    grid-template-columns: 74px 78px 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 10px;
+    border-top: 1px solid rgba(22, 27, 34, 0.7);
+    font-size: 0.6875rem;
+    color: #8b949e;
+  }
+  .live-activity-row:first-of-type { border-top: none; }
+  .live-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #c9d1d9;
+    font-weight: 600;
+    min-width: 0;
+  }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #fbbf24;
+    animation: pulse 1.2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .live-state { color: #fbbf24; white-space: nowrap; }
+  .live-preview {
+    color: #6b7280;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    min-width: 0;
+  }
+
+  .task-strip-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    border-left: 1px solid #161b22;
+    color: #30363d;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0.5625rem;
+  }
+  .stat-inline { display: flex; align-items: center; gap: 3px; }
+  .stat-inline-val { color: #8b949e; font-weight: 600; }
+  .stat-inline-label { color: #30363d; }
+
+  /* ============================================ */
+  /* Terminal Input Bar */
+  /* ============================================ */
+  .terminal-bar {
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+    padding: 0;
+    display: flex;
+    align-items: flex-start;
+    min-height: 64px;
+    flex-shrink: 0;
+  }
+  .terminal-prefix {
+    display: flex;
+    align-items: center;
+    padding: 0 6px 0 16px;
+    color: #6366f1;
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+    gap: 6px;
+    min-height: 64px;
+  }
+  .terminal-prefix .op-tag {
+    font-size: 0.6875rem;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: #1f2937;
+    color: #818cf8;
+    font-weight: 500;
+  }
+  .terminal-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #e6edf3;
+    font-family: inherit;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    padding: 18px 8px 14px;
+    outline: none;
+    caret-color: #6366f1;
+    min-width: 0;
+    min-height: 64px;
+    max-height: 32vh;
+    resize: none;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .terminal-input::placeholder { color: #30363d; }
+  .terminal-input:focus { background: transparent; box-shadow: none; }
+  .terminal-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    min-height: 64px;
+  }
+  .terminal-send {
+    background: #4f46e5;
+    border: none;
+    color: white;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .terminal-send:hover { background: #4338ca; }
+  .terminal-send:disabled { background: #1f2937; color: #4b5563; cursor: not-allowed; }
+  .terminal-hint {
+    font-size: 0.75rem;
+    color: #30363d;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .terminal-hint.warn { color: #d29922; }
+  .terminal-hint.error { color: #f85149; }
+
+  /* Autocomplete dropdown */
+  .autocomplete {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+    z-index: 50;
+  }
+  .autocomplete.visible { display: block; }
+  .autocomplete-item {
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .autocomplete-item:hover, .autocomplete-item.active { background: #1f2937; }
+  .autocomplete-item .cmd { color: #818cf8; font-weight: 500; }
+  .autocomplete-item .desc { color: #484f58; font-size: 0.6875rem; }
+
+  /* ============================================ */
+  /* Arena (Swimlanes) */
+  /* ============================================ */
+  .arena {
+    display: grid;
+    gap: 8px;
+    margin: 6px 0;
+    animation: fadeIn 0.3s ease-out;
+  }
+  .arena-1 { grid-template-columns: 1fr; }
+  .arena-2 { grid-template-columns: 1fr 1fr; }
+  .arena-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .arena-column {
+    border: 1px solid #161b22;
+    border-radius: 8px;
+    background: #080c14;
+    display: flex;
+    flex-direction: column;
+    max-height: 55vh;
+    min-height: 60px;
+  }
+  .arena-col-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #0d1117;
+    padding: 6px 10px;
+    border-bottom: 1px solid #161b22;
+    border-radius: 8px 8px 0 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .arena-col-body {
+    padding: 6px 8px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .arena-col-body .bubble { margin: 3px 0; font-size: 0.75rem; padding: 6px 10px; }
+
+  .arena-agent-dot {
+    width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .arena-status {
+    font-size: 0.5625rem;
+    padding: 1px 7px;
+    border-radius: 8px;
+    margin-left: auto;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .status-waiting { background: #161b22; color: #484f58; }
+  .status-thinking { background: #0d2818; color: #4ade80; animation: pulse 1.5s ease-in-out infinite; }
+  .status-streaming { background: #0d2818; color: #4ade80; animation: blink 1s ease-in-out infinite; }
+  .status-done { background: #0d1b2e; color: #60a5fa; }
+  .status-error { background: #2d1215; color: #f87171; }
+
+  .arena-phase-label {
+    font-size: 0.5625rem;
+    color: #484f58;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
+    padding-left: 4px;
+  }
+
+  /* Layout toggle */
+  .layout-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: 1px solid #21262d;
+    color: #8b949e;
+    padding: 3px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: inherit;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .layout-toggle-btn:hover { background: #161b22; color: #c9d1d9; }
+  .layout-toggle-btn.active { border-color: #6366f1; color: #818cf8; }
+
+  /* Responsive arena */
+  @media (max-width: 768px) {
+    .arena-2, .arena-3 { grid-template-columns: 1fr; }
+    .arena-column { max-height: 35vh; }
+  }
+
+  /* User message in chat */
+  .user-msg {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 8px 0 4px;
+  }
+  .user-msg-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: #6366f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .user-msg-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .user-msg-cmd {
+    font-size: 0.6875rem;
+    color: #484f58;
+    margin-bottom: 2px;
+  }
+  .user-msg-cmd .cmd-name { color: #818cf8; }
+  .user-msg-text {
+    color: #c9d1d9;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* (sidebar styles removed) */
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="flex items-center justify-between px-4" style="height:36px; background: #080c14; border-bottom:1px solid #161b22;">
+  <div class="flex items-center gap-3">
+    <span style="font-size:0.8125rem; font-weight:700; color:#6366f1;">A2A Mesh</span>
+    <div class="flex items-center gap-3">
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-claude" class="dot dot-gray"></span><span style="color:#8b949e">Claude</span></span>
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-codex" class="dot dot-gray"></span><span style="color:#8b949e">Codex</span></span>
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-gemini" class="dot dot-gray"></span><span style="color:#8b949e">Gemini</span></span>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <button id="layout-toggle" class="layout-toggle-btn" onclick="toggleLayout()">
+      <span id="layout-icon">&#x229E;</span> <span id="layout-label">Auto</span>
+    </button>
+    <a href="/sandbox" class="btn-sm btn-ghost" style="text-decoration:none;">Sandbox</a>
+    <span id="sse-badge" style="font-size:0.6875rem; padding:2px 8px; border-radius:6px; background:#161b22; color:#484f58;">SSE</span>
+    <button onclick="clearChat()" class="btn-sm btn-ghost">Clear</button>
+  </div>
+</header>
+
+<!-- APP LAYOUT -->
+<div class="app-layout">
+
+  <!-- CHAT: full screen -->
+  <main class="relative flex flex-col overflow-hidden flex-1" style="background:#030712;">
+    <div id="chat" class="flex-1 overflow-y-auto px-5 pt-3 pb-1 space-y-0.5" style="scroll-behavior: smooth;"></div>
+    <div id="live-activity" class="live-activity hidden"></div>
+    <button id="scroll-btn" class="hidden absolute bottom-3 right-4 btn-sm btn-ghost rounded-full px-3 py-1" style="font-size:0.75rem; background:rgba(13,17,23,0.9); backdrop-filter:blur(4px);" onclick="scrollToBottom()">
+      ↓ bottom
+    </button>
+  </main>
+
+  <!-- BOTTOM PANEL: tasks strip + terminal input -->
+  <div class="bottom-panel">
+    <!-- Task Strip -->
+    <div class="task-strip">
+      <div class="task-strip-left" id="task-strip-pills">
+        <span style="color:#30363d;">no tasks</span>
+      </div>
+      <div class="task-strip-right">
+        <div class="stat-inline"><span class="stat-inline-val" id="stat-tasks">-</span><span class="stat-inline-label">tasks</span></div>
+        <div class="stat-inline"><span class="stat-inline-val" id="stat-events">-</span><span class="stat-inline-label">events</span></div>
+        <div class="stat-inline"><span class="stat-inline-val" id="stat-peers">-</span><span class="stat-inline-label">peers</span></div>
+        <div class="stat-inline"><span class="stat-inline-val" id="stat-uptime">-</span><span class="stat-inline-label">up</span></div>
+      </div>
+    </div>
+    <!-- Config Strip -->
+    <div class="config-strip" id="config-strip" style="display:none">
+      <span class="config-chip" data-ops="call" onclick="cycleConfig('agent')" title="Target agent for /call">
+        <span class="chip-label">agent</span>
+        <span class="chip-value" id="cfg-agent">codex</span>
+      </span>
+      <span class="config-chip" data-ops="consensus,ensemble,debate" onclick="cycleConfig('judge')" title="Judge for synthesis">
+        <span class="chip-label">judge</span>
+        <span class="chip-value" id="cfg-judge">claude</span>
+      </span>
+      <span class="config-chip" data-ops="ensemble,debate" onclick="cycleConfig('rounds')" title="Number of rounds">
+        <span class="chip-label">rounds</span>
+        <span class="chip-value" id="cfg-rounds">5</span>
+      </span>
+      <span class="config-chip" data-ops="ensemble" onclick="cycleConfig('language')" title="Code language for ensemble">
+        <span class="chip-label">lang</span>
+        <span class="chip-value" id="cfg-language">python</span>
+      </span>
+      <span class="config-chip" data-ops="debate" onclick="cycleConfig('order')" title="Debate speaker order">
+        <span class="chip-label">order</span>
+        <span class="chip-value" id="cfg-order">rotate</span>
+      </span>
+    </div>
+    <!-- Terminal Input -->
+    <div class="terminal-bar" style="position:relative; border-top:none;">
+      <div id="autocomplete-box" class="autocomplete"></div>
+      <div class="terminal-prefix">
+        <span style="color:#30363d;">mesh</span><span style="color:#6366f1;">❯</span>
+        <span id="terminal-op-tag" class="op-tag" style="display:none;"></span>
+      </div>
+      <textarea
+        id="terminal-input"
+        class="terminal-input"
+        placeholder="/broadcast, /call, /consensus, /ensemble, /debate, /plan, /team — or just type to broadcast"
+        autocomplete="off"
+        spellcheck="false"
+        rows="1"
+      ></textarea>
+      <div class="terminal-actions">
+        <span class="terminal-hint" id="terminal-hint">Enter ↵</span>
+        <button id="terminal-send" class="terminal-send" onclick="handleTerminalSubmit()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================
+// State
+// ============================================
+const BASE = window.location.origin;
+const PORTS = { claude: 3142, codex: 3141, gemini: 3143 };
+const SELF_REFERENCE_PATTERNS = [
+  /A2A Mesh Claude Codex Gemini/i,
+  /HISTÓRICO:\s*\d+\s+EVENTOS/i,
+  /FASE\s+(WRITE|REVIEW|REVISE|JUDGE|SYNTHESIZE)\s+(INICIADA|CONCLU[IÍ]DA)/i,
+  /≡\s*Seq\s*SSE/i,
+  /Seq SSE\s*[●○]/i,
+];
+const AGENT_COLORS = {
+  claude: 'purple', codex: 'amber', gemini: 'blue',
+  system: 'gray', error: 'red', synthesis: 'gold',
+  judge: 'gold',
+};
+const AGENT_DOT_COLORS = {
+  claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa',
+};
+
+let autoScroll = true;
+let executing = false;
+let eventSource = null;
+let eventCount = 0;
+const RECENT_DIALOGUE_DEDUPE_MS = 5000;
+const recentDialogueEvents = new Map();
+// Bucket-based dedup keyed by (agent, kindNorm, prefixHash). Catches the
+// response→argument intra-pane duplication: the streaming `response` chunks
+// accumulate text matching the `argument` final blob, so normalizing both
+// roles to a shared `model-output` bucket and hashing the first ~200 chars
+// of the text lets us drop the redundant final `argument` (or, conversely,
+// drop a late-arriving `response` if `argument` came first).
+const DIALOGUE_PREFIX_DEDUPE_MS = 5000;
+const recentDialoguePrefixes = new Map();
+
+// Layout state
+let layoutMode = localStorage.getItem('meshLayoutMode') || 'auto';
+
+// Arena hint
+let _arenaHint = null;
+
+// Arena state
+let currentArena = null;
+
+// Known parallel operations
+const ARENA_OPERATIONS = new Set(['consensus', 'ensemble', 'debate']);
+
+// Sequential stream aggregation
+let _stream = { agent: null, role: null, bubble: null, text: '', wrapper: null };
+
+// Terminal command history
+let cmdHistory = JSON.parse(localStorage.getItem('meshCmdHistory') || '[]');
+let historyIdx = -1;
+let historyDraft = '';
+
+// ============================================
+// Config State (chips)
+// ============================================
+const CONFIG_OPTIONS = {
+  agent:    ['codex', 'gemini', 'claude'],
+  judge:    ['claude', 'codex', 'gemini'],
+  rounds:   [1, 3, 5, 7, 10],
+  language: ['python', 'javascript', 'typescript', 'rust', 'go', 'java'],
+  order:    ['rotate', 'fixed', 'random'],
+};
+
+const savedCfg = JSON.parse(localStorage.getItem('meshConfig') || '{}');
+const meshConfig = {
+  agent:    savedCfg.agent   || 'codex',
+  judge:    savedCfg.judge    || 'claude',
+  rounds:   savedCfg.rounds   || 5,
+  language: savedCfg.language || 'python',
+  order:    savedCfg.order   || 'rotate',
+};
+
+function cycleConfig(key) {
+  const opts = CONFIG_OPTIONS[key];
+  if (!opts) return;
+  const cur = meshConfig[key];
+  const idx = opts.indexOf(cur);
+  meshConfig[key] = opts[(idx + 1) % opts.length];
+  localStorage.setItem('meshConfig', JSON.stringify(meshConfig));
+  const el = document.getElementById('cfg-' + key);
+  if (el) el.textContent = meshConfig[key];
+}
+
+// ============================================
+// Terminal Input
+// ============================================
+const COMMANDS = [
+  { cmd: '/call',      args: '<agent> <prompt>',  desc: 'Call one agent',          method: 'mesh/call' },
+  { cmd: '/broadcast', args: '<prompt>',           desc: 'Broadcast to all',        method: 'mesh/broadcast' },
+  { cmd: '/ask',       args: '<prompt>',           desc: 'Alias for broadcast',     method: 'mesh/broadcast' },
+  { cmd: '/consensus', args: '<prompt>',           desc: 'Consensus + judge',       method: 'mesh/consensus' },
+  { cmd: '/ensemble',  args: '<task>',             desc: 'Code cross-review',       method: 'mesh/ensemble' },
+  { cmd: '/debate',    args: '<topic>',            desc: 'Adversarial debate',      method: 'mesh/debate' },
+  { cmd: '/plan',      args: '<descrição>',        desc: 'Plan & Review iterativo', method: 'mesh/plan' },
+  { cmd: '/clear',     args: '',                   desc: 'Clear chat',              method: null },
+  { cmd: '/help',      args: '',                   desc: 'Show commands',           method: null },
+];
+
+const AGENTS = ['claude', 'codex', 'gemini'];
+
+// ---- Session continuation (mirrors ~/bin/mesh-call) ----
+function genTaskId(prefix) {
+  // RFC4122 v4-ish using crypto when available; falls back to Math.random
+  const uuid = (crypto.randomUUID && crypto.randomUUID()) ||
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  return `${prefix}-${uuid}`;
+}
+
+async function buildContextPrefix(taskId) {
+  if (!taskId) return '';
+  try {
+    const r = await fetch(`${BASE}/mesh/timeline?taskId=${encodeURIComponent(taskId)}&limit=500`,
+      { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return '';
+    const events = await r.json();
+    if (!Array.isArray(events) || events.length === 0) return '';
+    events.reverse(); // API returns DESC; want chronological
+    const turns = [];
+    for (const e of events) {
+      if (e.event_type !== 'dialogue') continue;
+      const p = e.payload || {};
+      const role = p.role || '';
+      const agent = p.agent || '';
+      const text = (p.text || '').trim();
+      if (!text || !agent || agent === '*') continue;
+      if (['argument', 'response', 'synthesis', 'judge'].includes(role)) {
+        turns.push({ agent, role, text: text.slice(0, 1500) });
+      }
+    }
+    if (turns.length === 0) return '';
+    let out = `=== Contexto da rodada anterior (taskId=${taskId}) ===\n`;
+    for (const t of turns.slice(-12)) out += `[${t.agent}/${t.role}]\n${t.text}\n`;
+    out += `=== Fim do contexto anterior ===\n\n`;
+    return out;
+  } catch (e) {
+    console.warn('[continue] timeline fetch failed', e);
+    return '';
+  }
+}
+
+// Module-level state set by parseTerminalCommand; consumed by handleTerminalSubmit.
+let __lastWantContinue = false;
+
+function parseTerminalCommand(input) {
+  __lastWantContinue = false;
+  const trimmedInput = input.trim();
+  if (!trimmedInput) return null;
+
+  // Strip --continue / --reset-session flags before mode parsing
+  let body = trimmedInput;
+  if (/(?:^|\s)--continue(?=\s|$)/.test(body)) {
+    __lastWantContinue = true;
+    body = body.replace(/(?:^|\s)--continue(?=\s|$)/, ' ').replace(/\s+/g, ' ').trim();
+  }
+  if (/(?:^|\s)--reset-session(?=\s|$)/.test(body)) {
+    localStorage.removeItem('meshLastTaskId');
+    addSystemMessage('session reset');
+    return { op: 'reset', method: null };
+  }
+
+  // Variável local mantida pelo legacy code abaixo — serve as referência ao body limpo
+  const trimmed = body;
+
+  // Slash commands
+  if (body.startsWith('/')) {
+    const parts = body.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const rest = body.slice(cmd.length).trim();
+
+    switch (cmd) {
+      case '/call': {
+        const agentMatch = rest.match(/^(\w+)\s+([\s\S]+)/);
+        if (agentMatch) {
+          const agent = agentMatch[1].toLowerCase();
+          if (AGENTS.includes(agent)) {
+            return { op: 'call', method: 'mesh/call', params: { agent, prompt: agentMatch[2] }, display: `call ${agent}` };
+          }
+        }
+        // Try without explicit agent — default to codex
+        if (rest) return { op: 'call', method: 'mesh/call', params: { agent: meshConfig.agent, prompt: rest }, display: `call ${meshConfig.agent}` };
+        return null;
+      }
+      case '/broadcast':
+      case '/ask':
+        if (rest) return { op: 'broadcast', method: 'mesh/broadcast', params: { prompt: rest, includeSelf: true }, display: 'broadcast' };
+        return null;
+      case '/consensus':
+        if (rest) return { op: 'consensus', method: 'mesh/consensus', params: { prompt: rest, judge: meshConfig.judge }, display: 'consensus' };
+        return null;
+      case '/ensemble': {
+        // Parse optional flags: /ensemble --lang=python --rounds=5 <task>
+        // Defaults come from config chips
+        let language = meshConfig.language, rounds = meshConfig.rounds, judge = meshConfig.judge, task = rest;
+        const langMatch = rest.match(/--lang(?:uage)?=(\w+)/);
+        if (langMatch) { language = langMatch[1]; task = task.replace(langMatch[0], ''); }
+        const roundsMatch = rest.match(/--rounds=(\d+)/);
+        if (roundsMatch) { rounds = parseInt(roundsMatch[1]); task = task.replace(roundsMatch[0], ''); }
+        const judgeMatch = rest.match(/--judge=(\w+)/);
+        if (judgeMatch) { judge = judgeMatch[1]; task = task.replace(judgeMatch[0], ''); }
+        task = task.trim();
+        if (task) return { op: 'ensemble', method: 'mesh/ensemble', params: { task, language, rounds, judge }, display: `ensemble (${rounds}r, ${language})` };
+        return null;
+      }
+      case '/debate': {
+        // Defaults come from config chips
+        let rounds = meshConfig.rounds, judge = meshConfig.judge, order = meshConfig.order, topic = rest;
+        const roundsMatch = rest.match(/--rounds=(\d+)/);
+        if (roundsMatch) { rounds = parseInt(roundsMatch[1]); topic = topic.replace(roundsMatch[0], ''); }
+        const judgeMatch = rest.match(/--judge=(\w+)/);
+        if (judgeMatch) { judge = judgeMatch[1]; topic = topic.replace(judgeMatch[0], ''); }
+        const orderMatch = rest.match(/--order=(\w+)/);
+        if (orderMatch) { order = orderMatch[1]; topic = topic.replace(orderMatch[0], ''); }
+        topic = topic.trim();
+        if (topic) return { op: 'debate', method: 'mesh/debate', params: { topic, rounds, judge, order }, display: `debate (${rounds}r)` };
+        return null;
+      }
+      case '/plan': {
+        // Plan & Review iterativo: author writes PLAN.md, reviewer critica com persona
+        // rotativa, author revisa. Para quando converge ou bate o round limit.
+        // Ex: /plan implement rate limiting --rounds=3 --reviewer=codex --lenses=engineer,security,ops
+        let rounds = 3, author = 'claude', reviewer = 'codex', lenses = null, description = rest;
+        const roundsMatch = rest.match(/--rounds=(\d+)/);
+        if (roundsMatch) { rounds = parseInt(roundsMatch[1]); description = description.replace(roundsMatch[0], ''); }
+        const authorMatch = rest.match(/--author=(\w+)/);
+        if (authorMatch) { author = authorMatch[1]; description = description.replace(authorMatch[0], ''); }
+        const reviewerMatch = rest.match(/--reviewer=(\w+)/);
+        if (reviewerMatch) { reviewer = reviewerMatch[1]; description = description.replace(reviewerMatch[0], ''); }
+        const lensesMatch = rest.match(/--lenses=([\w,]+)/);
+        if (lensesMatch) { lenses = lensesMatch[1].split(',').map(s => s.trim()).filter(Boolean); description = description.replace(lensesMatch[0], ''); }
+        description = description.trim();
+        if (description) {
+          const params = { description, rounds, author, reviewer };
+          if (lenses) params.lenses = lenses;
+          return { op: 'plan', method: 'mesh/plan', params, display: `plan (${rounds}r, ${author}↔${reviewer})` };
+        }
+        return null;
+      }
+      case '/clear':
+        clearChat();
+        return { op: 'clear', method: null };
+      case '/help':
+        showHelp();
+        return { op: 'help', method: null };
+      default:
+        // Unknown command — treat as broadcast
+        if (rest || parts.length > 1) {
+          return { op: 'broadcast', method: 'mesh/broadcast', params: { prompt: trimmed, includeSelf: true }, display: 'broadcast' };
+        }
+        return null;
+    }
+  }
+
+  // Plain text → broadcast to all agents
+  return { op: 'broadcast', method: 'mesh/broadcast', params: { prompt: trimmed, includeSelf: true }, display: 'broadcast' };
+}
+
+function showHelp() {
+  const chat = document.getElementById('chat');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'slide-in';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble bubble-gray msg-content';
+  bubble.innerHTML = `
+    <div style="font-size:0.75rem; color:#8b949e; line-height:1.8;">
+      <strong style="color:#c9d1d9;">Terminal Commands</strong><br>
+      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Call one agent (claude, codex, gemini)<br>
+      <code>/broadcast &lt;prompt&gt;</code> — Ask all agents<br>
+      <code>/ask &lt;prompt&gt;</code> — Alias for broadcast<br>
+      <code>/consensus &lt;prompt&gt;</code> — All agents + judge synthesis<br>
+      <code>/ensemble &lt;task&gt;</code> — NxN code cross-review (--lang=py --rounds=5)<br>
+      <code>/debate &lt;topic&gt;</code> — Adversarial debate (--rounds=4)<br>
+      <code>/plan &lt;descrição&gt;</code> — Plan&amp;Review iterativo: PLAN.md em ~/.a2a/plans/ (--rounds=3 --reviewer=codex --lenses=engineer,security,ops)<br>
+      <code>--continue &lt;cmd&gt;</code> — Reusa contexto da rodada anterior<br>
+      <code>--reset-session</code> — Limpa o contexto persistido<br>
+      <code>/clear</code> — Clear chat<br>
+      <code>/help</code> — Show this help<br>
+      <br>
+      <span style="color:#484f58;">Plain text sends as broadcast. ↑↓ for command history.</span>
+    </div>
+  `;
+  wrapper.appendChild(bubble);
+  chat.appendChild(wrapper);
+  maybeScroll();
+}
+
+async function handleTerminalSubmit() {
+  const input = document.getElementById('terminal-input');
+  const raw = input.value;
+  if (!raw.trim()) return;
+
+  const validation = validateTerminalPrompt(raw);
+  updateTerminalPromptHint(raw);
+  if (!validation.ok) {
+    addSystemMessage(validation.message, 'error');
+    return;
+  }
+
+  // Save to history
+  if (cmdHistory[0] !== raw) {
+    cmdHistory.unshift(raw);
+    if (cmdHistory.length > 100) cmdHistory.pop();
+    localStorage.setItem('meshCmdHistory', JSON.stringify(cmdHistory));
+  }
+  historyIdx = -1;
+  historyDraft = '';
+
+  const parsed = parseTerminalCommand(raw);
+  input.value = '';
+  updateTerminalOpTag('');
+  hideAutocomplete();
+
+  if (!parsed) return;
+  if (!parsed.method) return; // /clear, /help, /reset-session already handled
+
+  // Add user message to chat
+  addUserMessage(raw, parsed.display);
+
+  // Signal arena hint
+  if (['broadcast', 'consensus', 'ensemble', 'debate', 'plan'].includes(parsed.op)) {
+    _arenaHint = parsed.op;
+  } else {
+    _arenaHint = null;
+  }
+
+  // ---- Continuation: prepend prior task context, generate trackable taskId ----
+  if (__lastWantContinue) {
+    const lastTaskId = localStorage.getItem('meshLastTaskId') || '';
+    if (lastTaskId) {
+      addSystemMessage(`Carregando contexto anterior (${lastTaskId.slice(0, 16)}…)…`);
+      const ctx = await buildContextPrefix(lastTaskId);
+      if (ctx) {
+        const fields = ['prompt', 'topic', 'task'];
+        for (const f of fields) {
+          if (typeof parsed.params[f] === 'string') {
+            parsed.params[f] = ctx + parsed.params[f];
+            break;
+          }
+        }
+      } else {
+        addSystemMessage('Nenhum contexto recuperado — prosseguindo sem.', 'gray');
+      }
+    } else {
+      addSystemMessage('--continue: sem sessão anterior salva.', 'gray');
+    }
+  }
+  // Generate task ID for modes that don't naturally surface one (call, broadcast)
+  // so we can chain --continue. Server accepts body.taskId.
+  const opToPrefix = { call: 'call', broadcast: 'broadcast' };
+  if (opToPrefix[parsed.op] && !parsed.params.taskId) {
+    parsed.params.taskId = genTaskId(opToPrefix[parsed.op]);
+  }
+
+  addSystemMessage(`Executing ${parsed.display || parsed.op}...`);
+
+  // Execute
+  const btn = document.getElementById('terminal-send');
+  executing = true;
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(`${BASE}/rpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now().toString(), method: parsed.method, params: parsed.params }),
+      signal: AbortSignal.timeout(1800000),
+    });
+    const json = await resp.json();
+    if (json.error) {
+      addSystemMessage(`Error: ${json.error.message || JSON.stringify(json.error)}`, 'error');
+    } else {
+      let resultText;
+      if (typeof json.result === 'string') {
+        resultText = json.result;
+      } else if (json.result?.synthesis?.verdict) {
+        const s = json.result.synthesis;
+        const scores = s.scores ? Object.entries(s.scores).map(([a,v]) => `${a}: ${v}/10`).join(', ') : '';
+        resultText = `**Winner:** ${s.winner || '?'}\n**Scores:** ${scores}\n**Confidence:** ${((s.confidence||0)*100).toFixed(0)}%\n\n${s.verdict}`;
+      } else {
+        // Gemini /mesh/call returns `{session_id, response, stats, tools}` —
+        // .response is the actual text. Check that BEFORE falling back to
+        // JSON.stringify, otherwise the user sees the raw envelope.
+        resultText = json.result?.response || json.result?.text || json.result?.result || json.result?.finalCode ||
+          JSON.stringify(json.result, null, 2);
+      }
+      if (resultText && resultText !== '{}' && resultText !== 'null') {
+        addResultBubble(parsed.op, resultText);
+      }
+      // Persist taskId for --continue chain
+      let taskIdToSave = null;
+      const r = json.result;
+      if (r && typeof r === 'object') {
+        if (r.consensusId) taskIdToSave = `consensus-${r.consensusId}`;
+        else if (r.debateId) taskIdToSave = `debate-${r.debateId}`;
+        else if (r.ensembleId) taskIdToSave = `ensemble-${r.ensembleId}`;
+        else if (r.planId) taskIdToSave = `plan-${r.planId}`;
+        else if (r.taskId) taskIdToSave = r.taskId;
+      }
+      if (!taskIdToSave && parsed.params.taskId) taskIdToSave = parsed.params.taskId;
+      if (taskIdToSave) localStorage.setItem('meshLastTaskId', taskIdToSave);
+    }
+  } catch (e) {
+    if (e.name === 'TimeoutError') {
+      addSystemMessage('Request timed out', 'error');
+    } else {
+      addSystemMessage(`Network error: ${e.message}`, 'error');
+    }
+  } finally {
+    executing = false;
+    btn.disabled = false;
+  }
+}
+
+function addUserMessage(text, opLabel) {
+  const chat = document.getElementById('chat');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'user-msg slide-in';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'user-msg-avatar';
+  avatar.textContent = '>';
+
+  const body = document.createElement('div');
+  body.className = 'user-msg-body';
+
+  if (opLabel) {
+    const cmdLine = document.createElement('div');
+    cmdLine.className = 'user-msg-cmd';
+    cmdLine.innerHTML = `<span class="cmd-name">${escapeHtml(opLabel)}</span>`;
+    body.appendChild(cmdLine);
+  }
+
+  const textEl = document.createElement('div');
+  textEl.className = 'user-msg-text';
+  // Show prompt text (strip command prefix)
+  let display = text;
+  if (text.startsWith('/')) {
+    const spaceIdx = text.indexOf(' ');
+    if (spaceIdx > 0) {
+      const cmd = text.substring(0, spaceIdx);
+      const rest = text.substring(spaceIdx + 1);
+      // For /call, also strip agent name
+      if (cmd === '/call') {
+        const agentMatch = rest.match(/^(\w+)\s+([\s\S]+)/);
+        display = agentMatch ? agentMatch[2] : rest;
+      } else {
+        display = rest;
+      }
+    }
+  }
+  textEl.textContent = display;
+  body.appendChild(textEl);
+
+  wrapper.appendChild(avatar);
+  wrapper.appendChild(body);
+  chat.appendChild(wrapper);
+  maybeScroll();
+}
+
+// Terminal input event handlers
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialize config chips from saved state
+  for (const key of Object.keys(meshConfig)) {
+    const el = document.getElementById('cfg-' + key);
+    if (el) el.textContent = meshConfig[key];
+  }
+
+  const input = document.getElementById('terminal-input');
+  autoResizeTerminalInput(input);
+  updateTerminalPromptHint(input.value);
+
+  input.addEventListener('keydown', (e) => {
+    // Enter to submit
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleTerminalSubmit();
+      return;
+    }
+
+    // History navigation
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (historyIdx === -1) historyDraft = input.value;
+      if (historyIdx < cmdHistory.length - 1) {
+        historyIdx++;
+        input.value = cmdHistory[historyIdx];
+        autoResizeTerminalInput(input);
+        updateTerminalOpTag(input.value);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx > 0) {
+        historyIdx--;
+        input.value = cmdHistory[historyIdx];
+      } else if (historyIdx === 0) {
+        historyIdx = -1;
+        input.value = historyDraft;
+      }
+      autoResizeTerminalInput(input);
+      updateTerminalOpTag(input.value);
+      return;
+    }
+
+    // Escape to clear
+    if (e.key === 'Escape') {
+      input.value = '';
+      historyIdx = -1;
+      autoResizeTerminalInput(input);
+      updateTerminalOpTag('');
+      hideAutocomplete();
+      return;
+    }
+
+    // Tab for autocomplete
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      applyAutocomplete();
+      return;
+    }
+  });
+
+  input.addEventListener('input', () => {
+    autoResizeTerminalInput(input);
+    updateTerminalOpTag(input.value);
+    updateAutocomplete(input.value);
+    updateTerminalPromptHint(input.value);
+  });
+
+  // Focus terminal on Ctrl+L or /
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+      e.preventDefault();
+      input.focus();
+    }
+    // / to focus (when not typing in another input)
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+      e.preventDefault();
+      input.focus();
+      input.value = '/';
+      autoResizeTerminalInput(input);
+      updateTerminalOpTag('/');
+      updateAutocomplete('/');
+    }
+  });
+});
+
+function updateTerminalOpTag(value) {
+  const tag = document.getElementById('terminal-op-tag');
+  const hint = document.getElementById('terminal-hint');
+  if (!tag || !hint) return;
+
+  let detectedOp = '';
+  if (!value.trim()) {
+    tag.style.display = 'none';
+    hint.textContent = 'Enter ↵';
+  } else if (value.startsWith('/')) {
+    const cmd = value.split(/\s/)[0].toLowerCase();
+    const match = COMMANDS.find(c => c.cmd === cmd);
+    if (match) {
+      tag.style.display = '';
+      tag.textContent = match.desc;
+      hint.textContent = 'Enter ↵';
+      detectedOp = cmd.slice(1); // "/ensemble" → "ensemble"
+    } else {
+      tag.style.display = '';
+      tag.textContent = '?';
+      hint.textContent = 'Tab ⇥';
+    }
+  } else {
+    tag.style.display = '';
+    tag.textContent = 'broadcast';
+    hint.textContent = 'Enter ↵';
+    detectedOp = 'broadcast';
+  }
+
+  // Show/hide config chips relevant to the detected operation
+  updateConfigChips(detectedOp);
+}
+
+function validateTerminalPrompt(value) {
+  if (SELF_REFERENCE_PATTERNS.some(pattern => pattern.test(value))) {
+    return { ok: false, message: 'Prompt bloqueado: parece conter histórico/HTML do próprio dashboard do mesh.' };
+  }
+  return { ok: true };
+}
+
+function autoResizeTerminalInput(input) {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, Math.floor(window.innerHeight * 0.32))}px`;
+}
+
+function updateTerminalPromptHint(value) {
+  const hint = document.getElementById('terminal-hint');
+  if (!hint) return;
+  hint.classList.remove('warn', 'error');
+  if (!value) return;
+
+  if (SELF_REFERENCE_PATTERNS.some(pattern => pattern.test(value))) {
+    hint.textContent = 'Bloqueado';
+    hint.classList.add('error');
+    return;
+  }
+  if (value.length > 0) {
+    hint.textContent = `${value.length} chars`;
+  }
+}
+
+function updateConfigChips(op) {
+  document.querySelectorAll('.config-chip[data-ops]').forEach(chip => {
+    const ops = chip.dataset.ops.split(',');
+    chip.style.display = op && ops.includes(op) ? '' : 'none';
+  });
+  // Hide entire strip if no chips visible
+  const strip = document.getElementById('config-strip');
+  if (!strip) return;
+  const anyVisible = [...strip.querySelectorAll('.config-chip')].some(c => c.style.display !== 'none');
+  strip.style.display = anyVisible ? '' : 'none';
+}
+
+function updateAutocomplete(value) {
+  const box = document.getElementById('autocomplete-box');
+  if (!value.startsWith('/') || value.includes(' ')) {
+    hideAutocomplete();
+    return;
+  }
+  const partial = value.toLowerCase();
+  const matches = COMMANDS.filter(c => c.cmd.startsWith(partial) && c.cmd !== partial);
+  if (matches.length === 0) {
+    hideAutocomplete();
+    return;
+  }
+  box.innerHTML = matches.map((c, i) =>
+    `<div class="autocomplete-item ${i === 0 ? 'active' : ''}" data-cmd="${c.cmd}" onclick="selectAutocomplete('${c.cmd}')">
+      <span class="cmd">${c.cmd} <span style="color:#30363d">${c.args}</span></span>
+      <span class="desc">${c.desc}</span>
+    </div>`
+  ).join('');
+  box.classList.add('visible');
+}
+
+function hideAutocomplete() {
+  document.getElementById('autocomplete-box').classList.remove('visible');
+}
+
+function selectAutocomplete(cmd) {
+  const input = document.getElementById('terminal-input');
+  input.value = cmd + ' ';
+  input.focus();
+  autoResizeTerminalInput(input);
+  updateTerminalOpTag(input.value);
+  hideAutocomplete();
+}
+
+function applyAutocomplete() {
+  const box = document.getElementById('autocomplete-box');
+  const active = box.querySelector('.autocomplete-item.active') || box.querySelector('.autocomplete-item');
+  if (active) {
+    selectAutocomplete(active.dataset.cmd);
+  }
+}
+
+// ============================================
+// Layout Toggle
+// ============================================
+function toggleLayout() {
+  layoutMode = layoutMode === 'auto' ? 'sequential' : 'auto';
+  localStorage.setItem('meshLayoutMode', layoutMode);
+  updateLayoutToggleUI();
+}
+
+function updateLayoutToggleUI() {
+  const btn = document.getElementById('layout-toggle');
+  const icon = document.getElementById('layout-icon');
+  const label = document.getElementById('layout-label');
+  if (layoutMode === 'auto') {
+    icon.innerHTML = '&#x229E;';
+    label.textContent = 'Auto';
+    btn.classList.add('active');
+  } else {
+    icon.innerHTML = '&#x2261;';
+    label.textContent = 'Seq';
+    btn.classList.remove('active');
+  }
+}
+
+// ============================================
+// SSE Connection
+// ============================================
+function connectSSE() {
+  if (eventSource) { eventSource.close(); }
+  eventSource = new EventSource(`${BASE}/mesh/events`);
+
+  eventSource.onopen = () => {
+    const badge = document.getElementById('sse-badge');
+    badge.textContent = 'SSE ●';
+    badge.style.background = 'rgba(34,197,94,0.1)';
+    badge.style.color = '#4ade80';
+  };
+
+  eventSource.onerror = () => {
+    const badge = document.getElementById('sse-badge');
+    badge.textContent = 'SSE ○';
+    badge.style.background = 'rgba(251,191,36,0.1)';
+    badge.style.color = '#fbbf24';
+    badge.classList.add('pulse');
+  };
+
+  eventSource.addEventListener('task-dialogue', (e) => {
+    try { renderDialogueEvent(JSON.parse(e.data)); eventCount++; }
+    catch (err) { console.warn('[ui] parse task-dialogue', err); }
+  });
+
+  eventSource.addEventListener('task-status', (e) => {
+    try { renderStatusEvent(JSON.parse(e.data)); eventCount++; }
+    catch (err) { console.warn('[ui] parse task-status', err); }
+  });
+
+  eventSource.addEventListener('mesh-event', (e) => {
+    try { handleMeshEvent(JSON.parse(e.data)); }
+    catch (err) { console.warn('[ui] parse mesh-event', err); }
+  });
+
+  eventSource.addEventListener('peer-event', (e) => {
+    try { handleMeshEvent(JSON.parse(e.data)); }
+    catch (err) { console.warn('[ui] parse peer-event', err); }
+  });
+
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'task-dialogue') renderDialogueEvent(data);
+      else if (data.type === 'task-status') renderStatusEvent(data);
+      else if (data.type === 'heartbeat') { /* ignore */ }
+      else handleMeshEvent(data);
+      eventCount++;
+    } catch (err) { console.warn('[ui] parse message', err); }
+  };
+}
+
+function handleMeshEvent(data) {
+  const type = data.type;
+  const p = data.payload || {};
+  eventCount++;
+
+  switch (type) {
+    case 'dialogue':
+      renderDialogueEvent({
+        role: p.role, agent: p.agent, text: p.text,
+        phase: p.phase, operation: p.operation, source: data.server,
+      });
+      break;
+    case 'a2a_call':
+      addSystemMessage(`Call → ${p.targetAgent}`);
+      break;
+    case 'a2a_broadcast':
+      _arenaHint = 'broadcast';
+      addSystemMessage(`Broadcast → ${(p.targetAgents || []).join(', ')}`);
+      break;
+    case 'consensus':
+      _arenaHint = null;
+      addSystemMessage(`Consensus complete (confidence: ${p.confidence || '?'})`);
+      break;
+    case 'code-ensemble':
+      _arenaHint = null;
+      addSystemMessage(`Ensemble complete — ${(p.phases || []).join(' → ')}`);
+      break;
+    case 'debate':
+      _arenaHint = null;
+      addSystemMessage(`Debate complete — winner: ${p.winner || '?'}`);
+      break;
+    case 'a2a_team_start':
+      addSystemMessage(`Team "${p.name}" started (${p.stepCount} steps)`);
+      break;
+    case 'a2a_team_step':
+      addSystemMessage(`Step ${(p.stepIndex || 0) + 1}: ${p.mode || 'sequential'}`);
+      break;
+    case 'a2a_team_complete':
+      addSystemMessage(`Team "${p.name}" complete (${p.durationMs}ms)`);
+      break;
+    case 'submitted':
+    case 'working':
+    case 'completed':
+    case 'failed':
+      pollTasks();
+      break;
+  }
+}
+
+// ============================================
+// Arena (Swimlane) Management
+// ============================================
+function shouldUseArena(operation, phase, role, agent) {
+  if (layoutMode === 'sequential') return false;
+  if (!operation || agent === 'system') return false;
+  if (role === 'system' || role === 'phase' || role === 'error') return false;
+  if (role === 'synthesis' || role === 'judge') return false;
+  if (phase === 'judge' || phase === 'synthesize' || phase === 'synthesis') return false;
+  if (phase === 'complete' || phase === 'error' || phase === 'status') return false;
+  if (ARENA_OPERATIONS.has(operation)) return true;
+  if (operation === 'stream' && _arenaHint) return true;
+  return false;
+}
+
+function getOrCreateArena(operation, phase, agent) {
+  if (currentArena && currentArena.operation === operation && currentArena.phase === phase) {
+    if (!currentArena.columns.has(agent)) addArenaColumn(currentArena, agent);
+    return currentArena;
+  }
+  if (currentArena) finalizeArena();
+
+  const chat = document.getElementById('chat');
+  if (phase) {
+    const phaseLabel = document.createElement('div');
+    phaseLabel.className = 'arena-phase-label';
+    phaseLabel.textContent = phase.toUpperCase();
+    chat.appendChild(phaseLabel);
+  }
+
+  const el = document.createElement('div');
+  el.className = 'arena arena-1 slide-in';
+  currentArena = { el, operation, phase, columns: new Map(), streams: new Map() };
+  addArenaColumn(currentArena, agent);
+  chat.appendChild(el);
+  return currentArena;
+}
+
+function addArenaColumn(arena, agent) {
+  const col = document.createElement('div');
+  col.className = 'arena-column';
+
+  const header = document.createElement('div');
+  header.className = 'arena-col-header';
+
+  const dotColor = AGENT_DOT_COLORS[agent] || '#484f58';
+  const dot = document.createElement('span');
+  dot.className = 'arena-agent-dot';
+  dot.style.background = dotColor;
+
+  const nameSpan = document.createElement('span');
+  nameSpan.textContent = agent.charAt(0).toUpperCase() + agent.slice(1);
+  nameSpan.style.color = dotColor;
+  nameSpan.style.fontSize = '0.6875rem';
+
+  const statusEl = document.createElement('span');
+  statusEl.className = 'arena-status status-waiting';
+  statusEl.textContent = 'waiting';
+
+  header.appendChild(dot);
+  header.appendChild(nameSpan);
+  header.appendChild(statusEl);
+
+  const body = document.createElement('div');
+  body.className = 'arena-col-body';
+
+  col.appendChild(header);
+  col.appendChild(body);
+  arena.el.appendChild(col);
+  arena.columns.set(agent, { col, header, body, statusEl });
+
+  const count = arena.columns.size;
+  arena.el.className = `arena arena-${Math.min(count, 3)} slide-in`;
+}
+
+function renderToArena(agent, role, text, operation, phase, data) {
+  const arena = getOrCreateArena(operation, phase, agent);
+  const colInfo = arena.columns.get(agent);
+  if (!colInfo) return;
+
+  colInfo.statusEl.className = 'arena-status status-streaming';
+  colInfo.statusEl.textContent = 'streaming';
+
+  const existing = arena.streams.get(agent);
+
+  if (existing && existing.role === role) {
+    existing.text += text;
+    // Re-unwrap the ACCUMULATED stream — partial chunks may not match the
+    // envelope signature individually but become a full envelope once joined.
+    existing.bubble.textContent = safeRenderText(existing.text);
+    clearTimeout(existing.mdTimer);
+    existing.mdTimer = setTimeout(() => {
+      if (existing.bubble && existing.bubble.isConnected) {
+        _updateBubbleContent(existing.bubble, existing.text);
+      }
+    }, 500);
+  } else {
+    if (existing) {
+      clearTimeout(existing.mdTimer);
+      if (existing.bubble && existing.bubble.isConnected) {
+        _updateBubbleContent(existing.bubble, existing.text);
+      }
+    }
+
+    const color = AGENT_COLORS[agent] || 'gray';
+    const bubble = document.createElement('div');
+    bubble.className = `bubble bubble-${color} msg-content`;
+    bubble.textContent = safeRenderText(text);
+
+    if (role && role !== 'response') {
+      const roleTag = document.createElement('div');
+      roleTag.style.cssText = 'font-size:0.5625rem; color:#484f58; margin-bottom:2px; text-transform:uppercase; letter-spacing:0.05em;';
+      roleTag.textContent = role;
+      colInfo.body.appendChild(roleTag);
+    }
+
+    colInfo.body.appendChild(bubble);
+    arena.streams.set(agent, { bubble, text, role, mdTimer: null });
+  }
+
+  maybeScroll();
+}
+
+function updateArenaAgentStatus(agent, status) {
+  if (!currentArena) return;
+  const colInfo = currentArena.columns.get(agent);
+  if (!colInfo) return;
+  const statusMap = {
+    waiting: { cls: 'status-waiting', text: 'waiting' },
+    thinking: { cls: 'status-thinking', text: 'thinking' },
+    streaming: { cls: 'status-streaming', text: 'streaming' },
+    done: { cls: 'status-done', text: 'done' },
+    error: { cls: 'status-error', text: 'error' },
+  };
+  const s = statusMap[status] || statusMap.waiting;
+  colInfo.statusEl.className = `arena-status ${s.cls}`;
+  colInfo.statusEl.textContent = s.text;
+}
+
+function finalizeArena() {
+  if (!currentArena) return;
+  for (const [, stream] of currentArena.streams) {
+    clearTimeout(stream.mdTimer);
+    if (stream.bubble && stream.bubble.isConnected) {
+      _updateBubbleContent(stream.bubble, stream.text);
+    }
+  }
+  for (const [, col] of currentArena.columns) {
+    const statusText = col.statusEl.textContent;
+    if (statusText === 'streaming' || statusText === 'thinking' || statusText === 'waiting') {
+      col.statusEl.className = 'arena-status status-done';
+      col.statusEl.textContent = 'done';
+    }
+  }
+  currentArena = null;
+}
+
+// ============================================
+// Rendering
+// ============================================
+function agentFromMeta(data) {
+  if (data.agent) return data.agent.toLowerCase();
+  if (data.source) return data.source.toLowerCase();
+  if (data.from) return data.from.toLowerCase();
+  if (data.selfId) {
+    const s = data.selfId.toLowerCase();
+    if (s.includes('claude')) return 'claude';
+    if (s.includes('codex')) return 'codex';
+    if (s.includes('gemini')) return 'gemini';
+  }
+  return null;
+}
+
+function detectAgent(text) {
+  const t = (text || '').toLowerCase();
+  if (t.includes('claude')) return 'claude';
+  if (t.includes('codex')) return 'codex';
+  if (t.includes('gemini')) return 'gemini';
+  return null;
+}
+
+function _updateBubbleContent(bubble, text) {
+  // safeRenderText is idempotent — calling it here AND at every call site
+  // is intentional defense-in-depth. If a Gemini envelope slips past one
+  // checkpoint (e.g. arrives in an accumulated `_stream.text`), the renderer
+  // is the last line of defense before the JSON hits the DOM.
+  bubble.innerHTML = renderMarkdown(safeRenderText(text));
+}
+
+function normalizeDialogueText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function dialogueDedupeRole(role) {
+  const normalized = String(role || '').toLowerCase();
+  return ['argument', 'response'].includes(normalized) ? 'model-output' : normalized;
+}
+
+// Gemini frequently emits a JSON envelope ({session_id, response, stats}) on
+// the wire instead of plain text. Other agents (Codex, Claude) emit raw text.
+// Renderers MUST unwrap envelope-shaped payloads so the user sees only the
+// `response` field — never the raw JSON.
+//
+// Detection is conservative: only unwrap when (a) the string is JSON-parseable
+// and (b) the parsed object has a recognizable Gemini text field. All other
+// inputs (plain text, malformed JSON, JSON without text fields) pass through
+// unchanged.
+//
+// Supported shapes (in priority order):
+//   { response: "..." }                              — the Gemini CLI shape
+//   { text: "..." }                                  — generic
+//   { message: "..." } / { content: "..." }
+//   { output_text: "..." }                           — OpenAI-ish
+//   { candidates: [{ content: { parts: [{ text }] } }] }  — Gemini API direct
+function unwrapGeminiEnvelope(text) {
+  const value = String(text == null ? '' : text);
+  const trimmed = value.trimStart();
+  if (!trimmed.startsWith('{')) return value;
+  // Cheap signature check before paying parse cost — match common envelope keys
+  // (response, session_id, candidates) so multi-line pretty-printed JSON like
+  //   {
+  //     "session_id": "...",
+  //     "response": "..."
+  //   }
+  // is detected even though the keys are not on the same line as the brace.
+  if (!/"(?:response|session_id|candidates|output_text)"\s*:/.test(trimmed)) return value;
+  let parsed;
+  try { parsed = JSON.parse(trimmed); }
+  catch { parsed = null; /* may be partial mid-stream — fall through to regex extract below */ }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    // Direct text fields, in priority order.
+    for (const key of ['response', 'text', 'message', 'content', 'output_text']) {
+      const candidate = parsed[key];
+      if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+    }
+    // Gemini API native shape: candidates[0].content.parts[*].text
+    const cands = parsed.candidates;
+    if (Array.isArray(cands) && cands.length > 0) {
+      const parts = cands[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        const joined = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+        if (joined.length > 0) return joined;
+      }
+    }
+  }
+  // Partial-JSON fallback (mid-stream chunk): extract `"response":"..."` substring even if
+  // JSON.parse failed because the trailing `}` hasn't arrived yet. Captures any chars,
+  // honoring escaped quotes via [^"\\] | \\. pattern. Decodes JSON string escapes.
+  for (const key of ['response', 'text', 'message', 'content', 'output_text']) {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`);
+    const m = trimmed.match(re);
+    if (m && m[1]) {
+      try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
+    }
+  }
+  return value;
+}
+
+// Defense-in-depth wrapper used by every renderer. Idempotent: plain text
+// passes through `unwrapGeminiEnvelope` unchanged, so calling it twice is
+// safe. Any new render path should funnel its text through here so a Gemini
+// envelope can NEVER leak into the DOM, regardless of which event channel
+// (task-dialogue, mesh-event, peer-event, REST result, accumulated stream)
+// produced it.
+function safeRenderText(rawText) {
+  if (rawText == null) return '';
+  if (typeof rawText === 'object') {
+    // Object payload: try its own envelope-style fields before falling back to
+    // a JSON dump. This catches REST results like `{response: "..."}` that
+    // bypass the string-based unwrap entirely.
+    for (const key of ['response', 'text', 'message', 'content', 'output_text']) {
+      const v = rawText[key];
+      if (typeof v === 'string' && v.length > 0) return unwrapGeminiEnvelope(v);
+    }
+    const cands = rawText.candidates;
+    if (Array.isArray(cands) && cands.length > 0) {
+      const parts = cands[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        const joined = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+        if (joined.length > 0) return joined;
+      }
+    }
+    try { return unwrapGeminiEnvelope(JSON.stringify(rawText, null, 2)); }
+    catch { return ''; }
+  }
+  return unwrapGeminiEnvelope(String(rawText));
+}
+
+// Cheap, deterministic 32-bit string hash (FNV-1a). We only need a stable
+// fingerprint of the text prefix to bucket near-identical content.
+function hashPrefix32(s) {
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+function dialoguePrefixKey(agent, kindNorm, text) {
+  const normalized = normalizeDialogueText(text || '');
+  if (!normalized) return null;
+  // First 200 chars are enough to catch the response/argument collision while
+  // still distinguishing genuinely different turns from the same agent.
+  return `${agent}|${kindNorm}|${hashPrefix32(normalized.slice(0, 200))}`;
+}
+
+// Returns true when this (agent,kind,prefix) was seen within TTL — caller
+// should drop. Also records the new sighting so subsequent identical events
+// dedupe too. Pure side-effect, no rendering.
+function shouldDropByPrefixDedup(agent, kindNorm, text) {
+  const key = dialoguePrefixKey(agent, kindNorm, text);
+  if (!key) return false;
+  const now = Date.now();
+  for (const [seenKey, seenAt] of recentDialoguePrefixes) {
+    if (now - seenAt > DIALOGUE_PREFIX_DEDUPE_MS) recentDialoguePrefixes.delete(seenKey);
+  }
+  const seenAt = recentDialoguePrefixes.get(key);
+  recentDialoguePrefixes.set(key, now);
+  return Boolean(seenAt && now - seenAt <= DIALOGUE_PREFIX_DEDUPE_MS);
+}
+
+function dialogueDedupeKey(data) {
+  const payload = data.payload || data;
+  const agent = (agentFromMeta(payload) || agentFromMeta(data) || detectAgent(payload.agent || payload.source || payload.from || '') || 'system').toLowerCase();
+  const type = String(data.type || payload.type || 'dialogue').replace(/^task-dialogue$/, 'dialogue');
+  const role = dialogueDedupeRole(payload.role || payload.phase || data.role || data.phase || '');
+  const operation = String(payload.operation || data.operation || '');
+  const phase = String(payload.phase || data.phase || '');
+  const text = normalizeDialogueText(payload.text || payload.content || payload.message || data.text || data.content || data.message || '');
+  if (!text) return null;
+  return [agent, type, role, operation, phase, text].join('\u001f');
+}
+
+function shouldRenderDialogueEvent(data) {
+  const key = dialogueDedupeKey(data);
+  if (!key) return true;
+  const now = Date.now();
+  for (const [seenKey, seenAt] of recentDialogueEvents) {
+    if (now - seenAt > RECENT_DIALOGUE_DEDUPE_MS) recentDialogueEvents.delete(seenKey);
+  }
+  const seenAt = recentDialogueEvents.get(key);
+  if (seenAt && now - seenAt <= RECENT_DIALOGUE_DEDUPE_MS) return false;
+  recentDialogueEvents.set(key, now);
+  return true;
+}
+
+function renderDialogueEvent(data) {
+  if (!shouldRenderDialogueEvent(data)) return;
+
+  const chat = document.getElementById('chat');
+  const role = data.role || data.phase || '';
+  const agent = agentFromMeta(data) || detectAgent(data.agent || data.source || data.from || '') || 'system';
+  const rawText = data.text || data.content || data.message || JSON.stringify(data);
+  // Unwrap Gemini's JSON envelope before any rendering or dedup hashing.
+  // Otherwise hashes computed on the wrapped JSON wouldn't match hashes from
+  // the raw text emitted by Codex/Claude, defeating cross-role dedup, and
+  // panes would display raw `{"session_id":..., "response":...}` blobs.
+  // safeRenderText is the central funnel — it handles both string envelopes
+  // (delegates to unwrapGeminiEnvelope) and object payloads.
+  const text = safeRenderText(rawText);
+  const operation = data.operation || '';
+  const phase = data.phase || '';
+
+  // Second-level dedup: response (streaming) and argument (final) routinely
+  // carry the same content. Bucket both into 'model-output' and drop the
+  // duplicate within a 5s window. This complements shouldRenderDialogueEvent
+  // which keys on full-text exact match (and so wouldn't catch partial-vs-
+  // full collisions). Status/system events bypass this — they have no text
+  // payload to fingerprint and rely solely on the existing dedup map.
+  const normalizedKind = dialogueDedupeRole(role);
+  if (normalizedKind === 'model-output' && shouldDropByPrefixDedup(agent, normalizedKind, text)) {
+    return;
+  }
+
+  // Phase separator for system roles
+  if (role === 'system' || role === 'phase') {
+    if (currentArena && agent !== 'system') {
+      const t = text.toLowerCase();
+      if (t.includes('processing') || t.includes('working')) { updateArenaAgentStatus(agent, 'thinking'); return; }
+      if (t.includes('completed')) { updateArenaAgentStatus(agent, 'done'); return; }
+      if (t.includes('failed')) { updateArenaAgentStatus(agent, 'error'); return; }
+    }
+    _stream = { agent: null, role: null, bubble: null, text: '', wrapper: null };
+    const sep = document.createElement('div');
+    sep.className = 'phase-sep slide-in';
+    sep.textContent = safeRenderText(text);
+    chat.appendChild(sep);
+    maybeScroll();
+    return;
+  }
+
+  // Error role
+  if (role === 'error') {
+    if (currentArena && agent !== 'system') updateArenaAgentStatus(agent, 'error');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'slide-in';
+    const label = document.createElement('div');
+    label.className = 'flex items-center gap-2';
+    label.style.cssText = 'font-size:0.6875rem; color:#484f58; margin-bottom:2px;';
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    label.innerHTML = `<span style="color:#f87171; font-weight:500;">${agent.charAt(0).toUpperCase() + agent.slice(1)} / error</span><span>${time}</span>`;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble bubble-red msg-content';
+    bubble.style.fontSize = '0.8125rem';
+    bubble.innerHTML = renderMarkdown(safeRenderText(text));
+    wrapper.appendChild(label);
+    wrapper.appendChild(bubble);
+    chat.appendChild(wrapper);
+    maybeScroll();
+    return;
+  }
+
+  // Arena routing
+  if (shouldUseArena(operation, phase, role, agent)) {
+    renderToArena(agent, role, text, operation, phase, data);
+    return;
+  }
+
+  // Synthesis/judge — close arena
+  if (currentArena && (role === 'synthesis' || role === 'judge' || phase === 'judge' || phase === 'synthesize')) {
+    finalizeArena();
+  }
+
+  // Sequential rendering
+  let color = AGENT_COLORS[agent] || AGENT_COLORS[role] || 'gray';
+  if (role === 'synthesis' || role === 'judge') color = 'gold';
+
+  const streamRoles = ['response', 'author', 'review', 'revised', 'synthesis', 'argument'];
+  if (streamRoles.includes(role) && agent === _stream.agent && role === _stream.role && _stream.bubble) {
+    _stream.text += text;
+    // _updateBubbleContent re-applies safeRenderText, so an accumulated
+    // envelope built from chunks (e.g. `{` then `\n"session_id":...`) is
+    // unwrapped on the final composite even if individual chunks didn't
+    // match the envelope signature.
+    _updateBubbleContent(_stream.bubble, _stream.text);
+    // Register the ACCUMULATED stream prefix into the dedup map. Each chunk is
+    // a delta, so prefix(200) of any individual chunk never matches prefix(200)
+    // of the final `argument` event carrying full text. By recording the
+    // accumulated prefix here, the next event (e.g. `argument` with full text
+    // of role 'response'+'argument' bucketed as model-output) gets dropped via
+    // shouldDropByPrefixDedup.
+    const accNorm = dialogueDedupeRole(role);
+    if (accNorm === 'model-output' && _stream.text) {
+      const accKey = dialoguePrefixKey(agent, accNorm, _stream.text);
+      if (accKey) recentDialoguePrefixes.set(accKey, Date.now());
+    }
+    maybeScroll();
+    return;
+  }
+
+  // Before opening a new stream bubble, register the OUTGOING stream's
+  // accumulated prefix so subsequent same-content events (final 'argument'
+  // after role-change or stream closure) hit the dedup map.
+  if (_stream.text && _stream.agent) {
+    const oldNorm = dialogueDedupeRole(_stream.role);
+    if (oldNorm === 'model-output') {
+      const oldKey = dialoguePrefixKey(_stream.agent, oldNorm, _stream.text);
+      if (oldKey) recentDialoguePrefixes.set(oldKey, Date.now());
+    }
+  }
+
+  _stream = { agent, role, text, bubble: null, wrapper: null };
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'slide-in';
+
+  const label = document.createElement('div');
+  label.className = 'flex items-center gap-2';
+  label.style.cssText = 'font-size:0.6875rem; color:#484f58; margin-bottom:2px;';
+  const agentLabel = agent.charAt(0).toUpperCase() + agent.slice(1);
+  const roleLabel = role ? ` / ${role}` : '';
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const colorMap = { purple: '#a78bfa', amber: '#fbbf24', blue: '#60a5fa', gray: '#8b949e', red: '#f87171', gold: '#f59e0b' };
+  const labelColor = colorMap[color] || '#8b949e';
+  label.innerHTML = `<span style="color:${labelColor}; font-weight:500;">${agentLabel}${roleLabel}</span><span>${time}</span>`;
+
+  const bubble = document.createElement('div');
+  bubble.className = `bubble bubble-${color} msg-content`;
+  _stream.bubble = bubble;
+  _stream.wrapper = wrapper;
+
+  if (role === 'reviewer' || role === 'revising') bubble.style.fontStyle = 'italic';
+
+  _updateBubbleContent(bubble, text);
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(bubble);
+  chat.appendChild(wrapper);
+  maybeScroll();
+}
+
+function renderStatusEvent(data) {
+  const state = data.state || data.status || '';
+  if (state === 'completed' || state === 'failed') {
+    if (currentArena) finalizeArena();
+    _arenaHint = null;
+
+    const chat = document.getElementById('chat');
+    const sep = document.createElement('div');
+    sep.className = 'phase-sep slide-in';
+    const icon = state === 'completed' ? '✓' : '✗';
+    sep.textContent = `${icon} Task ${state}${data.taskId ? ` (${data.taskId.substring(0, 8)})` : ''}`;
+    chat.appendChild(sep);
+    maybeScroll();
+  }
+}
+
+// Markdown renderer
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => `<pre><code>${code.trim()}</code></pre>`);
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============================================
+// Auto-scroll
+// ============================================
+function maybeScroll() {
+  if (!autoScroll) return;
+  requestAnimationFrame(() => {
+    const chat = document.getElementById('chat');
+    chat.scrollTop = chat.scrollHeight;
+  });
+}
+
+function scrollToBottom() {
+  const chat = document.getElementById('chat');
+  chat.scrollTop = chat.scrollHeight;
+  autoScroll = true;
+  document.getElementById('scroll-btn').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const chat = document.getElementById('chat');
+  chat.addEventListener('scroll', () => {
+    const atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 60;
+    autoScroll = atBottom;
+    document.getElementById('scroll-btn').classList.toggle('hidden', atBottom);
+  });
+});
+
+function clearChat() {
+  document.getElementById('chat').innerHTML = '';
+  const live = document.getElementById('live-activity');
+  if (live) {
+    live.classList.add('hidden');
+    live.innerHTML = '';
+  }
+  eventCount = 0;
+  recentDialogueEvents.clear();
+  recentDialoguePrefixes.clear();
+  currentArena = null;
+  _arenaHint = null;
+  _stream = { agent: null, role: null, bubble: null, text: '', wrapper: null };
+  // Persistente: marca timestamp do clear pra replay/refresh ignorar histórico anterior.
+  // Sem isso, replayRecentTimeline() repopulava o chat na próxima sessão.
+  localStorage.setItem('meshChatClearedAt', new Date().toISOString());
+}
+
+function addSystemMessage(text, type) {
+  const chat = document.getElementById('chat');
+  // Defense-in-depth: error messages relayed from the server may carry the
+  // failing payload as-is, including a Gemini envelope. Unwrap before render.
+  const safe = safeRenderText(text);
+  if (type === 'error') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'slide-in';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble bubble-red msg-content';
+    bubble.style.fontSize = '0.8125rem';
+    bubble.innerHTML = renderMarkdown(safe);
+    wrapper.appendChild(bubble);
+    chat.appendChild(wrapper);
+  } else {
+    const sep = document.createElement('div');
+    sep.className = 'phase-sep slide-in';
+    sep.textContent = safe;
+    chat.appendChild(sep);
+  }
+  maybeScroll();
+}
+
+function addResultBubble(op, text) {
+  if (currentArena) finalizeArena();
+
+  const chat = document.getElementById('chat');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'slide-in';
+
+  const label = document.createElement('div');
+  label.className = 'flex items-center gap-2';
+  label.style.cssText = 'font-size:0.6875rem; color:#484f58; margin-bottom:2px;';
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  label.innerHTML = `<span style="color:#f59e0b; font-weight:500;">Result / ${op}</span> <span>${time}</span>`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble bubble-gold msg-content';
+  // Defense-in-depth: if `text` slipped through as an envelope (e.g. caller
+  // stringified `json.result` for an unexpected shape), unwrap it here.
+  bubble.innerHTML = renderMarkdown(safeRenderText(text));
+
+  wrapper.appendChild(label);
+  wrapper.appendChild(bubble);
+  chat.appendChild(wrapper);
+  maybeScroll();
+}
+
+// ============================================
+// Health Polling
+// ============================================
+async function pollHealth() {
+  const agents = ['claude', 'codex', 'gemini'];
+  for (const agent of agents) {
+    const port = PORTS[agent];
+    const dot = document.getElementById(`dot-${agent}`);
+    try {
+      const r = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(3000) });
+      dot.className = r.ok ? 'dot dot-green' : 'dot dot-red';
+    } catch {
+      dot.className = 'dot dot-red';
+    }
+  }
+}
+
+// ============================================
+// Stats Polling
+// ============================================
+async function pollStats() {
+  try {
+    const r = await fetch(`${BASE}/mesh/stats`, { signal: AbortSignal.timeout(5000) });
+    if (r.ok) {
+      const data = await r.json();
+      document.getElementById('stat-tasks').textContent = data.totalTasks ?? data.tasks ?? '-';
+      document.getElementById('stat-events').textContent = eventCount;
+      document.getElementById('stat-peers').textContent = data.connectedPeers ?? data.peers ?? '-';
+      if (data.uptime) {
+        const mins = Math.floor(data.uptime / 60);
+        const hrs = Math.floor(mins / 60);
+        document.getElementById('stat-uptime').textContent = hrs > 0 ? `${hrs}h${mins % 60}m` : `${mins}m`;
+      }
+    }
+  } catch { /* silent */ }
+}
+
+// ============================================
+// Tasks Polling
+// ============================================
+function formatTaskElapsed(task) {
+  const ts = Date.parse(task.createdAt || task.created_at || task.updatedAt || task.updated_at || '');
+  if (!Number.isFinite(ts)) return '--';
+  const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  if (minutes < 60) return `${minutes}m${String(rem).padStart(2, '0')}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h${minutes % 60}m`;
+}
+
+function renderLiveActivity(tasks) {
+  const panel = document.getElementById('live-activity');
+  if (!panel) return;
+
+  const active = (Array.isArray(tasks) ? tasks : [])
+    .filter(t => ['submitted', 'working'].includes(t.state || t.status?.state))
+    .slice(0, 6);
+
+  if (active.length === 0) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+
+  const rows = active.map(t => {
+    const state = t.state || t.status?.state || 'working';
+    const agent = t.originServer || t.server || 'mesh';
+    const id = String(t.id || t.taskId || '').slice(0, 8);
+    const preview = String(t.inputText || t.input_text || t.metadata?.prompt || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+    const dotColor = AGENT_DOT_COLORS[agent] || '#fbbf24';
+    return `
+      <div class="live-activity-row">
+        <span class="live-agent"><span class="live-dot" style="background:${dotColor}"></span>${escapeHtml(agent)}</span>
+        <span class="live-state">${escapeHtml(state)} · ${formatTaskElapsed(t)}</span>
+        <span class="live-preview">${id ? escapeHtml(id) + ' · ' : ''}${escapeHtml(preview || '(sem preview)')}</span>
+      </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="live-activity-header"><span class="live-dot"></span><span>${active.length} ${active.length === 1 ? 'ação' : 'ações'} em andamento</span></div>
+    <div class="live-activity-body">${rows}</div>`;
+  panel.classList.remove('hidden');
+}
+
+async function pollTasks() {
+  try {
+    const r = await fetch(`${BASE}/mesh/tasks?limit=50`, { signal: AbortSignal.timeout(5000) });
+    if (r.ok) {
+      const tasks = await r.json();
+      const strip = document.getElementById('task-strip-pills');
+      if (!Array.isArray(tasks) || tasks.length === 0) {
+        strip.innerHTML = '<span style="color:#21262d;">no tasks</span>';
+        renderLiveActivity([]);
+        return;
+      }
+      renderLiveActivity(tasks);
+      // Keep the strip readable when there's a backlog: show in-flight tasks
+      // verbatim; collapse the rest into a single "✓ N · ✗ M" summary pill
+      // so completed badges don't crowd active items off-screen.
+      const stateSymbols = { completed: '✓', failed: '✗', working: '●', submitted: '◎', 'input-required': '?' };
+      const liveStates = new Set(['working', 'submitted', 'input-required']);
+      const liveTasks = tasks.filter(t => liveStates.has(t.state));
+      const completedCount = tasks.filter(t => t.state === 'completed').length;
+      const failedCount = tasks.filter(t => t.state === 'failed').length;
+      const pillHtml = liveTasks.map(t => {
+        const state = t.state || 'unknown';
+        const id = (t.id || t.taskId || '').substring(0, 6);
+        const method = t.method ? t.method.replace('mesh/', '') : '';
+        const sym = stateSymbols[state] || '·';
+        return `<span class="task-pill task-pill-${state}" title="${escapeAttr(t.id || '')}\n${state}${method ? '\n' + method : ''}"><span class="task-dot"></span><span class="task-id">${id}</span><span class="task-state">${sym} ${state}</span>${method ? `<span style="color:#21262d;">${method}</span>` : ''}</span>`;
+      });
+      const summaryParts = [];
+      if (completedCount > 0) summaryParts.push(`✓ ${completedCount}`);
+      if (failedCount > 0) summaryParts.push(`✗ ${failedCount}`);
+      if (summaryParts.length > 0) {
+        const summaryTitle = `${completedCount} completed${failedCount ? `, ${failedCount} failed` : ''}`;
+        pillHtml.push(`<span class="task-pill task-pill-completed" title="${escapeAttr(summaryTitle)}"><span class="task-state">${summaryParts.join(' · ')}</span></span>`);
+      }
+      strip.innerHTML = pillHtml.length > 0 ? pillHtml.join('') : '<span style="color:#21262d;">no active tasks</span>';
+    }
+  } catch { /* silent */ }
+}
+
+function escapeAttr(s) { return s.replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+// ============================================
+// Timeline replay — reidrata conversas disparadas via MCP/curl
+// ============================================
+// SSE só entrega eventos a partir do connect; tasks externas (MCP, /mesh/broadcast
+// via API) que rodaram antes da aba abrir ficam invisíveis no chat. Aqui buscamos
+// /mesh/timeline e re-emitimos pelo mesmo handleMeshEvent que a SSE usa.
+async function replayRecentTimeline(limit = 200) {
+  try {
+    // Respeita Clear persistente: só replay eventos posteriores ao último clear.
+    const clearedAt = localStorage.getItem('meshChatClearedAt');
+    const sinceParam = clearedAt ? `&since=${encodeURIComponent(clearedAt)}` : '';
+    const r = await fetch(`${BASE}/mesh/timeline?limit=${limit}${sinceParam}`, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) return;
+    const events = await r.json();
+    if (!Array.isArray(events) || events.length === 0) return;
+
+    // API devolve DESC (mais novo primeiro); chat precisa ASC (cronológico)
+    const sorted = events.slice().reverse();
+    // Belt-and-suspenders: filtra client-side caso o servidor ignore `since`
+    const cutoff = clearedAt ? new Date(clearedAt).getTime() : 0;
+    if (cutoff) {
+      for (let i = sorted.length - 1; i >= 0; i--) {
+        const ts = new Date(sorted[i].created_at || sorted[i].timestamp || 0).getTime();
+        if (ts && ts < cutoff) sorted.splice(i, 1);
+      }
+      if (sorted.length === 0) return;
+    }
+
+    const chat = document.getElementById('chat');
+    const sep = document.createElement('div');
+    sep.className = 'phase-sep';
+    sep.style.opacity = '0.55';
+    sep.textContent = `── histórico: ${sorted.length} eventos ──`;
+    chat.appendChild(sep);
+
+    let rendered = 0;
+    for (const ev of sorted) {
+      const normalized = {
+        taskId: ev.task_id || ev.taskId,
+        type: ev.event_type || ev.type,
+        payload: ev.payload || {},
+        server: ev.server,
+        timestamp: ev.created_at || ev.timestamp,
+      };
+      if (!normalized.type) continue;
+      try { handleMeshEvent(normalized); rendered++; }
+      catch (err) { console.warn('[ui] replay event failed', err); }
+    }
+
+    if (rendered > 0) {
+      const sep2 = document.createElement('div');
+      sep2.className = 'phase-sep';
+      sep2.style.opacity = '0.55';
+      sep2.textContent = '── live ──';
+      chat.appendChild(sep2);
+    }
+    // Reset arena/stream state porque o replay pode ter deixado meio aberto
+    if (currentArena) finalizeArena();
+    _arenaHint = null;
+  } catch (err) {
+    console.warn('[ui] timeline replay failed', err);
+  }
+}
+
+// ============================================
+// Init
+// ============================================
+document.addEventListener('DOMContentLoaded', async () => {
+  // Replay PRIMEIRO (carrega histórico), depois SSE (eventos novos no topo).
+  // Pequena janela de race entre fim do replay e início do SSE pode causar
+  // duplicação de 1-2 eventos — aceitável vs perder histórico inteiro.
+  await replayRecentTimeline();
+  connectSSE();
+  pollHealth();
+  pollStats();
+  pollTasks();
+  updateLayoutToggleUI();
+
+  setInterval(pollHealth, 15000);
+  setInterval(pollStats, 10000);
+  setInterval(pollTasks, 2500);
+
+  // Focus terminal on load
+  setTimeout(() => document.getElementById('terminal-input').focus(), 100);
+
+  addSystemMessage('Connected — type a command or message below');
+});
+</script>
+</body>
+</html>

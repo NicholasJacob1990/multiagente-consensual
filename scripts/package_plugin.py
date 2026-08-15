@@ -23,12 +23,12 @@ INCLUDED_ROOTS = {
 }
 # Executáveis auxiliares locais podem permanecer no repositório, mas plugins
 # hospedados em claude.ai não podem publicar um diretório bin/ de nível superior.
-LOCAL_ONLY_ROOTS = {"bin", "npm"}
-LOCAL_ONLY_ROOT_FILES = {".npmignore", "package.json", "package-lock.json"}
+LOCAL_ONLY_ROOTS = {"bin", "npm", "packages"}
+LOCAL_ONLY_ROOT_FILES = {".gitignore", ".npmignore", "package.json", "package-lock.json"}
 HOSTED_EXCLUDED_PATHS = {Path(".claude-plugin/marketplace.json")}
 INCLUDED_ROOT_FILES = {"README.md"}
 EXCLUDED_NAMES = {
-    "__pycache__", ".DS_Store", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cache"
+    "__pycache__", ".DS_Store", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cache"
 }
 SENSITIVE_NAMES = {
     ".env",
@@ -93,7 +93,9 @@ def package_entries() -> list[tuple[str, bytes, int]]:
     entries: list[tuple[str, bytes, int]] = []
     for source in sorted(ROOT.rglob("*")):
         if source.is_symlink():
-            raise RuntimeError(f"symlink proibido no pacote: {source.relative_to(ROOT)}")
+            if included(source):
+                raise RuntimeError(f"symlink proibido no pacote: {source.relative_to(ROOT)}")
+            continue
         if not source.is_file() or not included(source):
             continue
         mode = 0o755 if os.access(source, os.X_OK) else 0o644
