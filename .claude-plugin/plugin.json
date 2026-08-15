@@ -1,0 +1,26 @@
+{
+  "name": "multiagente-consensual",
+  "version": "1.6.0+codex.20260815153706",
+  "description": "Debate, consenso, loops de melhoria e workflows auditáveis entre modelos e CLIs, inclusive redação jurídica com redline DOCX.",
+  "author": {
+    "name": "Nicholas Jacob"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "multi-agent",
+    "consensus",
+    "debate",
+    "legal-drafting",
+    "ensemble",
+    "cowork"
+  ],
+  "userConfig": {
+    "bridge_secret": {
+      "type": "string",
+      "title": "Segredo do bridge local",
+      "description": "Cole o valor bridge_secret de ~/.agents/cowork-bridge-config.json para assinar pedidos Cowork sem expor o segredo na pasta compartilhada.",
+      "sensitive": true,
+      "required": false
+    }
+  }
+}

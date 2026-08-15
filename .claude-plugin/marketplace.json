@@ -1,0 +1,28 @@
+{
+  "name": "multiagente-local",
+  "owner": {
+    "name": "Nicholas Jacob"
+  },
+  "metadata": {
+    "description": "Plugins locais de colaboração e consenso multiagente",
+    "version": "1.6.0+codex.20260815153706"
+  },
+  "plugins": [
+    {
+      "name": "multiagente-consensual",
+      "description": "Debate, consenso, loops de melhoria, ensemble, workflows e redação jurídica com redline DOCX.",
+      "source": "./",
+      "version": "1.6.0+codex.20260815153706",
+      "author": {
+        "name": "Nicholas Jacob"
+      },
+      "license": "UNLICENSED",
+      "keywords": [
+        "multi-agent",
+        "consensus",
+        "debate",
+        "cowork"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflows Multiagente"
+  short_description: "Sete protocolos auditáveis entre agentes"
+  default_prompt: "Use $workflow-agentes para coordenar agentes em pipeline, DAG, swarm, map-reduce, torneio, votação ou roteamento adaptativo."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Loop de Redação, Consenso e Ensemble"
+  short_description: "Motor iterativo multiagente e multi-artefato"
+  default_prompt: "Use $loop-debate-agentes para produzir e revisar um artefato ou pacote com papéis, consenso e perfis configuráveis; quando solicitado, forme decisão colegiada seriatim, per curiam ou opinion of the court sem confundir maioria com consenso."

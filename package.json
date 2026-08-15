@@ -1,0 +1,52 @@
+{
+  "name": "@nicholasjacob90/multiagente-consensual",
+  "version": "1.6.0",
+  "description": "Instalador portátil das skills, comandos e rotas do Multiagente Consensual para CLIs locais.",
+  "type": "module",
+  "bin": {
+    "multiagente-consensual": "npm/cli.mjs"
+  },
+  "files": [
+    ".claude-plugin/",
+    ".codex-plugin/",
+    "assets/",
+    "bin/",
+    "commands/",
+    "npm/cli.mjs",
+    "references/",
+    "scripts/*.py",
+    "skills/**/*.json",
+    "skills/**/*.md",
+    "skills/**/*.py",
+    "skills/**/*.sh",
+    "skills/**/*.yaml",
+    "skills/**/*.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test npm/test/*.test.mjs",
+    "prepack": "python3 scripts/manifest_lint.py --manifest assets/multiagent-manifest.json validate"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "keywords": [
+    "codex",
+    "claude-code",
+    "cursor",
+    "opencode",
+    "kimi-code",
+    "antigravity",
+    "multi-agent",
+    "consensus"
+  ],
+  "author": "Nicholas Jacob",
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public"
+  }
+}

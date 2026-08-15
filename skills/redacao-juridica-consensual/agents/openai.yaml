@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redação Jurídica Consensual"
+  short_description: "Perfil jurídico sobre o motor de debate e consenso"
+  default_prompt: "Use $redacao-juridica-consensual como perfil jurídico do $loop-debate-agentes para redigir e revisar documento, pacote, voto ou acórdão com fontes, consenso e formação colegiada configuráveis."

@@ -1,0 +1,61 @@
+# GENERATED COMPATIBILITY VIEW.
+# Source of truth: ~/.agents/multiagent-manifest.json
+# Do not edit routes here; update the JSON manifest and validate/render this view.
+version: 1
+policy: strict
+fallback: pause_and_report
+output_policy: adaptive_up_to_native_max
+output_force_fill: false
+filesystem_policy: project_root_plus_explicit_directories
+filesystem_scope: explicit_per_invocation
+
+routes:
+  claude:
+    cli: claude
+    binary: claude
+    provider: anthropic
+    default_model: claude-opus-5
+    model_policy: fixed_default
+    notes: Claude deve usar Claude Opus 5 exclusivamente pelo Claude Code CLI.
+
+  codex:
+    cli: codex
+    binary: codex
+    provider: openai
+    default_model: gpt-5.6-sol
+    default_effort: xhigh
+    model_policy: fixed_default
+    notes: Codex deve usar gpt-5.6-sol com esforço xhigh pelo Codex CLI.
+
+  grok:
+    cli: cursor
+    binary: cursor-agent
+    provider: xai
+    default_model: cursor-grok-4.6-high
+    model_policy: fixed_default
+    notes: Grok deve ser invocado pelo Cursor CLI, nunca pelo Grok CLI nativo.
+
+  kimi:
+    cli: kimi
+    binary: kimi-secure
+    provider: opencode-go
+    default_model: kimi-code/k3
+    default_effort: max
+    model_policy: preserve_requested_kimi_model
+    notes: Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório.
+
+  gemini:
+    cli: antigravity
+    binary: agy
+    provider: google
+    default_model: gemini-3.7-flash-high
+    model_policy: preserve_requested_gemini_model
+    notes: Gemini 3.7 Flash High deve ser invocado pelo Antigravity CLI.
+
+  opencode:
+    cli: opencode
+    binary: opencode
+    provider: opencode-go
+    default_model: opencode-go/glm-5.3
+    model_policy: preserve_requested_opencode_model
+    notes: OpenCode usa GLM-5.3 por padrão e preserva outro modelo solicitado; GLM, DeepSeek e Qwen exigem esforço max.

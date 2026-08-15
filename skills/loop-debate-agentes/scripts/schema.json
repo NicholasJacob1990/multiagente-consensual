@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["leitura_critica", "verificacao_factual", "nota", "subnotas", "atendeu_rodada_anterior", "pontos_a_melhorar", "veredito"],
+  "properties": {
+    "leitura_critica": {
+      "type": "array",
+      "description": "Passe de leitura ANTES de pontuar. Minimo 6 itens, cada um citando um trecho literal do texto.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trecho", "observacao", "criterio_afetado", "sinal"],
+        "properties": {
+          "trecho": { "type": "string", "description": "Citacao literal do texto avaliado." },
+          "observacao": { "type": "string" },
+          "criterio_afetado": {
+            "type": "string",
+            "enum": ["clareza", "profundidade", "coerencia", "precisao_conceitual", "qualidade_explicacao"]
+          },
+          "sinal": { "type": "string", "enum": ["positivo", "negativo"] }
+        }
+      }
+    },
+    "verificacao_factual": {
+      "type": "array",
+      "description": "Toda afirmacao checavel do texto: fato, numero, citacao, autor, API, definicao tecnica, relacao causal.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["afirmacao", "status", "justificativa"],
+        "properties": {
+          "afirmacao": { "type": "string" },
+          "status": { "type": "string", "enum": ["correta", "imprecisa", "falsa", "nao_verificavel"] },
+          "justificativa": { "type": "string" }
+        }
+      }
+    },
+    "nota": {
+      "type": "number",
+      "description": "Media aritmetica simples das cinco subnotas, uma casa decimal."
+    },
+    "subnotas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clareza", "profundidade", "coerencia", "precisao_conceitual", "qualidade_explicacao"],
+      "properties": {
+        "clareza": { "type": "number" },
+        "profundidade": { "type": "number" },
+        "coerencia": { "type": "number" },
+        "precisao_conceitual": { "type": "number" },
+        "qualidade_explicacao": { "type": "number" }
+      }
+    },
+    "atendeu_rodada_anterior": {
+      "type": "string",
+      "description": "primeira | sim | parcial | nao, seguido de uma frase dizendo o que ficou de fora."
+    },
+    "pontos_a_melhorar": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterio", "problema", "acao"],
+        "properties": {
+          "criterio": {
+            "type": "string",
+            "enum": ["clareza", "profundidade", "coerencia", "precisao_conceitual", "qualidade_explicacao"]
+          },
+          "problema": { "type": "string" },
+          "acao": { "type": "string" }
+        }
+      }
+    },
+    "veredito": {
+      "type": "string",
+      "enum": ["APROVADO", "REPROVADO"]
+    }
+  }
+}

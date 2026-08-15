@@ -1,0 +1,4 @@
+interface:
+  display_name: "Consenso Multimodelo"
+  short_description: "Deliberação e decisão colegiada por versão"
+  default_prompt: "Use $consenso para configurar uma deliberação estrita, com decisor ou consultiva sobre a versão congelada; se houver colegiado, separe consenso, resultado, ratio e opiniões seriatim, per curiam ou opinion of the court."

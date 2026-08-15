@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+
+import {
+  ALL_TARGETS,
+  marketplaceDocuments,
+  parseArgs,
+  resolveTargets,
+} from "../cli.mjs";
+
+test("resolve --all para as seis CLIs canônicas", () => {
+  const args = parseArgs(["install", "--all"]);
+  assert.deepEqual(resolveTargets(args), [...ALL_TARGETS]);
+});
+
+test("aceita instalação individual e rejeita alvo desconhecido", () => {
+  assert.deepEqual(resolveTargets(parseArgs(["install", "cursor"])), ["cursor"]);
+  assert.throws(() => resolveTargets(parseArgs(["install", "inexistente"])), /alvo desconhecido/);
+});
+
+test("marketplaces apontam para o payload estável relativo", () => {
+  const documents = marketplaceDocuments("1.2.3+codex.teste");
+  assert.equal(documents.claude.name, "multiagente-npm");
+  assert.equal(documents.claude.plugins[0].source, "./plugins/multiagente-consensual");
+  assert.equal(documents.codex.plugins[0].source.path, "./plugins/multiagente-consensual");
+  assert.equal(documents.codex.plugins[0].policy.authentication, "ON_USE");
+});
+
+test("dry-run isolado não cria arquivos", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-npm-test-"));
+  const home = path.join(root, "home");
+  const installRoot = path.join(root, "marketplace");
+  const { spawnSync } = await import("node:child_process");
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "cli.mjs");
+  const result = spawnSync(
+    process.execPath,
+    [cli, "install", "cursor", "--dry-run", "--json", "--home", home, "--install-root", installRoot, "--skip-registries", "--skip-bridge"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).simulation, true);
+  assert.equal(fs.existsSync(home), false);
+  assert.equal(fs.existsSync(installRoot), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});

@@ -1,0 +1,36 @@
+{
+  "name": "multiagente-consensual",
+  "version": "1.6.0+codex.20260815153706",
+  "description": "Debate, consenso, loops de melhoria e workflows audit\u00e1veis entre modelos e CLIs, inclusive reda\u00e7\u00e3o jur\u00eddica com redline DOCX.",
+  "author": {
+    "name": "Nicholas Jacob"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "multi-agent",
+    "consensus",
+    "debate",
+    "legal-drafting",
+    "ensemble",
+    "cowork"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Multiagente Consensual",
+    "shortDescription": "Debate e melhora artefatos com m\u00faltiplos modelos.",
+    "longDescription": "Leva ao Cowork e ao Claude Code os fluxos de consenso, loop de cr\u00edtica\u2013r\u00e9plica\u2013revis\u00e3o, ensemble N\u00d7N, reda\u00e7\u00e3o jur\u00eddica com controle de altera\u00e7\u00f5es DOCX e workflows formais. No Cowork, usa uma fila em pasta compartilhada processada pelo bridge local; no Claude Code, tamb\u00e9m pode chamar as CLIs diretamente.",
+    "developerName": "Nicholas Jacob",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Busque consenso sobre o artefato atual.",
+      "Revise este documento em ciclos com os modelos indicados.",
+      "Crie uma minuta jur\u00eddica consensual."
+    ],
+    "brandColor": "#4B3F72"
+  }
+}
