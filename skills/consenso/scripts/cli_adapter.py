@@ -32,6 +32,8 @@ EFFORT_PATTERN = re.compile(r"^[A-Za-z0-9._+\-]+$")
 MAX_PROMPT_BYTES = 512 * 1024
 OUTPUT_POLICIES = ("adaptive_up_to_native_max", "concise_soft_target")
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
+REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
+REQUIRED_GROK_OFFICIAL_EFFORT = "xhigh"
 
 
 def default_output_policy() -> dict[str, Any]:
@@ -179,7 +181,12 @@ def output_directive(policy: str) -> str:
     )
 
 
-def resolve_seat(data: dict[str, Any], participant: str, model: str | None) -> dict[str, Any]:
+def resolve_seat(
+    data: dict[str, Any],
+    participant: str,
+    model: str | None,
+    requested_route: str | None = None,
+) -> dict[str, Any]:
     seats = data["seats"]
     canonical = participant
     if participant not in seats:
@@ -188,7 +195,34 @@ def resolve_seat(data: dict[str, Any], participant: str, model: str | None) -> d
             raise RuntimeError(f"Participante desconhecido: {participant}")
         canonical = matches[0]
     seat = seats[canonical]
-    route = seat.get("route")
+    route = requested_route or seat.get("route")
+    if seat.get("model_policy") == "fixed_per_route":
+        allowed = seat.get("allowed_routes", [])
+        models = seat.get("models_by_route", {})
+        efforts = seat.get("effort_by_route", {})
+        if requested_route is None and model:
+            matching_routes = [name for name, fixed in models.items() if model == fixed]
+            if len(matching_routes) == 1:
+                route = matching_routes[0]
+        if route not in allowed:
+            raise RuntimeError(
+                f"Rota incompatível para {canonical}: escolha uma de {', '.join(allowed)}."
+            )
+        fixed = models.get(route)
+        if not fixed:
+            raise RuntimeError(f"A rota {route} não declara modelo fixo para {canonical}.")
+        if model and model not in {fixed, *seat.get("aliases", [])}:
+            raise RuntimeError(
+                f"Modelo incompatível para {canonical} na rota {route}: esperado {fixed}, recebeu {model}."
+            )
+        if model and model in models.values() and model != fixed:
+            raise RuntimeError(
+                f"O modelo {model} pertence a outra rota; selecione-a explicitamente."
+            )
+        model = fixed
+        default_effort = efforts.get(route)
+    else:
+        default_effort = seat.get("default_effort")
     if route not in data["routes"]:
         raise RuntimeError(f"Rota inexistente para {canonical}: {route}")
     if seat.get("model_policy") == "fixed_default":
@@ -205,7 +239,7 @@ def resolve_seat(data: dict[str, Any], participant: str, model: str | None) -> d
         "route": route,
         "model": model or seat.get("default_model"),
         "provider": seat.get("provider"),
-        "default_effort": seat.get("default_effort"),
+        "default_effort": default_effort,
         "effort_policy": seat.get("effort_policy"),
         "context_window_tokens": seat.get("context_window_tokens"),
     }
@@ -629,6 +663,26 @@ def build_invocation(
             command += ["--resume", native_session_id]
         command += ["--model", model or REQUIRED_GROK_MODEL]
         stdin = governed_prompt
+    elif route == "grok_official":
+        command = [
+            binary,
+            "--prompt-file",
+            str(prompt_path),
+            "--model",
+            model or REQUIRED_GROK_OFFICIAL_MODEL,
+            "--cwd",
+            str(root),
+            "--output-format",
+            "streaming-json",
+            "--reasoning-effort",
+            effort or REQUIRED_GROK_OFFICIAL_EFFORT,
+            "--always-approve",
+            "--permission-mode",
+            "bypassPermissions",
+            "--sandbox",
+            "off",
+            "--no-memory",
+        ]
     elif route == "opencode":
         env["OPENCODE_PERMISSION"] = opencode_permissions()
         env["OPENCODE_AUTO_SHARE"] = "false"
@@ -687,8 +741,10 @@ def deep_status(participant: str, manifest: dict[str, Any]) -> str:
         command = [binary, "models"]
     elif route == "kimi":
         command = [binary, "provider", "list"]
-    elif route == "cursor":
+    elif route in {"cursor", "grok_official"}:
         command = [binary, "status"]
+        if route == "grok_official":
+            command = [binary, "models"]
     elif route == "opencode":
         command = [binary, "auth", "list"]
     else:
@@ -726,7 +782,7 @@ def run_invoke(args: argparse.Namespace, manifest: dict[str, Any]) -> int:
     granted = additional_directories(args.add_dir, root=root, allow_home=args.allow_home)
     validate_model(args.model)
     validate_effort(args.effort)
-    resolved = resolve_seat(manifest, args.participant, args.model)
+    resolved = resolve_seat(manifest, args.participant, args.model, args.route)
     route = resolved["route"]
     model = resolved["model"]
     effort = resolve_effort(resolved, args.effort)
@@ -782,7 +838,10 @@ def run_invoke(args: argparse.Namespace, manifest: dict[str, Any]) -> int:
         # Rotas que recebem um caminho, em vez do conteúdo pelo stdin, leem uma
         # cópia imutável dentro de um diretório temporário concedido por chamada.
         scoped_prompt_path = temporary / "instructions.md"
-        scoped_prompt_path.write_text(prompt, encoding="utf-8")
+        scoped_prompt_content = prompt
+        if route == "grok_official":
+            scoped_prompt_content = f"{prompt.rstrip()}\n\n{output_directive(output['policy'])}\n"
+        scoped_prompt_path.write_text(scoped_prompt_content, encoding="utf-8")
         scoped_prompt_path.chmod(0o400)
         invocation_dirs = [*granted, temporary.resolve()]
         if persist:
@@ -981,6 +1040,10 @@ def parser() -> argparse.ArgumentParser:
         help="Conceder a pasta pessoal inteira de forma explícita e auditável",
     )
     invoke.add_argument("--model")
+    invoke.add_argument(
+        "--route",
+        help="Rota explícita quando a cadeira admite mais de uma (ex.: cursor ou grok_official)",
+    )
     invoke.add_argument("--effort")
     invoke.add_argument("--output-policy", choices=OUTPUT_POLICIES)
     invoke.add_argument("--timeout", type=timeout_value, default=1800)

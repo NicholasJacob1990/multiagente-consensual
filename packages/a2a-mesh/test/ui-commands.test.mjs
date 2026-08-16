@@ -10,6 +10,17 @@ const ui = fs.readFileSync(
   "utf8",
 );
 
+test("painel aberto como arquivo local redireciona para o servidor Mesh", () => {
+  assert.match(ui, /window\.location\.protocol === 'file:'/);
+  assert.match(ui, /window\.location\.replace\('http:\/\/127\.0\.0\.1:3142\/ui'\)/);
+});
+
+test("modo showcase preserva o histórico e permite tema isolado para documentação", () => {
+  assert.match(ui, /const SHOWCASE_MODE = new URLSearchParams\(window\.location\.search\)\.get\('showcase'\) === '1'/);
+  assert.match(ui, /if \(!SHOWCASE_MODE\) \{/);
+  assert.match(ui, /requestedTheme === 'light' \|\| requestedTheme === 'dark'/);
+});
+
 test("painel implementa todos os comandos anunciados no campo de entrada", () => {
   for (const command of [
     "call",

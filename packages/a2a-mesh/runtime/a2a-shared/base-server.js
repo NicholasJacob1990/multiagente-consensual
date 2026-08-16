@@ -13,6 +13,7 @@ import { createSandboxManager } from './sandbox-manager.js';
 import { mergeRequestTaskMetadata } from './provider-session.js';
 import { DEFAULT_PORTS, publicAgentCatalog } from './agent-catalog.js';
 import { recoverPartialArtifacts } from './partial-output.js';
+import { extractResponseArtifacts, resolveStoredArtifact } from './file-artifacts.js';
 
 // --- Shared helpers ---
 
@@ -23,18 +24,8 @@ export function extractPromptText(message) {
     .join('\n');
 }
 
-export function extractArtifacts(output) {
-  const artifacts = [];
-  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-  let match;
-  while ((match = codeBlockRegex.exec(output)) !== null) {
-    artifacts.push({
-      name: match[1] ? `code.${match[1]}` : 'code-snippet',
-      description: `Bloco de codigo ${match[1] || ''}`.trim(),
-      parts: [{ type: 'text', text: match[2].trim() }],
-    });
-  }
-  return artifacts;
+export function extractArtifacts(output, options = {}) {
+  return extractResponseArtifacts(output, options);
 }
 
 // --- HTTP utilities ---
@@ -82,11 +73,11 @@ function sendSSE(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function sendError(res, code, message) {
+function sendError(res, code, message, extraHeaders = {}) {
   sendJSON(res, {
     jsonrpc: '2.0',
     error: { code, message },
-  }, code >= 400 && code < 600 ? code : 500);
+  }, code >= 400 && code < 600 ? code : 500, extraHeaders);
 }
 
 function isLoopbackRequest(req) {
@@ -697,6 +688,8 @@ export function createA2AServer(config) {
     debateExecutor = null,
     planExecutor = null,
     healthDetails = null,
+    runtimeConfigDetails = null,
+    updateRuntimeConfig = null,
     executeTask,
   } = config;
 
@@ -740,6 +733,7 @@ export function createA2AServer(config) {
       const origin = String(req.headers.origin || '');
       res.writeHead(204, {
         ...(origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+        ...(origin ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, A2A-Token, A2A-Protocol-Version',
         [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
@@ -795,7 +789,12 @@ export function createA2AServer(config) {
         return sendError(res, 403, 'Forbidden origin');
       }
       if (!checkAuth(req, authToken, port)) {
-        return sendError(res, 401, 'Unauthorized: invalid or missing token');
+        const origin = String(req.headers.origin || '');
+        return sendError(res, 401, 'Unauthorized: invalid or missing token', origin ? {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Credentials': 'true',
+          Vary: 'Origin',
+        } : {});
       }
 
       // JSON-RPC 2.0 endpoint
@@ -817,6 +816,25 @@ export function createA2AServer(config) {
           return res.end();
         }
         return sendJSON(res, rpcResult);
+      }
+
+      // Runtime route configuration. This is deliberately local, authenticated
+      // and opt-in: peers never change provider or CLI as an implicit fallback.
+      if (url.pathname === '/mesh/config' && method === 'GET') {
+        const origin = String(req.headers.origin || '');
+        const details = typeof runtimeConfigDetails === 'function' ? runtimeConfigDetails() : {};
+        return sendJSON(res, { agent: selfId, configurable: typeof updateRuntimeConfig === 'function', ...details }, 200,
+          origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' } : {});
+      }
+      if (url.pathname === '/mesh/config' && method === 'POST') {
+        if (typeof updateRuntimeConfig !== 'function') {
+          return sendError(res, 405, `Runtime configuration is not supported by ${selfId}`);
+        }
+        const body = await parseBody(req);
+        const details = await updateRuntimeConfig(body || {});
+        const origin = String(req.headers.origin || '');
+        return sendJSON(res, { ok: true, agent: selfId, ...details }, 200,
+          origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true', Vary: 'Origin' } : {});
       }
 
       // Task endpoints
@@ -925,6 +943,34 @@ export function createA2AServer(config) {
           connectedPeers: peerStates.filter(peer => peer.status === 'online').length,
           uptime: Math.floor(process.uptime()),
         });
+      }
+
+      const artifactDownloadMatch = url.pathname.match(/^\/mesh\/artifacts\/([a-zA-Z0-9_-]+)\/(\d+)$/);
+      if (artifactDownloadMatch && method === 'GET') {
+        const taskId = artifactDownloadMatch[1];
+        const artifactIndex = Number.parseInt(artifactDownloadMatch[2], 10);
+        const task = tm.tasks.get(taskId) || meshStore?.getTask(taskId);
+        if (!task) return sendError(res, 404, `Task ${taskId} not found`);
+        const artifact = Array.isArray(task.artifacts) ? task.artifacts[artifactIndex] : null;
+        if (!artifact) return sendError(res, 404, `Artifact ${artifactIndex} not found for task ${taskId}`);
+        let stored;
+        try {
+          stored = resolveStoredArtifact(artifact);
+        } catch (error) {
+          return sendError(res, 409, `Artifact integrity check failed: ${error.message}`);
+        }
+        if (!stored) return sendError(res, 400, 'Artifact is embedded in the task and does not have a stored file');
+        const asciiName = String(stored.name || 'artifact.bin').replace(/[^a-zA-Z0-9._-]+/g, '-') || 'artifact.bin';
+        res.writeHead(200, {
+          'Content-Type': stored.mimeType,
+          'Content-Length': stored.size,
+          'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(stored.name)}`,
+          'Cache-Control': 'private, no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Artifact-SHA256': stored.sha256,
+          [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
+        });
+        return fs.createReadStream(stored.path).pipe(res);
       }
 
       if (url.pathname === '/mesh/tasks' && method === 'GET') {

@@ -1,6 +1,6 @@
 {
   "name": "@nicholasjacob90/multiagente-consensual",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "description": "Instalador portátil das skills, comandos e rotas do Multiagente Consensual para CLIs locais.",
   "type": "module",
   "bin": {

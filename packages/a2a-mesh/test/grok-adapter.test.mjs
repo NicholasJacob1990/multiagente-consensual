@@ -10,8 +10,17 @@ import {
   buildCursorArgs,
   createCursorExecutor,
   modelLabelsMatch,
+  parseCursorModels,
   parseCursorStreamLine,
 } from '../runtime/a2a-grok/cursor-cli-adapter.js';
+import {
+  OFFICIAL_GROK_MODEL,
+  buildOfficialGrokArgs,
+  createOfficialGrokExecutor,
+  parseOfficialGrokModels,
+  parseOfficialGrokStreamLine,
+  probeOfficialGrok,
+} from '../runtime/a2a-grok/official-cli-adapter.js';
 
 test('fixa Grok 4.6 High e usa stream-json sem aprovar MCPs globalmente', () => {
   const args = buildCursorArgs({ workspace: '/tmp/projeto' });
@@ -83,6 +92,24 @@ test('confirma o rótulo observado e exige evento terminal', () => {
   assert.equal(parseCursorStreamLine('texto parcial não JSON'), null);
 });
 
+test('catálogo Cursor ignora cabeçalho e dica de uso', () => {
+  assert.deepEqual(
+    parseCursorModels('Available models\n\nauto - Auto (default)\ncursor-grok-4.6-high - Grok 4.6\nTip: use --model'),
+    ['auto', 'cursor-grok-4.6-high'],
+  );
+});
+
+test('executor Cursor aceita troca explícita para modelo do catálogo', () => {
+  const executor = createCursorExecutor({
+    binary: 'cursor-agent',
+    taskManager: { taskEmitter: new EventEmitter() },
+  });
+  executor.updateModel('cursor-grok-4.6-xhigh', { verified: true });
+  assert.equal(executor.configuredModel, 'cursor-grok-4.6-xhigh');
+  assert.equal(executor.healthState.configuredModel, 'cursor-grok-4.6-xhigh');
+  assert.equal(executor.healthState.modelVerified, true);
+});
+
 test('publica a resposta terminal do Grok uma única vez', async () => {
   const { task } = await executeFixture([
     { type: 'system', subtype: 'init', model: 'Cursor Grok 4.6 High' },
@@ -91,4 +118,81 @@ test('publica a resposta terminal do Grok uma única vez', async () => {
   ]);
   assert.equal(task.status.state, 'completed');
   assert.equal(task.status.message.parts[0].text, 'resposta natural');
+});
+
+test('configura a CLI oficial com rota explícita, esforço xhigh e sandbox desligado', () => {
+  const args = buildOfficialGrokArgs({ workspace: '/tmp/projeto', promptFile: '/tmp/prompt.md' });
+  assert.ok(args.includes('streaming-json'));
+  assert.ok(args.includes('bypassPermissions'));
+  assert.ok(args.includes('off'));
+  assert.deepEqual(args.slice(0, 2), ['--prompt-file', '/tmp/prompt.md']);
+  assert.equal(args[args.indexOf('--model') + 1], OFFICIAL_GROK_MODEL);
+  assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'xhigh');
+});
+
+test('interpreta catálogo e streaming da CLI oficial', () => {
+  assert.deepEqual(parseOfficialGrokModels('Default model: grok-4.6\nAvailable models:\n  * grok-4.6 (default)'), ['grok-4.6']);
+  assert.deepEqual(parseOfficialGrokStreamLine('{"type":"text","data":"olá"}').text, 'olá');
+  assert.equal(parseOfficialGrokStreamLine('{"type":"end"}').terminal, true);
+  assert.equal(parseOfficialGrokStreamLine('não json'), null);
+});
+
+test('distingue CLI oficial instalada de sessão autenticada', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-grok-official-probe-'));
+  const binary = path.join(workspace, 'grok');
+  fs.writeFileSync(binary, '#!/bin/sh\nprintf "You are not authenticated.\\nDefault model: grok-4.6\\nAvailable models:\\n  * grok-4.6 (default)\\n"\n', { mode: 0o700 });
+  try {
+    const probe = probeOfficialGrok(binary);
+    assert.equal(probe.available, true);
+    assert.equal(probe.modelAvailable, true);
+    assert.equal(probe.authenticated, false);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('executa resposta da CLI oficial sem fallback para Cursor', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-grok-official-fixture-'));
+  const binary = path.join(workspace, 'grok');
+  fs.writeFileSync(binary, `#!/usr/bin/env node
+if (process.argv[2] === 'models') {
+  console.log('Default model: grok-4.6');
+  console.log('Available models:');
+  console.log('  * grok-4.6 (default)');
+} else {
+  console.log(JSON.stringify({ type: 'text', data: 'resposta oficial' }));
+  console.log(JSON.stringify({ type: 'end', model: 'grok-4.6', session_id: 'sessao-oficial' }));
+}
+`, { mode: 0o700 });
+  const taskManager = {
+    taskEmitter: new EventEmitter(),
+    updateTask(task, update) { Object.assign(task, update); },
+    taskToJSON(task) { return task; },
+  };
+  const task = {
+    id: 'official-fixture',
+    history: [{ role: 'user', parts: [{ type: 'text', text: 'teste' }] }],
+    status: { state: 'submitted' },
+    metadata: { maxDepth: 0 },
+  };
+  const executor = createOfficialGrokExecutor({
+    binary,
+    workspace,
+    taskManager,
+    cliTimeoutMs: 5000,
+    initialProbe: { authenticated: true, modelAvailable: true },
+    cliToolWrapper: { buildA2AToolPrefix: () => '', parseToolCall: () => null, removeToolCalls: (text) => text },
+    dispatchTool: async () => '',
+    normalizeToolOutput: String,
+  });
+  try {
+    await executor.executeTask(task, () => {}, { signal: new AbortController().signal });
+    assert.equal(task.status.state, 'completed');
+    assert.equal(task.status.message.parts[0].text, 'resposta oficial');
+    assert.equal(task.metadata.providerRuntime, 'grok-official');
+    assert.equal(task.metadata.providerRoute, 'official');
+    assert.equal(task.metadata.observedModel, 'grok-4.6');
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 });

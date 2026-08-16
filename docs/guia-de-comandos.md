@@ -3,11 +3,11 @@
 Este guia mostra qual comando escolher, o que acontece durante a execução e
 como formular pedidos que os agentes consigam executar sem adivinhações.
 
-![Página inicial do A2A Mesh com título, agentes e ações rápidas](images/a2a-mesh-home-v1.9.png)
+![Página inicial do A2A Mesh com oito agentes e ações rápidas](images/a2a-mesh-home-v1.10.png)
 
 Durante a execução, o painel apresenta fases, agente ativo e telemetria:
 
-![Painel local do A2A Mesh com stepper e telemetria](images/a2a-mesh-panel-v1.9.png)
+![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](images/a2a-mesh-models-v1.10.png)
 
 ## Comece pela intenção, não pelo nome do comando
 

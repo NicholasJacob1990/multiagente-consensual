@@ -19,6 +19,7 @@ import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
+import { mergeArtifacts, stripArtifactDeclarations } from '../a2a-shared/file-artifacts.js';
 
 // ============================================
 // CONFIG
@@ -255,7 +256,7 @@ MCPs E SKILLS DISPONÍVEIS: você tem acesso ao mesmo conjunto que o Claude Code
 AGENTES A2A DISPONÍVEIS:
 - codex: OpenAI Codex (gpt-5.6-sol, esforço xhigh) — especialista em geração e análise de código, debugging e refactoring
 - gemini: Google Gemini — forte em raciocínio, análise de dados, pesquisa e explicações detalhadas
-- grok: xAI Grok 4.6 High, exclusivamente via Cursor CLI — forte em revisão adversarial e busca de pressupostos frágeis
+- grok: xAI Grok 4.6, pela rota Cursor ou CLI oficial xAI selecionada explicitamente — forte em revisão adversarial e busca de pressupostos frágeis
 
 QUANDO USAR CADA TOOL A2A:
 - a2a_call: Consultar UM agente específico para tarefa direcionada (ex: "codex, refatore esta função")
@@ -380,13 +381,13 @@ async function executeClaudeAPIWithTools(task, onChunk, runContext = {}) {
       }
     }
 
-    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-    const artifacts = extractArtifacts(allText);
+    const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
 
     tm.updateTask(task, {
       status: { state: 'completed', message: agentMessage },
       history: [...task.history, agentMessage],
-      artifacts: [...task.artifacts, ...artifacts],
+      artifacts: mergeArtifacts(task.artifacts || [], artifacts),
     });
 
     if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
@@ -526,12 +527,12 @@ function executeClaudeCLI(task, onChunk, runContext = {}) {
 
       allText += (wrapper ? wrapper.removeToolCalls(output) : output);
 
-      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-      const artifacts = extractArtifacts(allText);
+      const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
       tm.updateTask(task, {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
-        artifacts: [...task.artifacts, ...artifacts],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
         metadata: {
           ...task.metadata,
           configuredModel: cliModel,

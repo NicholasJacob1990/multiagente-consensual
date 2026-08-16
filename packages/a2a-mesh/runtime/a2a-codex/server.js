@@ -21,6 +21,7 @@ import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
+import { mergeArtifacts, stripArtifactDeclarations } from '../a2a-shared/file-artifacts.js';
 import {
   buildDisabledSkillsOverride,
   prepareCodexRuntimeHome,
@@ -239,7 +240,7 @@ MCPs AND SKILLS: you have access to the same MCPs configured in ~/.codex/config.
 A2A AGENTS AVAILABLE:
 - claude: Anthropic Claude (Opus) — strong at synthesis, analysis, complex reasoning, writing
 - gemini: Google Gemini — strong at reasoning, data analysis, research, detailed explanations
-- grok: xAI Grok 4.6 High, exclusively through Cursor CLI — strong at adversarial review and exposing fragile assumptions
+- grok: xAI Grok 4.6, through the explicitly selected Cursor or official xAI CLI route — strong at adversarial review and exposing fragile assumptions
 
 WHEN TO USE EACH A2A TOOL:
 - a2a_call: Query ONE specific agent for a directed task (e.g. "claude, synthesize these findings")
@@ -355,13 +356,13 @@ async function executeCodexAPIWithTools(task, onChunk, runContext = {}) {
       input.push(...toolOutputs);
     }
 
-    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-    const artifacts = extractArtifacts(allText);
+    const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
 
     tm.updateTask(task, {
       status: { state: 'completed', message: agentMessage },
       history: [...task.history, agentMessage],
-      artifacts: [...task.artifacts, ...artifacts],
+      artifacts: mergeArtifacts(task.artifacts || [], artifacts),
     });
 
     if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
@@ -530,12 +531,12 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
 
       allText += (wrapper ? wrapper.removeToolCalls(output) : output);
 
-      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-      const artifacts = extractArtifacts(allText);
+      const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
       tm.updateTask(task, {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
-        artifacts: [...task.artifacts, ...artifacts],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
         metadata: {
           ...task.metadata,
           configuredModel: CODEX_CLI_MODEL,

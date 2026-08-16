@@ -79,7 +79,11 @@ function fixtureTask(id, operation) {
         }],
       },
     },
-    artifacts: [],
+    artifacts: [{
+      name: 'approved.js',
+      description: 'Código consolidado pelo ensemble',
+      parts: [{ type: 'text', text: 'function approved() { return true; }\n' }],
+    }],
   };
 }
 
@@ -123,9 +127,19 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
     if (url.pathname === '/mesh/tasks') {
       sendJson(response, [
         { id: 'active-run', state: 'working', method: 'mesh/debate', originServer: 'grok', inputText: 'Debate em andamento' },
-        { id: 'recent-ok', state: 'completed', method: 'mesh/call' },
+        { id: 'recent-ok', state: 'completed', method: 'mesh/call', originServer: 'codex', inputText: 'Produza um arquivo de exemplo', artifacts: [{ name: 'recente.md', description: 'Artefato recente', parts: [{ type: 'text', text: '# Recente' }, { type: 'file', file: { uri: 'a2a-artifact://recent-ok/hash/recente.md', mimeType: 'text/markdown;charset=utf-8' } }], metadata: { kind: 'local-file', size: 10, mimeType: 'text/markdown;charset=utf-8', sha256: 'abcdef0123456789' } }] },
         { id: 'historic-fail', state: 'failed', method: 'mesh/plan' },
       ]);
+      return;
+    }
+    if (url.pathname === '/mesh/artifacts/recent-ok/0') {
+      const content = Buffer.from('# Recente\n');
+      response.writeHead(200, {
+        'Content-Type': 'text/markdown;charset=utf-8',
+        'Content-Length': content.length,
+        'Content-Disposition': 'attachment; filename="recente.md"',
+      });
+      response.end(content);
       return;
     }
     if (url.pathname === '/mesh/stats') {
@@ -162,24 +176,62 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   });
 
   const page = await browser.newPage();
+  let grokRoute = 'cursor';
+  const models = {
+    claude: 'claude-opus-5', codex: 'gpt-5.6-sol', gemini: 'gemini-3.7-flash-high', grok: 'cursor-grok-4.6-high',
+    glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3', qwen: 'opencode-go/qwen3.8-max',
+  };
+  const availableModels = {
+    gemini: ['gemini-3.7-flash-high', 'gemini-3.1-pro-high'],
+    grok: ['cursor-grok-4.6-high', 'cursor-grok-4.6-xhigh'],
+    glm: ['opencode-go/glm-5.3', 'opencode-go/kimi-k3'],
+    deepseek: ['opencode-go/deepseek-v4-pro', 'opencode-go/glm-5.3'],
+    qwen: ['opencode-go/qwen3.8-max', 'opencode-go/deepseek-v4-pro'],
+  };
   const externalRequests = [];
   page.on('request', (request) => {
     const url = request.url();
-    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-8]\/health/.test(url)) externalRequests.push(url);
+    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-8]\/(health|mesh\/config)/.test(url)) externalRequests.push(url);
+  });
+  await page.route(/http:\/\/127\.0\.0\.1:314[1-8]\/mesh\/config/, async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen' }[requestUrl.port];
+    const payload = JSON.parse(route.request().postData() || '{}');
+    if (agent === 'grok') grokRoute = payload.route || grokRoute;
+    if (payload.model) models[agent] = payload.model;
+    const configurableModels = ['gemini', 'glm', 'deepseek', 'qwen'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor');
+    const configuredModel = agent === 'grok' && grokRoute === 'official' ? 'grok-4.6' : models[agent];
+    await route.fulfill({
+      status: 200,
+      headers: { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true' },
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        agent,
+        route: agent === 'grok' ? grokRoute : (agent === 'gemini' ? 'antigravity' : ['glm', 'deepseek', 'qwen'].includes(agent) ? 'opencode' : agent),
+        cliBinary: agent === 'grok' ? (grokRoute === 'official' ? 'grok' : 'cursor-agent') : (agent === 'gemini' ? 'agy' : ['glm', 'deepseek', 'qwen'].includes(agent) ? 'opencode' : agent),
+        configuredModel,
+        availableModels: agent === 'grok' && grokRoute === 'official' ? ['grok-4.6'] : (availableModels[agent] || [configuredModel]),
+        configurableModels,
+        authenticated: agent !== 'grok' || grokRoute !== 'official',
+        warning: agent === 'grok' && grokRoute === 'official' ? 'CLI oficial não autenticada. Execute `grok login` antes de enviar tarefas.' : null,
+      }),
+    });
   });
   await page.route(/http:\/\/127\.0\.0\.1:314[1-8]\/health/, async (route) => {
     const port = new URL(route.request().url()).port;
     const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen' }[port];
-    const models = {
-      claude: 'claude-opus-5', codex: 'gpt-5.6-sol', gemini: 'gemini-3.7-flash-high', grok: 'cursor-grok-4.6-high',
-      glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3', qwen: 'opencode-go/qwen3.8-max',
-    };
     await route.fulfill({
       status: 200,
       headers: { 'Access-Control-Allow-Origin': '*' },
       contentType: 'application/json',
       body: JSON.stringify({
-        status: 'ok', mode: 'cli', configuredModel: models[agent], modelVerified: !['grok', 'kimi'].includes(agent),
+        status: 'ok', mode: 'cli',
+        configuredModel: agent === 'grok' && grokRoute === 'official' ? 'grok-4.6' : models[agent],
+        availableModels: agent === 'grok' && grokRoute === 'official' ? ['grok-4.6'] : (availableModels[agent] || [models[agent]]),
+        configurableModels: ['gemini', 'glm', 'deepseek', 'qwen'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor'),
+        modelVerified: !['grok', 'kimi'].includes(agent),
+        ...(agent === 'grok' ? { route: grokRoute, cliBinary: grokRoute === 'official' ? 'grok' : 'cursor-agent', authenticated: grokRoute !== 'official', provider: 'xai' } : {}),
         ...(agent === 'codex' ? { reasoningEffort: 'xhigh' } : {}),
       }),
     });
@@ -187,6 +239,43 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
 
   await page.goto(`${origin}/ui`, { waitUntil: 'domcontentloaded' });
   const input = page.getByRole('textbox');
+
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  await page.getByRole('button', { name: 'Ativar tema claro' }).click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  assert.equal(await page.evaluate(() => localStorage.getItem('meshTheme')), 'light');
+  await page.getByRole('button', { name: 'Ativar tema escuro' }).click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  await page.getByRole('button', { name: /Artefatos/ }).click();
+  await page.getByRole('heading', { name: 'Artefatos preservados' }).waitFor();
+  await page.getByText('recente.md').waitFor();
+  assert.equal(await page.getByText('recente.md').isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Baixar artefato recente.md' }).isVisible(), true);
+  const artifactDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Baixar artefato recente.md' }).click();
+  assert.equal((await artifactDownload).suggestedFilename(), '01-recente.md');
+  await page.getByRole('button', { name: 'Concluir' }).click();
+
+  await page.getByRole('button', { name: 'Modelos e CLIs' }).click();
+  await page.getByRole('heading', { name: 'Modelos, CLIs e rotas efetivas' }).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('#model-config-body tr').length === 8);
+  assert.equal(await page.locator('#model-config-body tr').count(), 8);
+  assert.equal(await page.getByLabel('Modelo de execução de gemini').locator('option').count(), 2);
+  assert.equal(await page.getByLabel('Modelo de execução de grok').locator('option').count(), 2);
+  assert.equal(await page.getByLabel('Modelo de execução de glm').locator('option').count(), 2);
+  assert.match(await page.locator('[data-model-agent="gemini"]').innerText(), /2 modelo\(s\) disponíveis/);
+  await page.getByLabel('Rota de execução do Grok').selectOption('official');
+  await page.getByText(/CLI oficial não autenticada/).waitFor();
+  assert.match(await page.locator('[data-model-agent="grok"]').innerText(), /grok-4\.6/);
+  assert.match(await page.locator('[data-model-agent="grok"]').innerText(), /login necessário/);
+  await page.getByLabel('Rota de execução do Grok').selectOption('cursor');
+  await page.getByLabel('Modelo de execução de grok').selectOption('cursor-grok-4.6-xhigh');
+  await page.getByText(/Modelo de grok alterado/).waitFor();
+  await page.getByLabel('Modelo de execução de gemini').selectOption('gemini-3.1-pro-high');
+  await page.getByText(/Modelo de gemini alterado/).waitFor();
+  await page.getByLabel('Modelo de execução de glm').selectOption('opencode-go/kimi-k3');
+  await page.getByText(/Modelo de glm alterado/).waitFor();
+  await page.getByRole('button', { name: 'Concluir' }).click();
 
   await page.waitForFunction(() => document.querySelector('#sse-badge')?.textContent?.includes('●'));
   tasks.set('child-stream', {
@@ -252,6 +341,12 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   await input.press('Enter');
   await page.getByText('Result / ensemble').waitFor();
   assert.match(await page.locator('#chat .bubble-gold').last().innerText(), /function approved\(\) \{ return true; \}/);
+  const artifactShelf = page.locator('#chat .bubble-gold').last().locator('.artifact-shelf');
+  await artifactShelf.getByText('1 artefato preservado').waitFor();
+  assert.equal(await artifactShelf.getByText('approved.js').isVisible(), true);
+  assert.equal(await artifactShelf.getByRole('button', { name: 'Baixar artefato approved.js' }).isVisible(), true);
+  await artifactShelf.getByText('Visualizar conteúdo').click();
+  assert.match(await artifactShelf.locator('pre').innerText(), /function approved/);
   assert.equal(await page.locator('#chat .bubble-gold').last().locator('pre br').count(), 0);
   assert.equal(await page.locator('#chat .bubble-gold').last().getByRole('button', { name: 'Copiar bloco de código' }).isVisible(), true);
   const ensembleCard = page.locator('.task-run-card').filter({ hasText: 'Result / ensemble' });

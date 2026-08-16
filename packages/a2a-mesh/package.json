@@ -1,6 +1,6 @@
 {
   "name": "@nicholasjacob90/a2a-mesh",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Mesh A2A local, bridge MCP e painel web para oito agentes CLI, com seleção de equipe.",
   "type": "module",
   "bin": {

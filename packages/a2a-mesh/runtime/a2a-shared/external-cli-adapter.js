@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
 import { bridgeEnvironmentForTask } from './bridge-context.js';
+import { extractResponseArtifacts, mergeArtifacts, stripArtifactDeclarations } from './file-artifacts.js';
 
 function abortError() {
   const error = new Error('Task aborted');
@@ -106,6 +107,14 @@ function deepText(value) {
   return '';
 }
 
+function redactSensitiveText(value, secrets = []) {
+  let sanitized = String(value || '');
+  for (const secret of secrets) {
+    if (typeof secret === 'string' && secret.length >= 8) sanitized = sanitized.split(secret).join('<redacted>');
+  }
+  return sanitized;
+}
+
 export function parseOpenCodeStreamLine(line) {
   try {
     const event = JSON.parse(String(line || '').trim());
@@ -156,12 +165,31 @@ export function verifyOpenCodeModelAvailable(binary, model, { timeoutMs = 90_000
   return { verified: true, model, availableModels: models };
 }
 
+export function verifyKimiSecureCredential(binary, { timeoutMs = 30_000 } = {}) {
+  const result = spawnSync(binary, ['provider', 'list'], {
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+  if (result.error) throw new Error(`Kimi secure credential probe failed: ${result.error.message}`);
+  if (result.status !== 0) {
+    throw new Error(`Kimi secure credential probe failed (${result.status}): ${(result.stderr || '').trim() || 'sem diagnóstico'}`);
+  }
+  if (!String(result.stdout || '').includes('__kimi_env__')) {
+    throw new Error('Kimi secure credential probe did not activate the ephemeral provider');
+  }
+  return { verified: true, credentialProvider: 'opencode-go', credentialSource: 'macos-keychain' };
+}
+
 export function buildExternalCliArgs({ route, model, prompt }) {
   if (route === 'opencode') {
     return ['run', '--model', model, '--variant', 'max', '--format', 'json', '--auto', prompt];
   }
   if (route === 'kimi-code') {
-    return ['--model', model, '--prompt', prompt, '--output-format', 'stream-json'];
+    // KIMI_MODEL_* defines an in-memory provider backed by the OpenCode Go
+    // credential. Passing --model here would take precedence and select the
+    // persistent alias whose config intentionally contains no copied secret.
+    return ['--prompt', prompt, '--output-format', 'stream-json'];
   }
   throw new Error(`Unsupported external CLI route: ${route}`);
 }
@@ -184,31 +212,42 @@ export function createExternalCliExecutor({
   cliTimeoutMs = 1_800_000,
   bootModelVerified = false,
   sharedLockPath = route === 'opencode' ? path.join(os.tmpdir(), 'a2a-opencode-go.lock') : '',
+  bootCredentialVerified = false,
+  bootCredentialError = null,
 } = {}) {
+  let activeModel = model;
   const semaphore = createSemaphore(Math.max(1, maxProcesses));
   const parser = route === 'opencode' ? parseOpenCodeStreamLine : parseKimiStreamLine;
   const healthState = {
-    configuredModel: model,
-    modelPolicy: 'fixed',
+    configuredModel: activeModel,
+    modelPolicy: route === 'opencode' ? 'selectable-catalog' : 'fixed',
     modelVerified: Boolean(bootModelVerified),
     lastObservedModel: null,
     lastObservedAt: null,
     lastUsage: null,
     lastCost: null,
+    credentialProvider: route === 'kimi-code' ? 'opencode-go' : null,
+    credentialSource: route === 'kimi-code' ? 'macos-keychain' : null,
+    credentialAvailable: route === 'kimi-code' ? Boolean(bootCredentialVerified) : null,
+    credentialError: route === 'kimi-code' ? bootCredentialError : null,
   };
 
   async function runRound(task, prompt, round, onChunk, signal, allTextRef) {
     if (signal?.aborted || task.status?.state === 'canceled') throw abortError();
     const toolPrefix = cliToolWrapper?.buildA2AToolPrefix(peers, task.metadata?.maxDepth ?? 7) || '';
-    const governedPrompt = `${systemPrompt}\n\n${toolPrefix}${prompt}`.trim();
+    const resolvedSystemPrompt = typeof systemPrompt === 'function'
+      ? systemPrompt(activeModel)
+      : systemPrompt;
+    const governedPrompt = `${resolvedSystemPrompt}\n\n${toolPrefix}${prompt}`.trim();
     let releaseLock = null;
     if (sharedLockPath) releaseLock = await acquireFileLock(sharedLockPath, signal, cliTimeoutMs);
     try {
+      const childEnvironment = bridgeEnvironmentForTask(task, selfId, { ...process.env, NO_COLOR: '1' });
       const outcome = await new Promise((resolve, reject) => {
-        const child = spawn(binary, buildExternalCliArgs({ route, model, prompt: governedPrompt }), {
+        const child = spawn(binary, buildExternalCliArgs({ route, model: activeModel, prompt: governedPrompt }), {
           cwd: workspace,
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: bridgeEnvironmentForTask(task, selfId, { ...process.env, NO_COLOR: '1' }),
+          env: childEnvironment,
           detached: true,
         });
         task.process = child;
@@ -270,8 +309,13 @@ export function createExternalCliExecutor({
             taskManager.taskEmitter.emit(`task:${task.id}:chunk`, tail);
           }
           if (signal?.aborted || task.status?.state === 'canceled') return reject(abortError());
-          if (code !== 0) return reject(new Error(`${displayName} CLI exited with code ${code}${closeSignal ? ` (${closeSignal})` : ''}: ${stderr.trim() || eventError || 'no diagnostic'}`));
-          if (eventError) return reject(new Error(eventError));
+          const diagnostic = redactSensitiveText(stderr.trim() || eventError || 'no diagnostic');
+          if (route === 'kimi-code' && /credential|api[_ -]?key|no credential|credencial/i.test(diagnostic)) {
+            healthState.credentialAvailable = false;
+            healthState.credentialError = diagnostic;
+          }
+          if (code !== 0) return reject(new Error(`${displayName} CLI exited with code ${code}${closeSignal ? ` (${closeSignal})` : ''}: ${diagnostic}`));
+          if (eventError) return reject(new Error(redactSensitiveText(eventError)));
           if (!text.trim()) return reject(new Error(`${displayName} CLI returned empty output${terminalSeen ? '' : ' without a terminal event'}`));
           resolve({ text: text.trim(), sessionId, usage, cost, terminalSeen });
         });
@@ -283,7 +327,11 @@ export function createExternalCliExecutor({
       releaseLock = null;
 
       healthState.modelVerified = true;
-      healthState.lastObservedModel = model;
+      if (route === 'kimi-code') {
+        healthState.credentialAvailable = true;
+        healthState.credentialError = null;
+      }
+      healthState.lastObservedModel = activeModel;
       healthState.lastObservedAt = new Date().toISOString();
       healthState.lastUsage = outcome.usage;
       healthState.lastCost = outcome.cost;
@@ -318,13 +366,16 @@ export function createExternalCliExecutor({
       const allText = { value: '' };
       const outcome = await runRound(task, prompt, 0, onChunk, signal, allText);
       if (signal?.aborted || task.status?.state === 'canceled') return;
-      const message = { role: 'agent', parts: [{ type: 'text', text: allText.value.trim() }] };
+      const rawText = allText.value.trim();
+      const artifacts = extractResponseArtifacts(rawText, { taskId: task.id, agentId: selfId });
+      const message = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(rawText) }] };
       taskManager.updateTask(task, {
         status: { state: 'completed', message },
         history: [...task.history, message],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
         metadata: {
           ...task.metadata,
-          observedModel: model,
+          observedModel: activeModel,
           providerSessionId: outcome.sessionId || task.metadata?.providerSessionId,
           providerRuntime: route,
           usage: outcome.usage || task.metadata?.usage,
@@ -340,5 +391,25 @@ export function createExternalCliExecutor({
     } finally { release?.(); }
   }
 
-  return { executeTask, healthState, concurrency: semaphore };
+  function updateModel(nextModel, { verified = false } = {}) {
+    const normalized = String(nextModel || '').trim();
+    if (!normalized) throw new Error('O modelo selecionado não pode ficar vazio.');
+    if (semaphore.active > 0 || semaphore.queued > 0) {
+      throw new Error('Aguarde as tarefas deste agente terminarem antes de trocar o modelo.');
+    }
+    activeModel = normalized;
+    healthState.configuredModel = activeModel;
+    healthState.modelVerified = Boolean(verified);
+    healthState.lastObservedModel = null;
+    healthState.lastObservedAt = null;
+    return activeModel;
+  }
+
+  return {
+    executeTask,
+    healthState,
+    concurrency: semaphore,
+    updateModel,
+    get configuredModel() { return activeModel; },
+  };
 }

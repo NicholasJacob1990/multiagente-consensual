@@ -8,11 +8,11 @@ Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
-![Página inicial do A2A Mesh com título, agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
+![Página inicial do A2A Mesh com oito agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.10.png)
 
 Durante a execução, cada tarefa apresenta fases, agente ativo e telemetria:
 
-![Painel local do A2A Mesh com stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
+![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-models-v1.10.png)
 
 O servidor se vincula exclusivamente a `127.0.0.1`. Credenciais, `.env`, sessões e históricos não
 são distribuídos. As CLIs usam a autenticação já existente na máquina do usuário.
@@ -47,15 +47,20 @@ a2a-mesh open
 | Kimi K3 | `127.0.0.1:3147` | `http://127.0.0.1:3147/ui` | `http://127.0.0.1:3147/sandbox` |
 | Qwen 3.8 Max | `127.0.0.1:3148` | `http://127.0.0.1:3148/ui` | `http://127.0.0.1:3148/sandbox` |
 
-O Grok é um peer nativo com rota fixa pelo `cursor-agent`, modelo obrigatório
-`cursor-grok-4.6-high` e limite padrão de dois processos simultâneos. A execução usa `stream-json`,
-confirma `system/init.model` e falha de forma explícita se faltar o evento final `result`.
+O Grok é um peer nativo com duas rotas explícitas e sem fallback silencioso. A rota padrão usa
+`cursor-agent` com `cursor-grok-4.6-high`; a alternativa usa a CLI oficial `grok` com `grok-4.6`
+e esforço `xhigh`. A rota Cursor confirma `system/init.model`; a rota oficial confirma o catálogo
+da CLI e exige autenticação própria por `grok login`. Ambas têm limite padrão de dois processos.
 
-GLM, DeepSeek e Qwen são peers nativos pelo OpenCode Go, respectivamente com os modelos fixos
-`opencode-go/glm-5.3`, `opencode-go/deepseek-v4-pro` e `opencode-go/qwen3.8-max`, todos na variante
-`max`. Como as três rotas compartilham o banco local do OpenCode, o adaptador serializa seus
-processos para evitar disputa de lock. O Kimi é invocado exclusivamente pelo Kimi Code com `kimi-code/k3`; sua saúde permanece como
-"verificação pendente" até a primeira execução autenticada e não há fallback silencioso.
+GLM, DeepSeek e Qwen são peers nativos pelo OpenCode Go. Começam, respectivamente, com
+`opencode-go/glm-5.3`, `opencode-go/deepseek-v4-pro` e `opencode-go/qwen3.8-max`, mas cada cadeira
+pode receber qualquer modelo atualmente listado por `opencode models`, sempre na variante `max`.
+Como as três rotas compartilham o banco local do OpenCode, o adaptador serializa seus
+processos para evitar disputa de lock. O Kimi é invocado exclusivamente pelo Kimi Code com
+`kimi-code/k3`, por meio do wrapper `kimi-secure`: ele lê do Keychain a mesma credencial OpenCode
+Go já cadastrada no host e cria o provider `KIMI_MODEL_*` apenas na memória do processo-filho. A
+mesh distingue `credentialAvailable` de `modelVerified`; a primeira chamada autenticada confirma o
+modelo efetivo. A chave não entra nos argumentos, no banco ou nos logs, e não há fallback silencioso.
 
 ## Comandos do painel
 
@@ -77,6 +82,26 @@ outro modo:
 A seleção fica salva no navegador. **Todos** restaura as oito cadeiras. Para substituir a seleção
 somente numa execução, acrescente `--agents=claude,codex,qwen`; o override vale para broadcast,
 consenso, ensemble, debate e team.
+
+O botão **Modelos e CLIs** abre a matriz de proveniência do runtime: agente, binário, rota, modelo
+configurado, modelo observado, provedor, esforço e estado. O painel consulta os catálogos reais de
+`opencode models`, `cursor-agent --list-models` e `agy models`. Assim, é possível escolher o modelo
+de Gemini/Antigravity, de cada cadeira OpenCode e do Grok quando sua rota é Cursor. A linha do Grok
+também alterna entre **Cursor CLI** e **xAI CLI oficial**. As escolhas ficam salvas no navegador e
+são reaplicadas após reinício. Modelos ausentes são recusados, trocas aguardam tarefas em andamento
+e não há fallback silencioso. A rota oficial da xAI permanece em `grok-4.6` e exige `grok login`.
+
+O botão **Artefatos** abre uma biblioteca independente do feed. Ela reúne os artefatos das tarefas
+recentes — Markdown, Word, PDF, código, arquivos A2A e saídas parciais recuperáveis — com tarefa de
+origem, estado, descrição, tamanho, hash SHA-256, pré-visualização textual quando aplicável e download
+individual. Os mesmos itens também aparecem junto ao resultado que os produziu. Arquivos criados por
+`write_file` são registrados automaticamente. Nas CLIs nativas, o agente declara os arquivos que criou
+ou modificou e o runtime preserva uma cópia imutável antes de concluir a tarefa. O download serve essa
+cópia, não o caminho mutável original. O limite padrão é 100 MB por arquivo e pode ser ajustado por
+`A2A_ARTIFACT_MAX_BYTES`. Limpar o feed não apaga a biblioteca nem os registros duráveis.
+
+O botão **Claro/Escuro** alterna o tema visual e salva a preferência no navegador. O tema claro usa
+contraste editorial sobre fundo branco frio, mas preserva as cores que identificam cada agente.
 
 Exemplo:
 

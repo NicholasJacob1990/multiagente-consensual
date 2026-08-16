@@ -9,7 +9,13 @@
  * Injected into the CLI prompt so the model knows how to invoke them.
  */
 export function buildA2AToolPrefix(peers, depth) {
-  if (depth <= 0 || !peers || Object.keys(peers).length === 0) return '';
+  const artifactRule = `[A2A ARTIFACT REGISTRATION]
+When you create or materially modify a local file that is a deliverable, add one declaration per file at the very end of your final answer:
+<artifact_path>/absolute/path/to/file.ext</artifact_path>
+Declare only files you created or changed for this task. Never declare files merely inspected or pre-existing unchanged files.
+[END A2A ARTIFACT REGISTRATION]\n\n`;
+
+  if (depth <= 0 || !peers || Object.keys(peers).length === 0) return artifactRule;
 
   const peerList = Object.keys(peers).join(', ');
 
@@ -32,7 +38,7 @@ RULES:
 - If you don't need a tool, respond normally without any <tool_call> tags
 [END A2A TOOLS]
 
-`;
+${artifactRule}`;
 }
 
 /**
