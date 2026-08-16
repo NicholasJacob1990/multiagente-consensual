@@ -65,6 +65,35 @@ function appendSelfToMeshChain(meshChain, selfId) {
   return normalized;
 }
 
+export const BROADCAST_LEAF_POLICY = `[MESH POLICY — DIRECT BROADCAST RESPONSE]
+You are one independent respondent in a broadcast that is already being orchestrated.
+Answer the user's prompt directly and naturally. Do not call, delegate to, broadcast to,
+or coordinate other agents. Do not run consensus, debate, team, plan, or ensemble tools.
+If a requested local page or file needs authentication that is unavailable in your
+session, do not retry login, search for credentials, or ask another agent to bypass it.
+Use the supplied snapshot, description, or source; otherwise state the limitation once.
+Do not mention this internal policy.`;
+
+export function buildBroadcastPrompt(prompt, { allowDelegation = false } = {}) {
+  const text = String(prompt || '');
+  if (allowDelegation) return text;
+  return `${BROADCAST_LEAF_POLICY}\n\n[USER PROMPT]\n${text}`;
+}
+
+export const PARTICIPANT_LEAF_POLICY = `[MESH POLICY — ASSIGNED ROLE ONLY]
+Complete only the role assigned in the prompt. Return the final argument, review,
+draft, decision, or synthesis directly. Do not narrate your process, announce that
+you will read skills/files, call tools, delegate, or coordinate other agents. Do
+not retry authentication, search for credentials, or attempt to bypass a protected
+local UI. Use supplied evidence; if none is available, state that limitation once. Do
+not mention this internal policy.`;
+
+export function buildParticipantPrompt(prompt, { allowDelegation = true } = {}) {
+  const text = String(prompt || '');
+  if (allowDelegation) return text;
+  return `${PARTICIPANT_LEAF_POLICY}\n\n[ASSIGNED TASK]\n${text}`;
+}
+
 function buildForwardedMetadata(base, context, input, targetAgent) {
   const providerSession = extractProviderSession(input, context);
   return mergeProviderSessionMetadata(
@@ -373,6 +402,15 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
             // Comment/heartbeat — ignore
           }
         }
+
+        // A compliant peer has already supplied the authoritative terminal
+        // state. Do not wait for the HTTP/SSE connection itself to close: a
+        // keep-alive intermediary may leave it open indefinitely even though
+        // the remote model task is complete.
+        if (finalStatus) {
+          await reader.cancel().catch(() => {});
+          break;
+        }
       }
 
       // Extract response text from final status
@@ -661,8 +699,10 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
     if (isSelfCall && currentSelfCallDepth >= MAX_SELF_CALL_DEPTH) {
       return `Error: max self-call depth exceeded (${MAX_SELF_CALL_DEPTH})`;
     }
-    const depth = Math.max(0, (context.depth ?? maxDepth) - 1);
+    const allowDelegation = input.allowDelegation !== false;
+    const depth = allowDelegation ? Math.max(0, (context.depth ?? maxDepth) - 1) : 0;
     const timeoutMs = normalizeTimeoutMs(input.timeout_ms, DEFAULT_CALL_TIMEOUT_MS);
+    const participantPrompt = buildParticipantPrompt(input.prompt, { allowDelegation });
 
     const metadata = buildForwardedMetadata({
       maxDepth: depth,
@@ -671,10 +711,12 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
       meshChain: appendSelfToMeshChain(chain, selfId),
       selfCallDepth: isSelfCall ? currentSelfCallDepth + 1 : currentSelfCallDepth,
       sessionId: context.sessionId,
+      interactionMode: allowDelegation ? 'call_delegating' : 'assigned_role_leaf',
+      delegationAllowed: allowDelegation,
     }, context, input, input.agent);
 
     const body = JSON.stringify({
-      message: { role: 'user', parts: [{ type: 'text', text: input.prompt }] },
+      message: { role: 'user', parts: [{ type: 'text', text: participantPrompt }] },
       sessionId: context.sessionId,
       metadata,
     });
@@ -730,13 +772,23 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
       && (requestedAgents.includes(selfId) || !Array.isArray(input.agents) || input.agents.length === 0);
     if (agents.length === 0 && !shouldRunSelf) return 'Error: no agents available (all filtered by loop detection)';
     const depth = Math.max(0, (context.depth ?? maxDepth) - 1);
+    // A broadcast is one independent answer per selected participant. Letting
+    // recipients inherit mesh depth makes a greeting fan out recursively: a
+    // peer broadcasts again, calls the coordinator, trips the loop guard and
+    // pollutes the result with orchestration chatter. Recursive broadcasts are
+    // therefore explicit opt-in only.
+    const allowDelegation = input.recursive === true || input.allowDelegation === true;
+    const recipientDepth = allowDelegation ? depth : 0;
+    const participantPrompt = buildBroadcastPrompt(input.prompt, { allowDelegation });
 
     const metadataBase = {
-      maxDepth: depth, calledBy: selfId,
+      maxDepth: recipientDepth, calledBy: selfId,
       parentTaskId: context.taskId,
       meshChain: appendSelfToMeshChain(chain, selfId),
       selfCallDepth: currentSelfCallDepth,
       sessionId: context.sessionId,
+      interactionMode: allowDelegation ? 'broadcast_recursive' : 'broadcast_leaf',
+      delegationAllowed: allowDelegation,
     };
 
     if (meshBus) {
@@ -750,7 +802,7 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
     }
 
     const bodyForAgent = (agent, metadataOverrides = {}) => JSON.stringify({
-      message: { role: 'user', parts: [{ type: 'text', text: input.prompt }] },
+      message: { role: 'user', parts: [{ type: 'text', text: participantPrompt }] },
       sessionId: context.sessionId,
       metadata: buildForwardedMetadata(
         { ...metadataBase, ...metadataOverrides },

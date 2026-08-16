@@ -159,6 +159,25 @@ export function cursorModelAvailability(env = process.env) {
   };
 }
 
+export function openCodeModelAvailability(agentName, env = process.env) {
+  const definition = AGENTS[agentName];
+  if (!definition || definition.route !== "opencode") return { available: false, model: definition?.model, reason: `agente OpenCode desconhecido: ${agentName}` };
+  const binary = executable(definition.cliBinary, env);
+  if (!binary) return { available: false, binary: null, model: definition.model, reason: `CLI ausente: ${definition.cliBinary}` };
+  const probe = command(binary, ["models"], { env });
+  const models = probe.status === 0 ? probe.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) : [];
+  const available = models.includes(definition.model);
+  return {
+    available,
+    binary,
+    model: definition.model,
+    models,
+    reason: available ? null : (probe.status === 0
+      ? `modelo indisponível: ${definition.model}`
+      : `falha ao consultar modelos do OpenCode: ${probe.error || probe.stderr.trim() || `status ${probe.status}`}`),
+  };
+}
+
 function command(binary, argv, options = {}) {
   if (options.dryRun) return { status: 0, stdout: "", stderr: "", simulated: true };
   const result = spawnSync(binary, argv, {
@@ -209,7 +228,16 @@ function serverEnvironment(home) {
     CODEX_MODEL: process.env.CODEX_MODEL || "gpt-5.6-sol",
     CODEX_REASONING_EFFORT: process.env.CODEX_REASONING_EFFORT || "xhigh",
     CLAUDE_CLI_MODEL: process.env.CLAUDE_CLI_MODEL || "claude-opus-5",
+    GEMINI_CLI_PROVIDER: process.env.GEMINI_CLI_PROVIDER || "antigravity",
+    ANTIGRAVITY_MODEL: process.env.ANTIGRAVITY_MODEL || "gemini-3.7-flash-high",
+    A2A_GEMINI_ALLOW_MODEL_FALLBACK: process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK || "false",
     A2A_GROK_MODEL: "cursor-grok-4.6-high",
+    A2A_GLM_MODEL: "opencode-go/glm-5.3",
+    A2A_DEEPSEEK_MODEL: "opencode-go/deepseek-v4-pro",
+    A2A_KIMI_MODEL: "kimi-code/k3",
+    A2A_GLM_REASONING_EFFORT: "max",
+    A2A_DEEPSEEK_REASONING_EFFORT: "max",
+    A2A_KIMI_REASONING_EFFORT: "max",
     USE_CLI: process.env.USE_CLI || "force",
   };
 }
@@ -274,6 +302,13 @@ async function startServers(args, { foreground = false } = {}) {
     if (name === "grok" && !grokAvailability?.available) {
       unavailable.push({ name, reason: grokAvailability?.reason || `modelo indisponível: ${definition.model}` });
       continue;
+    }
+    if (definition.route === "opencode") {
+      const modelAvailability = openCodeModelAvailability(name, runtimeEnvironment);
+      if (!modelAvailability.available) {
+        unavailable.push({ name, reason: modelAvailability.reason });
+        continue;
+      }
     }
     const current = await health(definition.port);
     if (current) {
@@ -521,6 +556,11 @@ async function doctor(args) {
   if (executable(AGENTS.grok.cliBinary, env)) {
     const model = cursorModelAvailability(env);
     checks.push({ name: "model:grok", ok: model.available, detail: model.reason || model.model });
+  }
+  for (const name of ["glm", "deepseek"]) {
+    if (!executable(AGENTS[name].cliBinary, env)) continue;
+    const model = openCodeModelAvailability(name, env);
+    checks.push({ name: `model:${name}`, ok: model.available, detail: model.reason || model.model });
   }
   for (const target of args.targets) {
     const value = mcpGet(target, { ...process.env, HOME: args.home });

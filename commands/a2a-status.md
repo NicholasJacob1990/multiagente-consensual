@@ -1,5 +1,5 @@
 ---
-description: Status atual dos 4 backends do A2A Mesh
+description: Status atual dos 7 backends do A2A Mesh
 entrypoint: workflow-agentes
 profile: a2a_status
 approval-ceiling: none

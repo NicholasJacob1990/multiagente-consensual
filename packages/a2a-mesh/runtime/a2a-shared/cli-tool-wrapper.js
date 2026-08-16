@@ -65,6 +65,77 @@ export function removeToolCalls(output) {
   return output.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
 }
 
+/**
+ * Incrementally removes custom <tool_call> blocks from CLI progress streams.
+ *
+ * The full response is parsed only after the process exits, but progress is
+ * forwarded while the model is still writing. Without a stateful filter the
+ * dashboard exposes JSON tool payloads (and sometimes half of a split tag)
+ * before removeToolCalls() can clean the final response.
+ */
+export function createToolCallStreamFilter() {
+  const OPEN = '<tool_call';
+  const CLOSE = '</tool_call>';
+  let pending = '';
+  let suppressing = false;
+
+  function longestOpenPrefixSuffix(value) {
+    const max = Math.min(value.length, OPEN.length - 1);
+    for (let length = max; length > 0; length -= 1) {
+      if (OPEN.startsWith(value.slice(-length))) return length;
+    }
+    return 0;
+  }
+
+  return {
+    push(chunk) {
+      pending += String(chunk || '');
+      let visible = '';
+
+      while (pending) {
+        if (suppressing) {
+          const closeIndex = pending.indexOf(CLOSE);
+          if (closeIndex < 0) {
+            // Retain only enough tail to recognize a closing tag split across
+            // chunks; the tool payload itself must never reach the UI.
+            pending = pending.slice(-Math.max(0, CLOSE.length - 1));
+            break;
+          }
+          pending = pending.slice(closeIndex + CLOSE.length);
+          suppressing = false;
+          continue;
+        }
+
+        const openIndex = pending.indexOf(OPEN);
+        if (openIndex >= 0) {
+          visible += pending.slice(0, openIndex);
+          pending = pending.slice(openIndex + OPEN.length);
+          suppressing = true;
+          continue;
+        }
+
+        const retained = longestOpenPrefixSuffix(pending);
+        const emitLength = pending.length - retained;
+        if (emitLength > 0) visible += pending.slice(0, emitLength);
+        pending = pending.slice(emitLength);
+        break;
+      }
+
+      return visible;
+    },
+
+    flush() {
+      if (suppressing) {
+        pending = '';
+        return '';
+      }
+      const visible = pending;
+      pending = '';
+      return visible;
+    },
+  };
+}
+
 // Patterns that mark CLI bootstrap noise — never the model's actual answer.
 // Each pattern strips a single line; the codex header block (between '--------'
 // fences) is handled separately because it spans multiple lines.

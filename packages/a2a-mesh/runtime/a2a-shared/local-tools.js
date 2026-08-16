@@ -340,6 +340,7 @@ export function getMeshToolDefs(peerNames) {
         properties: {
           agents: { type: 'array', items: { type: 'string' }, description: `Agent IDs (default: all)` },
           includeSelf: { type: 'boolean', description: 'Include orchestrator itself as participant (default: false)' },
+          recursive: { type: 'boolean', description: 'Allow recipients to delegate to other agents (default: false)' },
           prompt: { type: 'string', description: 'Task or question to send' },
           timeout_ms: { type: 'integer', description: 'Optional per-call timeout in milliseconds' },
         },

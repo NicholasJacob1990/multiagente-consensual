@@ -3,7 +3,7 @@
 Este guia mostra qual comando escolher, o que acontece durante a execução e
 como formular pedidos que os agentes consigam executar sem adivinhações.
 
-![Painel local do A2A Mesh com Claude, Codex, Gemini e Grok online](images/a2a-mesh-panel.png)
+![Painel local do A2A Mesh com sete agentes, stepper e telemetria](images/a2a-mesh-panel-v1.9.png)
 
 ## Comece pela intenção, não pelo nome do comando
 

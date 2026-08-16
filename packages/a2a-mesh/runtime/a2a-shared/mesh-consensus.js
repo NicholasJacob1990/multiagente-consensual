@@ -61,7 +61,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
    * @returns {Object} Consensus result
    */
   async function execute(params, callContext = {}) {
-    const { prompt: rawPrompt, agents: requestedAgents, judge = 'claude', timeout_ms, quorum: requestedQuorum } = params;
+    const { prompt: rawPrompt, agents: requestedAgents, judge = 'claude', timeout_ms, quorum: requestedQuorum, profile = 'custom' } = params;
     if (!rawPrompt) throw new Error('prompt is required');
     const timeoutMs = normalizeTimeoutMs(timeout_ms, DEFAULT_CONSENSUS_TIMEOUT_MS);
     const parentChain = normalizeMeshChain(callContext.meshChain);
@@ -155,6 +155,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
         responses: rawResults,
         synthesis,
         approved: false,
+        profile,
         quorum: { required: quorum, valid: validResponseCount, met: false },
         timing: { collectDurationMs, judgeDurationMs: 0, totalMs: Date.now() - startTime },
       };
@@ -183,7 +184,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       // depth: 1 — using context.depth - 1 caused every JUDGE phase to fail with
       // "max mesh depth exceeded" because COLLECT already consumes the budget.
       const judgeResponse = await meshCaller.executeA2ACall(
-        { agent: actualJudge, prompt: judgePrompt, timeout_ms: timeoutMs },
+        { agent: actualJudge, prompt: judgePrompt, timeout_ms: timeoutMs, allowDelegation: false },
         {
           depth: 1,
           meshChain: [...context.meshChain],
@@ -210,6 +211,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       responses: rawResults,
       synthesis,
       approved: synthesis.confidence > 0 && !isMeshErrorText(synthesis.answer),
+      profile,
       quorum: { required: quorum, valid: validResponseCount, met: true },
       timing: { collectDurationMs, judgeDurationMs, totalMs: Date.now() - startTime },
     };
@@ -225,6 +227,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
           judge: actualJudge || selfId,
           confidence: synthesis.confidence,
           prompt: prompt.slice(0, 10000),
+          profile,
         },
       });
     }
@@ -235,6 +238,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
           consensusId, agents, judge: actualJudge || selfId,
           confidence: synthesis.confidence,
           synthesis: synthesis.answer,
+          profile,
         });
       } catch (err) {
         console.warn('[mesh-consensus] Failed to persist consensus event', {
@@ -252,7 +256,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       mode: 'consensus',
       title: rawPrompt,
       summary: synthesis.answer,
-      decisions: [`judge=${actualJudge || selfId}; confidence=${synthesis.confidence}`],
+      decisions: [`judge=${actualJudge || selfId}; confidence=${synthesis.confidence}; profile=${profile}`],
       nextSteps: synthesis.dissent ? [`Review dissent: ${synthesis.dissent}`] : [],
       errors: rawResults.filter(r => r.error).map(r => `${r.agent}: ${r.error}`),
       metadata: {
@@ -261,6 +265,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
         judge: actualJudge || selfId,
         confidence: synthesis.confidence,
         dissent: synthesis.dissent,
+        profile,
       },
     }, '[mesh-consensus]');
 
@@ -281,7 +286,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
         return { agent: selfId, response: null, durationMs: Date.now() - start, error: `max self-call depth exceeded (${MAX_SELF_CALL_DEPTH})` };
       }
       const response = await meshCaller.executeA2ACall(
-        { agent: selfId, prompt, timeout_ms: timeoutMs },
+        { agent: selfId, prompt, timeout_ms: timeoutMs, allowDelegation: false },
         {
           depth: 1,
           meshChain: [...context.meshChain],

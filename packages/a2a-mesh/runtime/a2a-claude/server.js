@@ -239,7 +239,7 @@ async function apiCall(messages, tools, modelOverride, onTextChunk, systemPrompt
 // SYSTEM PROMPT
 // ============================================
 
-const SYSTEM_PROMPT = `Você é Claude, um agente técnico em uma mesh A2A (Agent-to-Agent) com outros agentes AI.
+const SYSTEM_PROMPT = `Você é Claude Opus 5 (${CLAUDE_CLI_MODEL}), executado pela CLI do Claude Code, como agente técnico em uma mesh A2A (Agent-to-Agent). Nunca alegue outra identidade ou versão.
 
 COMPORTAMENTO:
 - Você recebe TAREFAS via A2A, não é uma sessão interativa de Claude Code
@@ -473,12 +473,16 @@ function executeClaudeCLI(task, onChunk, runContext = {}) {
     task.process = child;
     let stdout = '';
     let stderr = '';
+    const progressFilter = cliToolWrapper?.createToolCallStreamFilter?.();
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      if (onChunk) onChunk({ type: 'progress', text });
-      tm.taskEmitter.emit(`task:${task.id}:chunk`, text);
+      const safeText = progressFilter ? progressFilter.push(text) : text;
+      if (safeText) {
+        if (onChunk) onChunk({ type: 'progress', text: safeText });
+        tm.taskEmitter.emit(`task:${task.id}:chunk`, safeText);
+      }
     });
 
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -486,6 +490,11 @@ function executeClaudeCLI(task, onChunk, runContext = {}) {
     child.on('close', async (code) => {
       task.process = null;
       if (signal?.aborted || task.status?.state === 'canceled') return;
+      const safeTail = progressFilter?.flush?.() || '';
+      if (safeTail) {
+        if (onChunk) onChunk({ type: 'progress', text: safeTail });
+        tm.taskEmitter.emit(`task:${task.id}:chunk`, safeTail);
+      }
       const rawOutput = stdout.trim() || stderr.trim();
       // Strip CLI bootstrap noise (transport errors, skill conflicts, prompt echo)
       // before treating stdout as the model's answer.
@@ -509,8 +518,6 @@ function executeClaudeCLI(task, onChunk, runContext = {}) {
           result = `Tool error: ${toolErr.message}`;
         }
         allText += (toolCall.beforeCall ? toolCall.beforeCall + '\n' : '');
-        if (onChunk) onChunk({ type: 'progress', text: `\n[tool: ${toolCall.name}]\n` });
-        tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
         if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
@@ -525,6 +532,11 @@ function executeClaudeCLI(task, onChunk, runContext = {}) {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
         artifacts: [...task.artifacts, ...artifacts],
+        metadata: {
+          ...task.metadata,
+          configuredModel: cliModel,
+          providerRuntime: 'claude-cli',
+        },
       });
       if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
     });
@@ -567,7 +579,7 @@ function executeClaudeTask(task, onChunk, runContext = {}) {
 
 const AGENT_CARD = {
   name: 'Claude Agent',
-  description: 'Agente Claude CLI exposto via protocolo A2A. Executa tarefas de programacao, review, debug e geracao de codigo usando Anthropic Claude.',
+  description: `Claude Opus 5 via Claude Code CLI (${CLAUDE_CLI_MODEL}), exposto pelo protocolo A2A.`,
   url: `http://localhost:${PORT}`,
   version: '1.0.0',
   capabilities: {
@@ -613,4 +625,11 @@ createA2AServer({
   debateExecutor,
   planExecutor,
   executeTask: executeClaudeTask,
+  healthDetails: () => ({
+    route: 'claude-code',
+    provider: 'anthropic',
+    configuredModel: CLAUDE_MODEL,
+    modelPolicy: 'fixed',
+    modelVerification: 'cli-argument',
+  }),
 });

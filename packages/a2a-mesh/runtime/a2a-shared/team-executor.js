@@ -11,6 +11,7 @@ import { enrichPromptIfContinuation } from './mesh-continuation.js';
 import { capTimeoutForAgent } from './agent-catalog.js';
 import { A2A_PROTOCOL_VERSION, A2A_VERSION_HEADER } from './protocol.js';
 import { cancelRemoteTask, recoverRemoteTask } from './remote-task-control.js';
+import { buildParticipantPrompt } from './mesh-calls.js';
 
 function normalizePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -56,10 +57,11 @@ function timeoutForAgent(agent, timeoutMs) {
  * @returns {string} Formatted markdown result
  */
 export async function executeA2ATeam(input, context) {
-  const { steps, name, context: initialContext, accumulate = true, includeSelf = false, timeout_ms } = input;
+  const { steps, name, context: initialContext, accumulate = true, includeSelf = false, timeout_ms, profile = 'custom' } = input;
   const { depth, meshChain, taskId, selfId, peers, meshBus, meshStore, authToken = '', selfUrl = '', selfCallDepth = 0, signal } = context;
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
   const globalTimeoutMs = normalizeTimeoutMs(timeout_ms, null);
+  const allowDelegation = input.allowDelegation === true || input.recursive === true;
 
   if (!steps || !Array.isArray(steps) || steps.length === 0) {
     return 'Error: a2a_team requires at least one step.';
@@ -81,6 +83,7 @@ export async function executeA2ATeam(input, context) {
       payload: {
         teamId,
         name: name || 'unnamed',
+        profile,
         stepCount: steps.length,
         agents: [...new Set(steps.flatMap(s => s.agents || []))],
       },
@@ -92,7 +95,7 @@ export async function executeA2ATeam(input, context) {
     accumulated = `[Context]\n${truncateForPrompt(initialContext, TEAM_CONTEXT_CHARS, 'initial team context')}\n\n`;
   }
 
-  const childDepth = Math.max(0, (depth ?? 7) - 1);
+  const childDepth = allowDelegation ? Math.max(0, (depth ?? 7) - 1) : 0;
   const childMetadata = {
     maxDepth: childDepth,
     calledBy: selfId,
@@ -100,6 +103,8 @@ export async function executeA2ATeam(input, context) {
     meshChain: [...(meshChain || []), selfId],
     selfCallDepth,
     teamId,
+    interactionMode: allowDelegation ? 'team_delegating' : 'assigned_role_leaf',
+    delegationAllowed: allowDelegation,
   };
 
   for (let stepIdx = 0; stepIdx < steps.length; stepIdx++) {
@@ -137,6 +142,7 @@ export async function executeA2ATeam(input, context) {
     const enriched = enrichPromptIfContinuation(prompt, { meshChain: meshChain || [], threadId }, meshStore);
     if (enriched.enriched) prompt = enriched.prompt;
     prompt = truncateForPrompt(prompt, TEAM_PROMPT_CHARS, `team step ${stepIdx + 1} prompt`);
+    prompt = buildParticipantPrompt(prompt, { allowDelegation });
 
     // Publish step event
     if (meshBus) {
@@ -265,7 +271,7 @@ export async function executeA2ATeam(input, context) {
     meshBus.publish({
       taskId,
       type: 'a2a_team_complete',
-      payload: { teamId, name: name || 'unnamed', steps: steps.length, durationMs },
+      payload: { teamId, name: name || 'unnamed', steps: steps.length, durationMs, profile },
     });
   }
 
@@ -276,7 +282,7 @@ export async function executeA2ATeam(input, context) {
     mode: 'team',
     title: name || 'unnamed',
     summary: output,
-    decisions: [`team completed ${steps.length} step(s) in ${durationMs}ms`],
+    decisions: [`team completed ${steps.length} step(s) in ${durationMs}ms; profile=${profile}`],
     nextSteps: ['Use the team outputs as prior context for the next mesh mode.'],
     errors: stepResults.flatMap(step => step.results.filter(r => r.error).map(r => `${r.agent}: ${r.error}`)),
     artifacts: [{ kind: 'team_result', field: 'formatted_output' }],
@@ -285,6 +291,7 @@ export async function executeA2ATeam(input, context) {
       name: name || 'unnamed',
       stepCount: steps.length,
       durationMs,
+      profile,
     },
   }, '[team-executor]');
 

@@ -36,8 +36,8 @@ const CODEX_API_MODEL = process.env.CODEX_API_MODEL || process.env.CODEX_MODEL |
 // 2026-07-25: bumped 5.5 -> 5.6-sol to match ~/.codex/config.toml.
 const CODEX_CLI_MODEL = process.env.A2A_CODEX_CLI_MODEL || process.env.CODEX_CLI_MODEL || 'gpt-5.6-sol';
 const CODEX_SANDBOX = process.env.CODEX_SANDBOX || 'danger-full-access';
-// Esforço de raciocínio do CLI. Era 'medium' fixo; agora configurável, default 'high'.
-const CODEX_REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || 'high';
+// Esforço máximo solicitado para a rota Codex; continua configurável por ambiente.
+const CODEX_REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || 'xhigh';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const USE_CLI = true; // Prefer CLI (gpt-5.6-sol) over API
 
@@ -230,7 +230,7 @@ function openaiResponsesApiCall(input, tools, previousResponseId, onTextChunk, i
 // SYSTEM PROMPT
 // ============================================
 
-const SYSTEM_PROMPT = `You are Codex, a technical agent in an A2A (Agent-to-Agent) mesh with other AI agents.
+const SYSTEM_PROMPT = `You are Codex running ${CODEX_CLI_MODEL} with ${CODEX_REASONING_EFFORT} reasoning through the Codex CLI, as a technical agent in an A2A (Agent-to-Agent) mesh. Never claim a different model or reasoning effort.
 
 LOCAL TOOLS: shell_exec, read_file, search_content, list_directory, directory_probe.
 
@@ -405,6 +405,7 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
 
   const MAX_CLI_TOOL_ROUNDS = 15;
   let allText = '';
+  const cliIdentityPrefix = `[A2A RUNTIME IDENTITY]\nYou are Codex running ${CODEX_CLI_MODEL} with ${CODEX_REASONING_EFFORT} reasoning through the Codex CLI. Never claim another model or effort.\n[END A2A RUNTIME IDENTITY]\n\n`;
 
   function runCLIRound(currentPrompt, round) {
     if (signal?.aborted || task.status?.state === 'canceled') return;
@@ -417,7 +418,7 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
       '-c', `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
       '-c', `sqlite_home=${JSON.stringify(CODEX_SQLITE_HOME)}`,
       '-o', outputFile,
-      toolPrefix + currentPrompt,
+      cliIdentityPrefix + toolPrefix + currentPrompt,
     ];
     if (DISABLED_SKILLS_OVERRIDE) {
       cliArgs.splice(cliArgs.length - 1, 0, '-c', DISABLED_SKILLS_OVERRIDE);
@@ -437,6 +438,7 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    const progressFilter = cliToolWrapper?.createToolCallStreamFilter?.();
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -449,8 +451,11 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      if (onChunk) onChunk({ type: 'progress', text });
-      tm.taskEmitter.emit(`task:${task.id}:chunk`, text);
+      const safeText = progressFilter ? progressFilter.push(text) : text;
+      if (safeText) {
+        if (onChunk) onChunk({ type: 'progress', text: safeText });
+        tm.taskEmitter.emit(`task:${task.id}:chunk`, safeText);
+      }
     });
 
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -459,6 +464,11 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
       task.process = null;
       clearTimeout(timeout);
       if (signal?.aborted || task.status?.state === 'canceled') return;
+      const safeTail = progressFilter?.flush?.() || '';
+      if (safeTail) {
+        if (onChunk) onChunk({ type: 'progress', text: safeTail });
+        tm.taskEmitter.emit(`task:${task.id}:chunk`, safeTail);
+      }
 
       let output = '';
       let outputFromFile = false;
@@ -512,8 +522,6 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
           result = `Tool error: ${toolErr.message}`;
         }
         allText += (toolCall.beforeCall ? toolCall.beforeCall + '\n' : '');
-        if (onChunk) onChunk({ type: 'progress', text: `\n[tool: ${toolCall.name}]\n` });
-        tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
         if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
@@ -528,6 +536,12 @@ function executeCodexCLI(task, onChunk, runContext = {}) {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
         artifacts: [...task.artifacts, ...artifacts],
+        metadata: {
+          ...task.metadata,
+          configuredModel: CODEX_CLI_MODEL,
+          reasoningEffort: CODEX_REASONING_EFFORT,
+          providerRuntime: 'codex-cli',
+        },
       });
       if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
     });
@@ -568,7 +582,7 @@ function executeCodexTask(task, onChunk, runContext = {}) {
 
 const AGENT_CARD = {
   name: 'Codex Agent',
-  description: 'Agente Codex CLI exposto via protocolo A2A. Executa tarefas de programação, review, debug e geração de código usando OpenAI Codex.',
+  description: `Codex ${CODEX_CLI_MODEL} com esforço ${CODEX_REASONING_EFFORT}, executado pela Codex CLI e exposto via protocolo A2A.`,
   url: `http://localhost:${PORT}`,
   version: '1.0.0',
   capabilities: {
@@ -612,5 +626,14 @@ createA2AServer({
   ensembleExecutor: codeEnsembleExecutor,
   debateExecutor,
   planExecutor,
+  healthDetails: () => ({
+    route: 'codex',
+    provider: 'openai',
+    configuredModel: USE_CLI ? CODEX_CLI_MODEL : CODEX_API_MODEL,
+    reasoningEffort: CODEX_REASONING_EFFORT,
+    modelPolicy: 'fixed',
+    modelVerification: USE_CLI ? 'cli-argument' : 'api-response',
+    providerRuntime: USE_CLI ? 'codex-cli' : 'openai-api',
+  }),
   executeTask: executeCodexTask,
 });

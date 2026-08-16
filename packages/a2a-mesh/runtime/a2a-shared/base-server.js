@@ -919,7 +919,12 @@ export function createA2AServer(config) {
 
       if (url.pathname === '/mesh/stats' && method === 'GET') {
         if (!meshStore) return sendError(res, 503, 'Mesh not available');
-        return sendJSON(res, meshStore.getStats());
+        const peerStates = peerDiscovery ? Object.values(peerDiscovery.getAllPeers()) : [];
+        return sendJSON(res, {
+          ...meshStore.getStats(),
+          connectedPeers: peerStates.filter(peer => peer.status === 'online').length,
+          uptime: Math.floor(process.uptime()),
+        });
       }
 
       if (url.pathname === '/mesh/tasks' && method === 'GET') {
@@ -1035,6 +1040,7 @@ export function createA2AServer(config) {
           accumulate: body.accumulate,
           includeSelf: body.includeSelf,
           timeout_ms: body.timeout_ms,
+          profile: body.profile,
           thread_id: body.thread_id,
           threadId: body.threadId,
         }, mctx);

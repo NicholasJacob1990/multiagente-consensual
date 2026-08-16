@@ -596,6 +596,38 @@ test('team recupera tarefa após queda do SSE sem duplicar a chamada', async () 
   }
 });
 
+test('estado terminal encerra a espera mesmo se o peer mantiver o SSE aberto', async () => {
+  let openResponse = null;
+  const server = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/tasks/sendSubscribe') {
+      openResponse = res;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: task-status\ndata: {"id":"remote-keepalive","status":{"state":"completed","message":{"parts":[{"type":"text","text":"concluído"}]}}}\n\n');
+      return; // Deliberately keep the transport open after terminal state.
+    }
+    res.writeHead(404); res.end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { port } = server.address();
+    const caller = createMeshCaller({
+      selfId: 'codex', peers: { claude: `http://127.0.0.1:${port}` }, maxDepth: 7,
+    });
+    const result = await Promise.race([
+      caller.executeA2ACall(
+        { agent: 'claude', prompt: 'teste terminal', timeout_ms: 2000 },
+        { depth: 7, meshChain: [], taskId: 'parent-keepalive' },
+      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('client waited for SSE close')), 750)),
+    ]);
+    assert.equal(result, 'concluído');
+  } finally {
+    openResponse?.end();
+    server.closeAllConnections?.();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('team preserva deltas textuais repetidos exatamente na saída parcial', async () => {
   const server = http.createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/tasks/sendSubscribe') {

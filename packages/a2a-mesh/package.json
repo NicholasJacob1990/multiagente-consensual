@@ -44,5 +44,8 @@
   "license": "UNLICENSED",
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
   }
 }

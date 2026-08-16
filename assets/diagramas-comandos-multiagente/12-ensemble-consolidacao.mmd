@@ -1,0 +1,43 @@
+%% Diagrama: ensemble profundo até um canônico aprovado | Atualização: 2026-08-15
+%%{init: {'theme': 'base', 'themeVariables': {
+  'fontFamily': 'Lato, Arial, sans-serif',
+  'primaryColor': '#f8fafc', 'primaryTextColor': '#1e293b',
+  'primaryBorderColor': '#cbd5e1', 'lineColor': '#64748b',
+  'secondaryColor': '#eff6ff', 'tertiaryColor': '#ecfdf5',
+  'background': '#ffffff', 'mainBkg': '#f8fafc',
+  'nodeBorder': '#cbd5e1', 'clusterBkg': '#f8fafc',
+  'clusterBorder': '#e2e8f0', 'titleColor': '#1e3a5f',
+  'edgeLabelBackground': '#ffffff', 'textColor': '#1e293b'
+}, 'flowchart': {'nodeSpacing': 24, 'rankSpacing': 52, 'curve': 'basis'}}}%%
+flowchart TB
+    subgraph production["1 · Produção e revisão cruzada"]
+        direction LR
+        base["Base comum<br/>congelada"] --> drafts["N versões completas<br/>cegas e independentes"]
+        drafts --> matrix["Revisão cruzada<br/>N × N"]
+        matrix --> debate["Crítica → réplica<br/>→ revisão"]
+        debate --> cycles{"Ciclos confirmados<br/>concluídos?"}
+    end
+    cycles -->|não| matrix
+    subgraph consolidation["2 · Consolidação"]
+        direction LR
+        finalists["N candidatas<br/>consolidadas"] --> choose{"Seleção humana, juiz<br/>ou síntese autorizada"}
+        choose --> frozen["Candidata escolhida<br/>com novo hash"]
+    end
+    cycles -->|sim| finalists
+    subgraph approval["3 · Aprovação do hash exato"]
+        direction LR
+        gates["Consenso + painel<br/>+ fontes + auditoria"] --> approved{"Todos os gates<br/>fecharam?"}
+        approved -->|sim| canonical["Um artefato<br/>canônico aprovado"]
+    end
+    frozen --> gates
+    approved -->|não| correction["Correção direcionada<br/>e nova deliberação"]
+    correction --> frozen
+
+    classDef entry fill:#eff6ff,stroke:#60a5fa,color:#1e3a5f,stroke-width:1.5px;
+    classDef operation fill:#f8fafc,stroke:#cbd5e1,color:#1e293b;
+    classDef decision fill:#fff7ed,stroke:#fb923c,color:#7c2d12,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#064e3b,stroke-width:1.5px;
+    class base,drafts entry;
+    class matrix,debate,finalists,frozen,gates,correction operation;
+    class cycles,choose,approved decision;
+    class canonical result;
