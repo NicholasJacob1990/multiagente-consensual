@@ -27,6 +27,8 @@ MUTED = RGBColor(75, 85, 99)
 WHITE = RGBColor(255, 255, 255)
 TABLE_WIDTH_DXA = 9360
 TABLE_INDENT_DXA = 120
+BODY_FONT = "Lato"
+BODY_SIZE_PT = 12
 
 
 def set_font(run, name: str, size: float, *, bold: bool | None = None) -> None:
@@ -52,6 +54,64 @@ def style_font(style, name: str, size: float, color: RGBColor = INK) -> None:
         rpr.append(fonts)
     for key in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
         fonts.set(qn(key), name)
+    half_points = str(int(round(size * 2)))
+    for tag in ("w:sz", "w:szCs"):
+        element = rpr.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            rpr.append(element)
+        element.set(qn("w:val"), half_points)
+
+
+def enforce_accessible_style_floor(document: Document) -> None:
+    """Prevent inherited or dormant styles from reintroducing small fallback text."""
+    minimum_half_points = BODY_SIZE_PT * 2
+    for style in document.styles:
+        rpr = style.element.get_or_add_rPr()
+        fonts = rpr.find(qn("w:rFonts"))
+        if fonts is None:
+            fonts = OxmlElement("w:rFonts")
+            rpr.insert(0, fonts)
+        for key in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+            fonts.set(qn(key), BODY_FONT)
+        for tag in ("w:sz", "w:szCs"):
+            element = rpr.find(qn(tag))
+            current = element.get(qn("w:val")) if element is not None else None
+            if element is None:
+                element = OxmlElement(tag)
+                rpr.append(element)
+            if current is None or not current.isdigit() or int(current) < minimum_half_points:
+                element.set(qn("w:val"), str(minimum_half_points))
+
+
+def configure_document_defaults(document: Document) -> None:
+    """Make the accessible body typography explicit at the OOXML default level."""
+    styles = document.styles.element
+    defaults = styles.find(qn("w:docDefaults"))
+    if defaults is None:
+        defaults = OxmlElement("w:docDefaults")
+        styles.insert(0, defaults)
+    run_defaults = defaults.find(qn("w:rPrDefault"))
+    if run_defaults is None:
+        run_defaults = OxmlElement("w:rPrDefault")
+        defaults.append(run_defaults)
+    run_properties = run_defaults.find(qn("w:rPr"))
+    if run_properties is None:
+        run_properties = OxmlElement("w:rPr")
+        run_defaults.append(run_properties)
+    fonts = run_properties.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        run_properties.insert(0, fonts)
+    for key in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        fonts.set(qn(key), BODY_FONT)
+    half_points = str(BODY_SIZE_PT * 2)
+    for tag in ("w:sz", "w:szCs"):
+        element = run_properties.find(qn(tag))
+        if element is None:
+            element = OxmlElement(tag)
+            run_properties.append(element)
+        element.set(qn("w:val"), half_points)
 
 
 def shade_cell(cell, fill: str) -> None:
@@ -193,12 +253,13 @@ def repeat_table_header(row) -> None:
 
 
 def configure_styles(document: Document) -> None:
+    configure_document_defaults(document)
     styles = document.styles
     for name in ("Normal", "Body Text"):
         if name not in styles:
             continue
         style = styles[name]
-        style_font(style, "Lato", 12)
+        style_font(style, BODY_FONT, BODY_SIZE_PT)
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         style.paragraph_format.first_line_indent = Inches(0.35)
         style.paragraph_format.line_spacing = 1.5
@@ -230,7 +291,7 @@ def configure_styles(document: Document) -> None:
         if name not in styles:
             continue
         style = styles[name]
-        style_font(style, "Lato", 12)
+        style_font(style, BODY_FONT, BODY_SIZE_PT)
         style.paragraph_format.first_line_indent = None
         style.paragraph_format.line_spacing = 1.5
         style.paragraph_format.space_after = Pt(3)
@@ -238,7 +299,7 @@ def configure_styles(document: Document) -> None:
     for name in ("Caption", "Quote", "Intense Quote"):
         if name not in styles:
             continue
-        style_font(styles[name], "Lato", 12, MUTED)
+        style_font(styles[name], BODY_FONT, BODY_SIZE_PT, MUTED)
         styles[name].paragraph_format.first_line_indent = Inches(0)
         styles[name].paragraph_format.line_spacing = 1.25
         styles[name].paragraph_format.space_after = Pt(6)
@@ -250,7 +311,7 @@ def configure_styles(document: Document) -> None:
         if name not in styles:
             continue
         style = styles[name]
-        style_font(style, "Lato", 12, INK)
+        style_font(style, BODY_FONT, BODY_SIZE_PT, INK)
         fmt = style.paragraph_format
         fmt.alignment = WD_ALIGN_PARAGRAPH.LEFT
         fmt.first_line_indent = Inches(0)
@@ -262,7 +323,8 @@ def configure_styles(document: Document) -> None:
 
     for name in ("Default Paragraph Font", "Hyperlink", "Verbatim Char"):
         if name in styles:
-            style_font(styles[name], "Lato", 12, ACCENT if name == "Hyperlink" else INK)
+            style_font(styles[name], BODY_FONT, BODY_SIZE_PT, ACCENT if name == "Hyperlink" else INK)
+    enforce_accessible_style_floor(document)
 
 
 def normalize_tables(document: Document) -> None:
@@ -309,7 +371,7 @@ def configure_document(document: Document) -> None:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             paragraph.paragraph_format.first_line_indent = Inches(0)
             paragraph.paragraph_format.space_after = Pt(10)
-            force_paragraph_font(paragraph, "Lato", 12)
+            force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
             previous_was_heading = False
             continue
         if text.startswith("Figura ") and "Caption" in document.styles:
@@ -343,27 +405,27 @@ def configure_document(document: Document) -> None:
             if style_name == "Caption":
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 paragraph.paragraph_format.keep_together = True
-                force_paragraph_font(paragraph, "Lato", 12)
+                force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
             previous_was_heading = style_name.startswith("Heading")
         elif style_name.startswith("List") or style_name in {"Source Code", "Code Block"}:
             paragraph.paragraph_format.first_line_indent = None
             if style_name in {"Source Code", "Code Block"}:
                 shade_paragraph(paragraph, "F5F7FA", "1E40AF")
-                force_paragraph_font(paragraph, "Lato", 12)
+                force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
             previous_was_heading = False
         elif in_summary:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
             paragraph.paragraph_format.first_line_indent = Inches(0)
             paragraph.paragraph_format.line_spacing = 1.3
             paragraph.paragraph_format.space_after = Pt(3)
-            force_paragraph_font(paragraph, "Lato", 12)
+            force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
             previous_was_heading = False
         else:
             paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             paragraph.paragraph_format.first_line_indent = Inches(0) if previous_was_heading else Inches(0.35)
             paragraph.paragraph_format.line_spacing = 1.5
             paragraph.paragraph_format.space_after = Pt(5)
-            force_paragraph_font(paragraph, "Lato", 12)
+            force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
             previous_was_heading = False
         for run in paragraph.runs:
             if style_name in {"Source Code", "Code Block"}:
@@ -371,9 +433,9 @@ def configure_document(document: Document) -> None:
                 run_style = rpr.find(qn("w:rStyle"))
                 if run_style is not None:
                     rpr.remove(run_style)
-                set_font(run, "Lato", 12)
+                set_font(run, BODY_FONT, BODY_SIZE_PT)
             elif run.font.name is None:
-                set_font(run, "Lato", 12)
+                set_font(run, BODY_FONT, BODY_SIZE_PT)
 
     for table in document.tables:
         table.style = "Table Grid"
@@ -394,9 +456,9 @@ def configure_document(document: Document) -> None:
                     paragraph.paragraph_format.first_line_indent = Inches(0)
                     paragraph.paragraph_format.line_spacing = 1.12
                     paragraph.paragraph_format.space_after = Pt(2)
-                    force_paragraph_font(paragraph, "Lato", 12)
+                    force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
                     for run in paragraph.runs:
-                        set_font(run, "Lato", 12, bold=True if row_index == 0 else None)
+                        set_font(run, BODY_FONT, BODY_SIZE_PT, bold=True if row_index == 0 else None)
                         if row_index == 0:
                             run.font.color.rgb = WHITE
 
@@ -412,6 +474,21 @@ def configure_document(document: Document) -> None:
     # Keep the first section explicit and stable when Pandoc imports a reference file.
     if document.sections and document.sections[0].start_type != WD_SECTION.NEW_PAGE:
         document.sections[0].start_type = WD_SECTION.NEW_PAGE
+
+    # Headers, footers and field-code runs are separate OOXML parts and need the
+    # same explicit minimum size so converters cannot fall back to smaller fonts.
+    for section in document.sections:
+        containers = (
+            section.header,
+            section.first_page_header,
+            section.even_page_header,
+            section.footer,
+            section.first_page_footer,
+            section.even_page_footer,
+        )
+        for container in containers:
+            for paragraph in container.paragraphs:
+                force_paragraph_font(paragraph, BODY_FONT, BODY_SIZE_PT)
 
 
 def append_field(paragraph, instruction: str) -> None:
@@ -439,15 +516,16 @@ def create_clean_reference(path: Path) -> None:
         header.text = "MANUAL MULTIAGENTE  •  REFERÊNCIA PRÁTICA"
         header.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for run in header.runs:
-            set_font(run, "Lato", 9.5, bold=True)
+            set_font(run, BODY_FONT, BODY_SIZE_PT, bold=True)
             run.font.color.rgb = MUTED
 
         footer = section.footer.paragraphs[0]
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
         prefix = footer.add_run("Edição 16  •  Agosto de 2026  •  Página ")
-        set_font(prefix, "Lato", 9.5)
+        set_font(prefix, BODY_FONT, BODY_SIZE_PT)
         prefix.font.color.rgb = MUTED
         append_field(footer, "PAGE")
+        force_paragraph_font(footer, BODY_FONT, BODY_SIZE_PT)
     document.save(path)
 
 
