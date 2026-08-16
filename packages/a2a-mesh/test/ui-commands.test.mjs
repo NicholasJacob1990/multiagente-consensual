@@ -50,7 +50,7 @@ test("painel oferece perfis com override explícito por rodada", () => {
 });
 
 test("broadcast da UI é folha por padrão e recursivo apenas por flag", () => {
-  assert.match(ui, /params: \{ prompt, includeSelf: true, recursive \}/);
+  assert.match(ui, /params: \{ prompt, agents: agentOption\.agents, includeSelf: true, recursive \}/);
   assert.match(ui, /--recursive/);
   assert.match(ui, /recursive: false/);
   assert.match(ui, /broadcast direto/);
@@ -68,7 +68,7 @@ test("painel aceita aliases portáveis e não transforma comando desconhecido em
 });
 
 test("painel mostra modelos efetivos e substitui streaming duplicado no resultado final", () => {
-  for (const agent of ["claude", "codex", "gemini", "grok", "glm", "deepseek", "kimi"]) {
+  for (const agent of ["claude", "codex", "gemini", "grok", "glm", "deepseek", "kimi", "qwen"]) {
     assert.match(ui, new RegExp(`id="label-${agent}"`));
   }
   assert.match(ui, /function effectiveHealthModel\(health\)/);
@@ -96,6 +96,16 @@ test("painel mostra modelos efetivos e substitui streaming duplicado no resultad
   assert.match(ui, /verificação pendente da primeira execução/);
   assert.match(ui, /data\.totalEvents \?\? eventCount/);
   assert.match(ui, /falha\(s\) histórica\(s\)/);
+});
+
+test("painel permite selecionar a equipe e aplicar override por comando", () => {
+  assert.match(ui, /id="team-picker"/);
+  assert.match(ui, /data-team-agent="qwen"/);
+  assert.match(ui, /function setTeamSelection\(agents\)/);
+  assert.match(ui, /function parseAgentsOption\(text/);
+  assert.match(ui, /--agents=claude,codex,qwen/);
+  assert.match(ui, /agents: agentOption\.agents/);
+  assert.match(ui, /agents:   savedTeamAgents/);
 });
 
 test("team cria contribuição paralela e síntese pelo juiz", () => {

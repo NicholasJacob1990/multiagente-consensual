@@ -1,11 +1,11 @@
 ---
-description: Monta equipe com papéis distintos entre os sete agentes do mesh
+description: Monta equipe configurável com papéis distintos entre os oito agentes do mesh
 argument-hint: <objetivo da equipe>
 entrypoint: workflow-agentes
 profile: a2a_team
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_team` com o objetivo abaixo. Deixe a tool decidir os papéis a menos que `$ARGUMENTS` já contenha designações explícitas (ex.: "codex=testador, claude=arquiteto, gemini=pesquisador, grok=oponente, glm=implementador, deepseek=auditor, kimi=consolidador"). Retorne o output final consolidado, preservando falhas ou ausências de cadeiras sem substituição silenciosa.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_team` com o objetivo abaixo. Deixe a tool decidir os papéis a menos que `$ARGUMENTS` já contenha designações explícitas (ex.: "codex=testador, claude=arquiteto, gemini=pesquisador, grok=oponente, glm=implementador, deepseek=auditor, kimi=redator, qwen=consolidador"). Retorne o output final consolidado, preservando falhas ou ausências de cadeiras sem substituição silenciosa.
 
 A tool devolve um recibo durável por padrão. Guarde o `task_id` e use `a2a_task_wait` em esperas de até 240 segundos, repetindo enquanto o estado for ativo, salvo se o usuário pedir apenas o disparo. Use `a2a_task_status` para retomar acompanhamento; nunca reenvie o pedido só porque uma espera terminou. Se falhar, informe o estado e apresente `partial-output.md` quando existir. O diálogo ao vivo fica no painel A2A.
 

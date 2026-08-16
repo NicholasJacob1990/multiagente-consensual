@@ -78,6 +78,7 @@
   .bubble-rose   { border-color: #fb7185; background: rgba(251, 113, 133, 0.06); }
   .bubble-cyan   { border-color: #22d3ee; background: rgba(34, 211, 238, 0.06); }
   .bubble-violet { border-color: #c084fc; background: rgba(192, 132, 252, 0.06); }
+  .bubble-orange { border-color: #f97316; background: rgba(249, 115, 22, 0.07); }
 
   /* Phase separator */
   .phase-sep { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; color: #6b7280; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; }
@@ -210,6 +211,51 @@
   .config-chip:hover { background: #1f2937; color: #c9d1d9; border-color: #30363d; }
   .config-chip .chip-label { color: #484f58; }
   .config-chip .chip-value { color: #c9d1d9; font-weight: 500; }
+  .team-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-bottom: 1px solid #161b22;
+    background: #080c14;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  .team-picker::-webkit-scrollbar { display: none; }
+  .team-picker-label {
+    color: #6b7280;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .team-agent-toggle, .team-picker-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 9px;
+    border: 1px solid #21262d;
+    border-radius: 999px;
+    background: #0d1117;
+    color: #6b7280;
+    font: inherit;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+  }
+  .team-agent-toggle:hover, .team-picker-all:hover { color: #c9d1d9; border-color: #4b5563; }
+  .team-agent-toggle[aria-pressed="true"] {
+    color: #e5e7eb;
+    border-color: color-mix(in srgb, var(--agent-color, #6366f1) 64%, #21262d);
+    background: color-mix(in srgb, var(--agent-color, #6366f1) 13%, #0d1117);
+  }
+  .team-agent-toggle .dot { background: var(--agent-color, #4b5563); }
+  .team-picker-all[aria-pressed="true"] { color: #c7d2fe; border-color: #4f46e5; background: #17183a; }
+  .team-picker-count { color: #8b949e; font-size: 0.6875rem; white-space: nowrap; }
 
   /* ============================================ */
   /* Layout — 2-column + bottom terminal panel */
@@ -785,7 +831,7 @@
     #chat { padding-inline: 12px; }
   }
   @media (pointer: coarse) {
-    .task-cancel, .live-cancel, .terminal-send, .quick-action { min-height: 44px; }
+    .task-cancel, .live-cancel, .terminal-send, .quick-action, .team-agent-toggle, .team-picker-all { min-height: 44px; }
   }
   @media (pointer: coarse) { button, select, summary, a { min-height: 44px; } }
   @media (prefers-reduced-motion: reduce) {
@@ -810,6 +856,7 @@
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-glm" class="dot dot-gray"></span><span id="label-glm" style="color:#8b949e">GLM</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-deepseek" class="dot dot-gray"></span><span id="label-deepseek" style="color:#8b949e">DeepSeek</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-kimi" class="dot dot-gray"></span><span id="label-kimi" style="color:#8b949e">Kimi</span></span>
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-qwen" class="dot dot-gray"></span><span id="label-qwen" style="color:#8b949e">Qwen</span></span>
     </div>
   </div>
   <div class="header-actions">
@@ -865,13 +912,26 @@
     <div class="config-strip" id="config-strip" style="display:none">
       <label class="config-chip" data-ops="plain" title="Destino padrão do texto sem comando"><span class="chip-label">Texto livre</span><select id="cfg-defaultAction" data-config-key="defaultAction" aria-label="Destino do texto livre"><option value="broadcast">Equipe</option><option value="call">Agente escolhido</option></select></label>
       <label class="config-chip" data-ops="consensus,ensemble,debate,team,plan"><span class="chip-label">Perfil</span><select id="cfg-profile" data-config-key="profile" aria-label="Perfil de trabalho"><option>fast</option><option>normal</option><option>deep</option></select></label>
-      <label class="config-chip" data-ops="call,plain"><span class="chip-label">Agente</span><select id="cfg-agent" data-config-key="agent" aria-label="Agente alvo"><option>codex</option><option>gemini</option><option>claude</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option></select></label>
-      <label class="config-chip" data-ops="consensus,ensemble,debate,team"><span class="chip-label">Juiz</span><select id="cfg-judge" data-config-key="judge" aria-label="Agente juiz"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option></select></label>
+      <label class="config-chip" data-ops="call,plain"><span class="chip-label">Agente</span><select id="cfg-agent" data-config-key="agent" aria-label="Agente alvo"><option>codex</option><option>gemini</option><option>claude</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option></select></label>
+      <label class="config-chip" data-ops="consensus,ensemble,debate,team"><span class="chip-label">Juiz</span><select id="cfg-judge" data-config-key="judge" aria-label="Agente juiz"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option></select></label>
       <label class="config-chip" data-ops="ensemble,debate,plan"><span class="chip-label">Rodadas</span><select id="cfg-rounds" data-config-key="rounds" aria-label="Número de rodadas"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>16</option><option>20</option><option>24</option><option>36</option></select></label>
       <label class="config-chip" data-ops="ensemble"><span class="chip-label">Linguagem</span><select id="cfg-language" data-config-key="language" aria-label="Linguagem do código"><option>python</option><option>javascript</option><option>typescript</option><option>rust</option><option>go</option><option>java</option></select></label>
       <label class="config-chip" data-ops="debate"><span class="chip-label">Ordem</span><select id="cfg-order" data-config-key="order" aria-label="Ordem do debate"><option>rotate</option><option>fixed</option><option>random</option></select></label>
     </div>
-    <div id="composer-summary" class="composer-summary" aria-live="polite"><strong>Texto livre</strong><span class="summary-dot">·</span><span>Equipe com 7 agentes</span></div>
+    <div id="team-picker" class="team-picker" aria-label="Escolha os agentes da equipe" style="display:none">
+      <span class="team-picker-label">Equipe</span>
+      <button type="button" class="team-picker-all" id="team-picker-all" data-team-action="all" aria-pressed="true">Todos</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="claude" aria-pressed="true" style="--agent-color:#a78bfa"><span class="dot"></span>Claude</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="codex" aria-pressed="true" style="--agent-color:#fbbf24"><span class="dot"></span>Codex</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="gemini" aria-pressed="true" style="--agent-color:#60a5fa"><span class="dot"></span>Gemini</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="grok" aria-pressed="true" style="--agent-color:#34d399"><span class="dot"></span>Grok</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="glm" aria-pressed="true" style="--agent-color:#fb7185"><span class="dot"></span>GLM</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="deepseek" aria-pressed="true" style="--agent-color:#22d3ee"><span class="dot"></span>DeepSeek</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="kimi" aria-pressed="true" style="--agent-color:#c084fc"><span class="dot"></span>Kimi</button>
+      <button type="button" class="team-agent-toggle" data-team-agent="qwen" aria-pressed="true" style="--agent-color:#f97316"><span class="dot"></span>Qwen</button>
+      <span id="team-picker-count" class="team-picker-count">8 de 8</span>
+    </div>
+    <div id="composer-summary" class="composer-summary" aria-live="polite"><strong>Texto livre</strong><span class="summary-dot">·</span><span>Equipe com 8 agentes</span></div>
     <div id="composer-error" class="composer-error" role="alert" aria-live="assertive"></div>
     <!-- Terminal Input -->
     <div class="terminal-bar" style="position:relative; border-top:none;">
@@ -908,7 +968,7 @@ if (clearRequested) {
   localStorage.setItem('meshChatClearedAt', new Date().toISOString());
   history.replaceState(null, '', '/ui');
 }
-const PORTS = { claude: 3142, codex: 3141, gemini: 3143, grok: 3144, glm: 3145, deepseek: 3146, kimi: 3147 };
+const PORTS = { claude: 3142, codex: 3141, gemini: 3143, grok: 3144, glm: 3145, deepseek: 3146, kimi: 3147, qwen: 3148 };
 function peerEndpoint(port, path = '') {
   const url = new URL(BASE);
   url.port = String(port);
@@ -926,13 +986,13 @@ const SELF_REFERENCE_PATTERNS = [
 ];
 const AGENT_COLORS = {
   claude: 'purple', codex: 'amber', gemini: 'blue', grok: 'green',
-  glm: 'rose', deepseek: 'cyan', kimi: 'violet',
+  glm: 'rose', deepseek: 'cyan', kimi: 'violet', qwen: 'orange',
   system: 'gray', error: 'red', synthesis: 'gold',
   judge: 'gold',
 };
 const AGENT_DOT_COLORS = {
   claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa', grok: '#34d399',
-  glm: '#fb7185', deepseek: '#22d3ee', kimi: '#c084fc',
+  glm: '#fb7185', deepseek: '#22d3ee', kimi: '#c084fc', qwen: '#f97316',
 };
 
 let autoScroll = true;
@@ -992,17 +1052,22 @@ let historyDraft = '';
 // ============================================
 // Config State (chips)
 // ============================================
+const AGENTS = ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'];
+
 const CONFIG_OPTIONS = {
   defaultAction: ['broadcast', 'call'],
   profile:  ['fast', 'normal', 'deep'],
-  agent:    ['codex', 'gemini', 'claude', 'grok', 'glm', 'deepseek', 'kimi'],
-  judge:    ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi'],
+  agent:    ['codex', 'gemini', 'claude', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'],
+  judge:    ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'],
   rounds:   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36],
   language: ['python', 'javascript', 'typescript', 'rust', 'go', 'java'],
   order:    ['rotate', 'fixed', 'random'],
 };
 
 const savedCfg = JSON.parse(localStorage.getItem('meshConfig') || '{}');
+const savedTeamAgents = Array.isArray(savedCfg.agents)
+  ? [...new Set(savedCfg.agents.map(agent => String(agent).toLowerCase()).filter(agent => AGENTS.includes(agent)))]
+  : [...AGENTS];
 const meshConfig = {
   defaultAction: savedCfg.defaultAction === 'call' ? 'call' : 'broadcast',
   profile:  savedCfg.profile || 'normal',
@@ -1011,6 +1076,7 @@ const meshConfig = {
   rounds:   savedCfg.rounds   || 5,
   language: savedCfg.language || 'python',
   order:    savedCfg.order   || 'rotate',
+  agents:   savedTeamAgents.length ? savedTeamAgents : [...AGENTS],
 };
 
 const WORK_PROFILES = Object.freeze({
@@ -1042,6 +1108,72 @@ function configuredRounds(parsedProfile, operation) {
     : roundsOverride;
 }
 
+function selectedTeamAgents() {
+  const configured = Array.isArray(meshConfig.agents) ? meshConfig.agents : [];
+  const selected = [...new Set(configured.filter(agent => AGENTS.includes(agent)))];
+  return selected.length ? selected : [...AGENTS];
+}
+
+function saveMeshConfig() {
+  localStorage.setItem('meshConfig', JSON.stringify({ ...meshConfig, roundsOverride }));
+}
+
+function syncTeamPicker() {
+  const selected = selectedTeamAgents();
+  document.querySelectorAll('[data-team-agent]').forEach((button) => {
+    button.setAttribute('aria-pressed', selected.includes(button.dataset.teamAgent) ? 'true' : 'false');
+  });
+  const all = document.getElementById('team-picker-all');
+  if (all) all.setAttribute('aria-pressed', selected.length === AGENTS.length ? 'true' : 'false');
+  const count = document.getElementById('team-picker-count');
+  if (count) count.textContent = `${selected.length} de ${AGENTS.length}`;
+}
+
+function setTeamSelection(agents) {
+  const selected = [...new Set((agents || []).filter(agent => AGENTS.includes(agent)))];
+  if (!selected.length) {
+    setComposerError('A equipe precisa ter pelo menos um agente.');
+    announce('Mantenha ao menos um agente selecionado.');
+    return false;
+  }
+  meshConfig.agents = selected;
+  saveMeshConfig();
+  setComposerError('');
+  syncTeamPicker();
+  updateTerminalOpTag(document.getElementById('terminal-input')?.value || '');
+  return true;
+}
+
+function toggleTeamAgent(agent) {
+  if (!AGENTS.includes(agent)) return;
+  const selected = selectedTeamAgents();
+  setTeamSelection(selected.includes(agent)
+    ? selected.filter(item => item !== agent)
+    : [...selected, agent]);
+}
+
+function parseAgentsOption(text, fallback = selectedTeamAgents()) {
+  const source = String(text || '');
+  const match = source.match(/(?:^|\s)--agents=([^\s]+)/i);
+  if (!match) return { agents: [...fallback], explicit: false, invalid: [], text: source };
+  const requested = [...new Set(match[1].split(',').map(agent => agent.trim().toLowerCase()).filter(Boolean))];
+  const invalid = requested.filter(agent => !AGENTS.includes(agent));
+  return {
+    agents: requested.filter(agent => AGENTS.includes(agent)),
+    explicit: true,
+    invalid,
+    text: source.replace(match[0], ' ').replace(/\s+/g, ' ').trim(),
+  };
+}
+
+function collaborativeAgentError(operation, agents) {
+  if (!agents.length) return 'Selecione pelo menos um agente para a equipe.';
+  if (['debate', 'ensemble'].includes(operation) && agents.length < 2) {
+    return `${operation === 'debate' ? 'O debate' : 'O ensemble'} exige pelo menos dois agentes selecionados.`;
+  }
+  return '';
+}
+
 function cycleConfig(key) {
   const opts = CONFIG_OPTIONS[key];
   if (!opts) return;
@@ -1054,7 +1186,7 @@ function cycleConfig(key) {
   } else if (key === 'rounds') {
     roundsOverride = meshConfig.rounds;
   }
-  localStorage.setItem('meshConfig', JSON.stringify({ ...meshConfig, roundsOverride }));
+  saveMeshConfig();
   const el = document.getElementById('cfg-' + key);
   if (el) el.value = String(meshConfig[key]);
   updateTerminalOpTag(document.getElementById('terminal-input')?.value || '');
@@ -1072,7 +1204,7 @@ function setConfig(key, value) {
   } else if (key === 'rounds') {
     roundsOverride = meshConfig.rounds;
   }
-  localStorage.setItem('meshConfig', JSON.stringify({ ...meshConfig, roundsOverride }));
+  saveMeshConfig();
   for (const configKey of Object.keys(meshConfig)) {
     const control = document.getElementById('cfg-' + configKey);
     if (control) control.value = String(meshConfig[configKey]);
@@ -1085,7 +1217,7 @@ function setConfig(key, value) {
 // ============================================
 const COMMANDS = [
   { cmd: '/call',      args: '<agente> <pedido>',  desc: 'Consultar um agente',       method: 'mesh/call' },
-  { cmd: '/broadcast', args: '<pedido>',            desc: 'Ouvir todos em paralelo',  method: 'mesh/broadcast' },
+  { cmd: '/broadcast', args: '<pedido>',            desc: 'Ouvir a equipe em paralelo', method: 'mesh/broadcast' },
   { cmd: '/ask',       args: '<pedido>',            desc: 'Atalho para broadcast',     method: 'mesh/broadcast' },
   { cmd: '/consensus', args: '<pedido>',            desc: 'Respostas e síntese do juiz', method: 'mesh/consensus' },
   { cmd: '/ensemble',  args: '<tarefa>',            desc: 'Produção e revisão cruzada', method: 'mesh/ensemble' },
@@ -1097,7 +1229,6 @@ const COMMANDS = [
   { cmd: '/help',      args: '',                    desc: 'Mostrar comandos',             method: null },
 ];
 
-const AGENTS = ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi'];
 const COMMAND_ALIASES = Object.freeze({
   '/a2a-call': '/call',
   '/a2a-broadcast': '/broadcast',
@@ -1197,23 +1328,31 @@ function parseTerminalCommand(input) {
       }
       case '/broadcast':
       case '/ask': {
-        const recursive = /(?:^|\s)--recursive(?=\s|$)/.test(rest);
-        const prompt = rest.replace(/(?:^|\s)--recursive(?=\s|$)/, ' ').replace(/\s+/g, ' ').trim();
+        const agentOption = parseAgentsOption(rest);
+        if (agentOption.invalid.length) return { error: `Agentes desconhecidos: ${agentOption.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}` };
+        const teamError = collaborativeAgentError('broadcast', agentOption.agents);
+        if (teamError) return { error: teamError };
+        const recursive = /(?:^|\s)--recursive(?=\s|$)/.test(agentOption.text);
+        const prompt = agentOption.text.replace(/(?:^|\s)--recursive(?=\s|$)/, ' ').replace(/\s+/g, ' ').trim();
         if (prompt) return {
           op: 'broadcast',
           method: 'mesh/broadcast',
-          params: { prompt, includeSelf: true, recursive },
-          display: recursive ? 'broadcast (recursive)' : 'broadcast',
+          params: { prompt, agents: agentOption.agents, includeSelf: true, recursive },
+          display: `${recursive ? 'broadcast (recursive)' : 'broadcast'} · ${agentOption.agents.length} agentes`,
         };
         return null;
       }
       case '/consensus': {
         const parsedProfile = parseProfileOption(rest);
-        if (parsedProfile.text) return {
+        const agentOption = parseAgentsOption(parsedProfile.text);
+        if (agentOption.invalid.length) return { error: `Agentes desconhecidos: ${agentOption.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}` };
+        const teamError = collaborativeAgentError('consensus', agentOption.agents);
+        if (teamError) return { error: teamError };
+        if (agentOption.text) return {
           op: 'consensus',
           method: 'mesh/consensus',
-          params: { prompt: parsedProfile.text, judge: meshConfig.judge, profile: parsedProfile.profile },
-          display: `consensus (${parsedProfile.profile})`,
+          params: { prompt: agentOption.text, agents: agentOption.agents, judge: meshConfig.judge, profile: parsedProfile.profile },
+          display: `consensus (${parsedProfile.profile}, ${agentOption.agents.length} agentes)`,
         };
         return null;
       }
@@ -1234,16 +1373,20 @@ function parseTerminalCommand(input) {
         task = task
           .replace(/(?:^|\s)--no-dedupe(?=\s|$)/, ' ')
           .replace(/(?:^|\s)--no-early-exit(?=\s|$)/, ' ');
-        task = task.trim();
+        const agentOption = parseAgentsOption(task);
+        if (agentOption.invalid.length) return { error: `Agentes desconhecidos: ${agentOption.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}` };
+        const teamError = collaborativeAgentError('ensemble', agentOption.agents);
+        if (teamError) return { error: teamError };
+        task = agentOption.text.trim();
         if (task) return {
           op: 'ensemble',
           method: 'mesh/ensemble',
           params: {
-            task, language, rounds, judge, profile,
+            task, language, rounds, judge, profile, agents: agentOption.agents,
             deduplicate: noDedupe ? false : profile !== 'deep',
             early_exit: noEarlyExit ? false : profile !== 'deep',
           },
-          display: `ensemble (${profile}, ${rounds}r, ${language})`,
+          display: `ensemble (${profile}, ${rounds}r, ${language}, ${agentOption.agents.length} agentes)`,
         };
         return null;
       }
@@ -1258,15 +1401,23 @@ function parseTerminalCommand(input) {
         if (judgeMatch) { judge = judgeMatch[1]; topic = topic.replace(judgeMatch[0], ''); }
         const orderMatch = rest.match(/--order=(\w+)/);
         if (orderMatch) { order = orderMatch[1]; topic = topic.replace(orderMatch[0], ''); }
-        topic = topic.trim();
-        if (topic) return { op: 'debate', method: 'mesh/debate', params: { topic, rounds, judge, order, profile }, display: `debate (${profile}, ${rounds}r)` };
+        const agentOption = parseAgentsOption(topic);
+        if (agentOption.invalid.length) return { error: `Agentes desconhecidos: ${agentOption.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}` };
+        const teamError = collaborativeAgentError('debate', agentOption.agents);
+        if (teamError) return { error: teamError };
+        topic = agentOption.text.trim();
+        if (topic) return { op: 'debate', method: 'mesh/debate', params: { topic, rounds, judge, order, profile, agents: agentOption.agents }, display: `debate (${profile}, ${rounds}r, ${agentOption.agents.length} agentes)` };
         return null;
       }
       case '/team': {
         const parsedProfile = parseProfileOption(rest);
-        if (!parsedProfile.text) return null;
+        const agentOption = parseAgentsOption(parsedProfile.text);
+        if (agentOption.invalid.length) return { error: `Agentes desconhecidos: ${agentOption.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}` };
+        const teamError = collaborativeAgentError('team', agentOption.agents);
+        if (teamError) return { error: teamError };
+        if (!agentOption.text) return null;
         const profile = parsedProfile.profile;
-        const objective = parsedProfile.text;
+        const objective = agentOption.text;
         const judge = meshConfig.judge;
         return {
           op: 'team',
@@ -1278,7 +1429,7 @@ function parseTerminalCommand(input) {
             steps: [
               {
                 mode: 'parallel',
-                agents: AGENTS,
+                agents: agentOption.agents,
                 prompt: `Objetivo comum:\n${objective}\n\nAnalise o objetivo sob sua melhor especialidade e proponha uma contribuição concreta.`,
               },
               {
@@ -1288,7 +1439,7 @@ function parseTerminalCommand(input) {
               },
             ],
           },
-          display: `team (${profile}, ${AGENTS.length} agents, judge ${judge})`,
+          display: `team (${profile}, ${agentOption.agents.length} agents, judge ${judge})`,
         };
       }
       case '/plan': {
@@ -1331,7 +1482,8 @@ function parseTerminalCommand(input) {
   if (meshConfig.defaultAction === 'call') {
     return { op: 'call', method: 'mesh/call', params: { agent: meshConfig.agent, prompt: trimmed }, display: `call ${meshConfig.agent}` };
   }
-  return { op: 'broadcast', method: 'mesh/broadcast', params: { prompt: trimmed, includeSelf: true, recursive: false }, display: 'broadcast' };
+  const agents = selectedTeamAgents();
+  return { op: 'broadcast', method: 'mesh/broadcast', params: { prompt: trimmed, agents, includeSelf: true, recursive: false }, display: `broadcast · ${agents.length} agentes` };
 }
 
 function showHelp() {
@@ -1344,8 +1496,9 @@ function showHelp() {
   bubble.innerHTML = `
     <div style="font-size:0.75rem; color:#8b949e; line-height:1.8;">
       <strong style="color:#c9d1d9;">Terminal Commands</strong><br>
-      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Call one agent (claude, codex, gemini, grok)<br>
+      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Consulta direta a um dos oito agentes<br>
       <code>/broadcast &lt;prompt&gt;</code> — Uma resposta direta por agente, sem subdelegação<br>
+      <code>--agents=claude,codex,qwen</code> — Substitui a seleção visual da equipe nesta execução<br>
       <code>/broadcast --recursive &lt;prompt&gt;</code> — Modo avançado: autoriza delegação entre agentes<br>
       <code>/ask &lt;prompt&gt;</code> — Alias for broadcast<br>
       <code>/consensus &lt;prompt&gt;</code> — All agents + judge synthesis<br>
@@ -1394,6 +1547,7 @@ function compactHealthModel(agent, health) {
   if (agent === 'glm') return model.replace(/^opencode-go\/glm-/i, '');
   if (agent === 'deepseek') return model.replace(/^opencode-go\/deepseek-/i, '').replace(/-/g, ' ');
   if (agent === 'kimi') return model.replace(/^kimi-code\//i, '').toUpperCase();
+  if (agent === 'qwen') return model.replace(/^opencode-go\/qwen/i, '').replace(/-/g, ' ').trim();
   return model
     .replace(/^cursor-/i, '')
     .replace(/^gemini-/i, '')
@@ -1936,6 +2090,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('cfg-' + key);
     if (el) el.value = String(meshConfig[key]);
   }
+  syncTeamPicker();
 
   const input = document.getElementById('terminal-input');
   autoResizeTerminalInput(input);
@@ -2093,6 +2248,10 @@ function validateTerminalPrompt(value) {
     if (invalidAgentFlag) {
       return { ok: false, message: `Agente desconhecido: ${invalidAgentFlag}. Opções: ${AGENTS.join(', ')}.` };
     }
+    const requestedTeam = parseAgentsOption(trimmed);
+    if (requestedTeam.invalid.length) {
+      return { ok: false, message: `Agentes desconhecidos: ${requestedTeam.invalid.join(', ')}. Opções: ${AGENTS.join(', ')}.` };
+    }
     const requestedRounds = trimmed.match(/--rounds=(\d+)/i);
     if (requestedRounds && (Number(requestedRounds[1]) < 1 || Number(requestedRounds[1]) > 36)) {
       return { ok: false, message: 'O número de rodadas deve ficar entre 1 e 36.' };
@@ -2136,9 +2295,16 @@ function updateConfigChips(op) {
   });
   // Hide entire strip if no chips visible
   const strip = document.getElementById('config-strip');
-  if (!strip) return;
-  const anyVisible = [...strip.querySelectorAll('.config-chip')].some(c => c.style.display !== 'none');
-  strip.style.display = anyVisible ? '' : 'none';
+  if (strip) {
+    const anyVisible = [...strip.querySelectorAll('.config-chip')].some(c => c.style.display !== 'none');
+    strip.style.display = anyVisible ? '' : 'none';
+  }
+  const picker = document.getElementById('team-picker');
+  if (picker) {
+    const teamOperation = ['broadcast', 'ask', 'consensus', 'ensemble', 'debate', 'team'].includes(op)
+      || (op === 'plain' && meshConfig.defaultAction === 'broadcast');
+    picker.style.display = teamOperation ? '' : 'none';
+  }
 }
 
 function detectComposerOperation(value) {
@@ -2161,24 +2327,29 @@ function updateComposerSummary(value) {
   const profile = flagValue(value, 'profile', meshConfig.profile);
   const rounds = flagValue(value, 'rounds', configuredRounds({ profile, explicit: /--profile=/.test(value) }, op));
   const judge = flagValue(value, 'judge', meshConfig.judge);
+  const requestedTeam = parseAgentsOption(value);
+  const teamAgents = requestedTeam.invalid.length ? selectedTeamAgents() : requestedTeam.agents;
+  const teamLabel = teamAgents.length <= 4
+    ? `${teamAgents.length} (${teamAgents.join(', ')})`
+    : `${teamAgents.length} agentes`;
   let title = 'Texto livre';
   let details = meshConfig.defaultAction === 'call'
     ? `consulta direta a ${meshConfig.agent}`
-    : `broadcast independente para ${AGENTS.length} agentes`;
+    : `broadcast independente para ${teamLabel}`;
   if (op === 'call') {
     const enteredAgent = String(value || '').trim().split(/\s+/)[1];
     title = 'Consulta direta';
     details = `agente ${AGENTS.includes(enteredAgent) ? enteredAgent : meshConfig.agent}`;
   } else if (['broadcast', 'ask'].includes(op)) {
-    title = 'Broadcast'; details = `${AGENTS.length} respostas independentes · sem juiz`;
+    title = 'Broadcast'; details = `${teamLabel} · respostas independentes · sem juiz`;
   } else if (op === 'consensus') {
-    title = 'Consenso'; details = `${AGENTS.length} participantes · juiz ${judge} · perfil ${profile}`;
+    title = 'Consenso'; details = `${teamLabel} · juiz ${judge} · perfil ${profile}`;
   } else if (op === 'ensemble') {
-    title = 'Ensemble N×N'; details = `${AGENTS.length} autores/revisores · ${rounds} rodada(s) · ${flagValue(value, 'lang(?:uage)?', meshConfig.language)} · juiz ${judge}`;
+    title = 'Ensemble N×N'; details = `${teamLabel} · ${rounds} rodada(s) · ${flagValue(value, 'lang(?:uage)?', meshConfig.language)} · juiz ${judge}`;
   } else if (op === 'debate') {
-    title = 'Debate adversarial'; details = `${AGENTS.length} participantes · até ${rounds} rodada(s) · juiz ${judge} · ordem ${flagValue(value, 'order', meshConfig.order)}`;
+    title = 'Debate adversarial'; details = `${teamLabel} · até ${rounds} rodada(s) · juiz ${judge} · ordem ${flagValue(value, 'order', meshConfig.order)}`;
   } else if (op === 'team') {
-    title = 'Equipe'; details = `${AGENTS.length} especialistas · consolidação por ${judge} · perfil ${profile}`;
+    title = 'Equipe'; details = `${teamLabel} · consolidação por ${judge} · perfil ${profile}`;
   } else if (op === 'plan') {
     title = 'Plano com revisão'; details = `${flagValue(value, 'author', 'claude')} ↔ ${flagValue(value, 'reviewer', 'codex')} · até ${rounds} rodada(s)`;
   } else if (op === 'status') {
@@ -2816,6 +2987,7 @@ function detectAgent(text) {
   if (t.includes('deepseek')) return 'deepseek';
   if (t.includes('glm')) return 'glm';
   if (t.includes('kimi')) return 'kimi';
+  if (t.includes('qwen')) return 'qwen';
   return null;
 }
 
@@ -3419,6 +3591,10 @@ function wireStaticControls() {
   document.getElementById('undo-clear')?.addEventListener('click', undoClear);
   document.querySelectorAll('select[data-config-key]').forEach((control) => {
     control.addEventListener('change', () => setConfig(control.dataset.configKey, control.value));
+  });
+  document.getElementById('team-picker-all')?.addEventListener('click', () => setTeamSelection(AGENTS));
+  document.querySelectorAll('[data-team-agent]').forEach((button) => {
+    button.addEventListener('click', () => toggleTeamAgent(button.dataset.teamAgent));
   });
   document.getElementById('autocomplete-box')?.addEventListener('click', (event) => {
     const item = event.target.closest('.autocomplete-item[data-cmd]');

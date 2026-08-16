@@ -235,9 +235,11 @@ function serverEnvironment(home) {
     A2A_GLM_MODEL: "opencode-go/glm-5.3",
     A2A_DEEPSEEK_MODEL: "opencode-go/deepseek-v4-pro",
     A2A_KIMI_MODEL: "kimi-code/k3",
+    A2A_QWEN_MODEL: "opencode-go/qwen3.8-max",
     A2A_GLM_REASONING_EFFORT: "max",
     A2A_DEEPSEEK_REASONING_EFFORT: "max",
     A2A_KIMI_REASONING_EFFORT: "max",
+    A2A_QWEN_REASONING_EFFORT: "max",
     USE_CLI: process.env.USE_CLI || "force",
   };
 }
@@ -557,7 +559,7 @@ async function doctor(args) {
     const model = cursorModelAvailability(env);
     checks.push({ name: "model:grok", ok: model.available, detail: model.reason || model.model });
   }
-  for (const name of ["glm", "deepseek"]) {
+  for (const name of ["glm", "deepseek", "qwen"]) {
     if (!executable(AGENTS[name].cliBinary, env)) continue;
     const model = openCodeModelAvailability(name, env);
     checks.push({ name: `model:${name}`, ok: model.available, detail: model.reason || model.model });

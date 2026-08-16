@@ -62,8 +62,8 @@ test("--with-a2a planeja o pacote complementar sem escrever no dry-run", async (
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.a2a.status, "installed");
-  assert.equal(report.a2a.package, "@nicholasjacob90/a2a-mesh@1.2.0");
-  assert.ok(report.actions.some((action) => action.binary.endsWith("npm") && action.argv.includes("@nicholasjacob90/a2a-mesh@1.2.0")));
+  assert.equal(report.a2a.package, "@nicholasjacob90/a2a-mesh@1.3.0");
+  assert.ok(report.actions.some((action) => action.binary.endsWith("npm") && action.argv.includes("@nicholasjacob90/a2a-mesh@1.3.0")));
   assert.equal(fs.existsSync(home), false);
   fs.rmSync(root, { recursive: true, force: true });
 });

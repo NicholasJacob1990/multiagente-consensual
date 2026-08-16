@@ -35,6 +35,8 @@ test('parser Kimi ignora metadados e aceita conteúdo de assistente', () => {
 test('rotas externas fixam modelos e esforço máximo do OpenCode', () => {
   const glm = buildExternalCliArgs({ route: 'opencode', model: 'opencode-go/glm-5.3', prompt: 'tarefa' });
   assert.deepEqual(glm.slice(0, 8), ['run', '--model', 'opencode-go/glm-5.3', '--variant', 'max', '--format', 'json', '--auto']);
+  const qwen = buildExternalCliArgs({ route: 'opencode', model: 'opencode-go/qwen3.8-max', prompt: 'tarefa' });
+  assert.deepEqual(qwen.slice(0, 8), ['run', '--model', 'opencode-go/qwen3.8-max', '--variant', 'max', '--format', 'json', '--auto']);
   const kimi = buildExternalCliArgs({ route: 'kimi-code', model: 'kimi-code/k3', prompt: 'tarefa' });
   assert.deepEqual(kimi, ['--model', 'kimi-code/k3', '--prompt', 'tarefa', '--output-format', 'stream-json']);
 });

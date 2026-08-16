@@ -16,22 +16,24 @@ import {
 } from "../npm/cli.mjs";
 
 test("usa somente portas locais fixas e distintas", () => {
-  assert.deepEqual(Object.values(AGENTS).map((agent) => agent.port), [3141, 3142, 3143, 3144, 3145, 3146, 3147]);
-  assert.equal(new Set(Object.values(AGENTS).map((agent) => agent.port)).size, 7);
+  assert.deepEqual(Object.values(AGENTS).map((agent) => agent.port), [3141, 3142, 3143, 3144, 3145, 3146, 3147, 3148]);
+  assert.equal(new Set(Object.values(AGENTS).map((agent) => agent.port)).size, 8);
   assert.equal(AGENTS.grok.route, "cursor");
   assert.equal(AGENTS.grok.model, "cursor-grok-4.6-high");
   assert.equal(AGENTS.glm.model, "opencode-go/glm-5.3");
   assert.equal(AGENTS.deepseek.model, "opencode-go/deepseek-v4-pro");
   assert.equal(AGENTS.kimi.model, "kimi-code/k3");
+  assert.equal(AGENTS.qwen.model, "opencode-go/qwen3.8-max");
 });
 
-test("reconhece GLM 5.3 e DeepSeek V4 Pro no catálogo OpenCode Go", () => {
+test("reconhece GLM 5.3, DeepSeek V4 Pro e Qwen 3.8 Max no catálogo OpenCode Go", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-opencode-model-"));
   const opencode = path.join(root, "opencode");
-  fs.writeFileSync(opencode, "#!/bin/sh\nprintf 'opencode-go/glm-5.3\\nopencode-go/deepseek-v4-pro\\n'\n", { mode: 0o700 });
+  fs.writeFileSync(opencode, "#!/bin/sh\nprintf 'opencode-go/glm-5.3\\nopencode-go/deepseek-v4-pro\\nopencode-go/qwen3.8-max\\n'\n", { mode: 0o700 });
   try {
     assert.equal(openCodeModelAvailability("glm", { PATH: root }).available, true);
     assert.equal(openCodeModelAvailability("deepseek", { PATH: root }).available, true);
+    assert.equal(openCodeModelAvailability("qwen", { PATH: root }).available, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -76,6 +78,7 @@ test("ausência do Cursor degrada apenas o peer Grok", () => {
     assert.equal(availability.glm.available, true);
     assert.equal(availability.deepseek.available, true);
     assert.equal(availability.kimi.available, true);
+    assert.equal(availability.qwen.available, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -256,7 +256,7 @@ avança quando passa pelos gates configurados.
 | Necessidade | Comece com |
 |---|---|
 | Fazer uma pergunta a um único agente do mesh | `/a2a-call` |
-| Comparar até sete respostas rápidas | `/a2a-broadcast` |
+| Comparar até oito respostas rápidas | `/a2a-broadcast` |
 | Dar papéis diferentes a Codex, Claude, Gemini e Grok | `/a2a-team` |
 | Debater um tema sem produzir versões sucessivas | `/a2a-debate` ou `/council` |
 | Conselho multimodelo com crítica adversarial | `/llm-council` |
@@ -661,11 +661,17 @@ Exemplos naturais:
 
 ## 4. Comandos A2A Mesh
 
-O A2A Mesh é o caminho mais direto entre sete peers: Codex, Claude, Gemini,
-Grok 4.6 High, GLM 5.3, DeepSeek V4 Pro e Kimi K3. O Grok usa exclusivamente
-o Cursor CLI na porta 3144; GLM e DeepSeek usam o OpenCode Go nas portas 3145 e
-3146, com variante `max`; Kimi usa exclusivamente o Kimi Code na porta 3147.
+O A2A Mesh é o caminho mais direto entre oito peers: Codex, Claude, Gemini,
+Grok 4.6 High, GLM 5.3, DeepSeek V4 Pro, Kimi K3 e Qwen 3.8 Max. O Grok usa
+exclusivamente o Cursor CLI na porta 3144; GLM, DeepSeek e Qwen usam o OpenCode Go
+nas portas 3145, 3146 e 3148, com variante `max`; Kimi usa exclusivamente o Kimi
+Code na porta 3147.
 Os modelos são fixos e não há fallback silencioso.
+
+No painel, a faixa **Equipe** permite ligar e desligar cadeiras antes do envio.
+A seleção fica persistida no navegador e vale para broadcast, consenso, ensemble,
+debate e team. O botão **Todos** restaura as oito cadeiras; a opção textual
+`--agents=claude,codex,qwen` substitui a seleção apenas na execução atual.
 
 Todos os trabalhos A2A são submetidos de forma durável. A resposta inicial é um recibo com
 `task_id`; o servidor prossegue independentemente da janela MCP ou do navegador. As skills aguardam
@@ -718,7 +724,7 @@ ou fechar o painel não cancela a tarefa.
 
 ### 4.1 `/a2a-status`
 
-**Serve para:** verificar quais dos sete backends estão ativos antes de um trabalho.
+**Serve para:** verificar quais dos oito backends estão ativos antes de um trabalho.
 
 ```text
 /a2a-status
@@ -736,7 +742,7 @@ Mostra agente, porta, modelo, modo CLI/API, tarefas ativas e estado `ok` ou
 ```
 
 Fluxo: prompt → agente escolhido → resposta integral. Os nomes aceitos pelo mesh
-são `codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek` e `kimi`.
+são `codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek`, `kimi` e `qwen`.
 
 **Caso concreto:** você está no Claude, mas quer uma segunda opinião pontual do
 Codex sobre um diff, sem convocar o restante do painel.
@@ -749,7 +755,7 @@ Codex sobre um diff, sem convocar o restante do painel.
 /a2a-broadcast Identifique a causa mais provável deste deadlock e proponha um teste.
 ```
 
-Fluxo: um prompt → até sete respostas independentes → apresentação lado a lado. Não
+Fluxo: um prompt → até oito respostas independentes → apresentação lado a lado. Não
 há crítica entre os agentes nem síntese obrigatória.
 
 **Caso concreto:** levantar rapidamente três hipóteses antes de iniciar uma
@@ -797,8 +803,8 @@ respostas válidas; o quórum pode ser configurado explicitamente.
 
 ### 4.7 `/a2a-ensemble`
 
-**Serve para:** gerar código com um conjunto configurável de Codex, Claude,
-Gemini e Grok e fazer um juiz consolidar
+**Serve para:** gerar código com todos os agentes selecionados entre Codex,
+Claude, Gemini, Grok, GLM, DeepSeek, Kimi e Qwen e fazer um juiz consolidar
 as propostas.
 
 ```text
@@ -1654,8 +1660,8 @@ silenciosamente:
 | Identidade base | Modelo local configurado |
 |---|---|
 | `@claude-opus` | Claude Code · `claude-opus-5` |
-| `@gpt-codex` | `opencode/gpt-5.3-codex` |
-| `@gemini-pro` | `opencode/gemini-3.1-pro` |
+| `@gpt-codex` | Codex CLI · `gpt-5.6-sol`, esforço `xhigh` |
+| `@gemini-pro` | Antigravity CLI · `gemini-3.7-flash-high` |
 | `@grok` | ponte para Cursor CLI · `cursor-grok-4.6-high` |
 | `@glm` | `opencode-go/glm-5.3` |
 | `@deepseek` | `opencode-go/deepseek-v4-pro` |
@@ -2237,7 +2243,7 @@ sigilosos em prompts enviados a provedores não autorizados.
 | # | Comando | Resultado principal |
 |---:|---|---|
 | 1 | `/a2a-call` | Resposta de um agente do mesh |
-| 2 | `/a2a-broadcast` | Até sete respostas paralelas |
+| 2 | `/a2a-broadcast` | Até oito respostas paralelas |
 | 3 | `/a2a-team` | Equipe configurável de agentes com papéis |
 | 4 | `/a2a-consensus` | Veredito rápido e divergências |
 | 5 | `/a2a-debate` | Transcript de debate e síntese |

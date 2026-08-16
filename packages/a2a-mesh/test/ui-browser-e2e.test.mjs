@@ -165,14 +165,14 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   const externalRequests = [];
   page.on('request', (request) => {
     const url = request.url();
-    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-7]\/health/.test(url)) externalRequests.push(url);
+    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-8]\/health/.test(url)) externalRequests.push(url);
   });
-  await page.route(/http:\/\/127\.0\.0\.1:314[1-7]\/health/, async (route) => {
+  await page.route(/http:\/\/127\.0\.0\.1:314[1-8]\/health/, async (route) => {
     const port = new URL(route.request().url()).port;
-    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi' }[port];
+    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen' }[port];
     const models = {
       claude: 'claude-opus-5', codex: 'gpt-5.6-sol', gemini: 'gemini-3.7-flash-high', grok: 'cursor-grok-4.6-high',
-      glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3',
+      glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3', qwen: 'opencode-go/qwen3.8-max',
     };
     await route.fulfill({
       status: 200,
@@ -232,6 +232,10 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   assert.equal(await page.locator('#composer-error').getAttribute('role'), 'alert');
 
   await input.fill('/team --profile=normal Produza uma síntese curta');
+  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen']) {
+    await page.locator(`[data-team-agent="${agent}"]`).click();
+  }
+  await page.getByText('2 de 8').waitFor();
   await input.press('Enter');
   await page.getByText('Result / team').waitFor();
   const teamBubble = page.locator('#chat .bubble-gold').last();
@@ -241,6 +245,8 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   await page.getByText('Ver detalhes da auditoria').click();
   assert.equal(await page.getByText('CONTRIBUIÇÃO-INDIVIDUAL').isVisible(), true);
   assert.equal(await page.getByText('Baixar auditoria').isVisible(), true);
+  const teamRequest = requests.find(item => item.method === 'mesh/teamAsync');
+  assert.deepEqual(teamRequest.params.steps[0].agents, ['claude', 'codex']);
 
   await input.fill('/ensemble --profile=fast --lang=javascript Implemente approved');
   await input.press('Enter');
@@ -259,6 +265,9 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   assert.equal(ensembleRequest.params.rounds, 1);
   assert.equal(ensembleRequest.params.deduplicate, true);
   assert.equal(ensembleRequest.params.early_exit, true);
+  assert.deepEqual(ensembleRequest.params.agents, ['claude', 'codex']);
+  await page.getByRole('button', { name: 'Todos' }).click();
+  await page.getByText('8 de 8').waitFor();
 
   await input.fill('/status');
   await input.press('Enter');

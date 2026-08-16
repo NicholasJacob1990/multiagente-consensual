@@ -8,11 +8,11 @@ O manual completo atualizado acompanha o pacote em `assets/Manual-completo-coman
 
 ## Escolha rápida
 
-![Página inicial do A2A Mesh com título, sete agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
+![Página inicial do A2A Mesh com título, agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
 
 ### Execução observável
 
-![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
+![Painel local do A2A Mesh com stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 Você não precisa decorar os 29 comandos públicos. O manifesto também registra a skill interna
 `bridge-agentes`, usada como transporte do Cowork, totalizando 30 entradas governadas. Comece pelo
@@ -67,7 +67,7 @@ arquivo, pois o aplicativo hospedado não aceita instalação silenciosa pela CL
 ## Servidor A2A e painel local
 
 `--with-a2a` instala o pacote complementar `@nicholasjacob90/a2a-mesh`, registra o MCP `a2a-mesh`
-no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia sete servidores vinculados
+no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia oito servidores vinculados
 somente a `127.0.0.1`:
 
 | Agente | Porta |
@@ -79,10 +79,13 @@ somente a `127.0.0.1`:
 | GLM 5.3 via OpenCode Go | 3145 |
 | DeepSeek V4 Pro via OpenCode Go | 3146 |
 | Kimi K3 via Kimi Code | 3147 |
+| Qwen 3.8 Max via OpenCode Go | 3148 |
 
 O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
 `http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
-chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento.
+chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento. No painel,
+selecione visualmente qualquer subconjunto da equipe; **Todos** restaura as oito cadeiras e
+`--agents=claude,codex,qwen` substitui a seleção somente naquela execução.
 
 As operações longas são duráveis: painel e MCP recebem um `task_id` imediatamente, enquanto o
 servidor continua a execução. O streaming mostra deltas textuais fornecidos pelas CLIs, agente,
@@ -195,7 +198,7 @@ ser gravado na pasta compartilhada.
 |---|---|---|
 | Entrada e gates | `/multiagente`, `/consenso` | roteamento automático e aprovação por hash |
 | Melhoria de artefatos | `/loop-debate-agentes`, `/redacao-juridica-consensual` | crítica, réplica, revisão e novas versões |
-| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os sete peers locais |
+| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os oito peers locais |
 | Workflows | `/workflow-agentes`, `/pipeline-agentes`, `/dag-agentes`, `/swarm-agentes`, `/map-reduce-agentes` | papéis, dependências e paralelismo |
 | Seleção | `/torneio-agentes`, `/votacao-agentes`, `/roteamento-adaptativo` | comparar candidatas ou escolher modelos |
 | Conselhos | `/council`, `/council-high`, `/llm-council`, `/multi-debate`, `/pal-council`, `/sage-debate` | deliberação consultiva especializada |

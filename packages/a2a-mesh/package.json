@@ -1,7 +1,7 @@
 {
   "name": "@nicholasjacob90/a2a-mesh",
-  "version": "1.2.0",
-  "description": "Servidor A2A local, bridge MCP e painel web para Codex, Claude, Gemini e Grok via Cursor.",
+  "version": "1.3.0",
+  "description": "Mesh A2A local, bridge MCP e painel web para oito agentes CLI, com seleção de equipe.",
   "type": "module",
   "bin": {
     "a2a-mesh": "npm/cli.mjs",
@@ -10,6 +10,8 @@
   "files": [
     "npm/",
     "runtime/",
+    "!runtime/a2a-claude/.playwright-mcp/",
+    "!runtime/a2a-claude/*.png",
     "README.md"
   ],
   "scripts": {
@@ -37,6 +39,7 @@
     "claude",
     "gemini",
     "grok",
+    "qwen",
     "cursor",
     "dashboard"
   ],
