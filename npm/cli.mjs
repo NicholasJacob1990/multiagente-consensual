@@ -69,6 +69,7 @@ Uso:
   multiagente-consensual install --all --with-a2a
   multiagente-consensual install <codex|claude|cursor|opencode|kimi|antigravity>
   multiagente-consensual update --all
+  multiagente-consensual upgrade --all --with-a2a
   multiagente-consensual status [--all|alvo]
   multiagente-consensual doctor [--all|alvo]
   multiagente-consensual uninstall --all [--purge]
@@ -777,7 +778,7 @@ export function main(argv = process.argv.slice(2)) {
       process.stdout.write(usage());
       return 0;
     }
-    if (!["install", "update", "status", "doctor", "uninstall"].includes(args.command)) {
+    if (!["install", "update", "upgrade", "status", "doctor", "uninstall"].includes(args.command)) {
       throw new Error(`comando desconhecido: ${args.command}`);
     }
     const targets = resolveTargets(args);
@@ -785,7 +786,7 @@ export function main(argv = process.argv.slice(2)) {
       throw new Error("--purge exige uninstall --all para não quebrar superfícies compartilhadas");
     }
     let result;
-    if (args.command === "install" || args.command === "update") result = installOrUpdate(args, targets);
+    if (["install", "update", "upgrade"].includes(args.command)) result = installOrUpdate(args, targets);
     else if (args.command === "status") result = status(args, targets);
     else if (args.command === "doctor") result = doctor(args, targets);
     else result = uninstall(args, targets);

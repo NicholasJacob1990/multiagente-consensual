@@ -1,6 +1,6 @@
 {
   "name": "multiagente-consensual",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "Debate, consenso, loops de melhoria e workflows auditáveis entre modelos e CLIs, inclusive redação jurídica com redline DOCX.",
   "author": {
     "name": "Nicholas Jacob"
