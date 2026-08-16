@@ -82,3 +82,13 @@ test('confirma o rótulo observado e exige evento terminal', () => {
   assert.equal(result.result, 'ok');
   assert.equal(parseCursorStreamLine('texto parcial não JSON'), null);
 });
+
+test('publica a resposta terminal do Grok uma única vez', async () => {
+  const { task } = await executeFixture([
+    { type: 'system', subtype: 'init', model: 'Cursor Grok 4.6 High' },
+    { type: 'assistant', message: { text: 'resposta natural' } },
+    { type: 'result', subtype: 'success', result: 'resposta natural' },
+  ]);
+  assert.equal(task.status.state, 'completed');
+  assert.equal(task.status.message.parts[0].text, 'resposta natural');
+});

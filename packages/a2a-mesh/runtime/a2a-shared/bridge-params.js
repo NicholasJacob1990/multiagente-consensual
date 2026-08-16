@@ -13,6 +13,13 @@ function governedContext(context = {}, targets = []) {
   return { depth, meshChain };
 }
 
+function profiledRounds(args, defaults, fallback, cap) {
+  const explicit = Number.parseInt(String(args.rounds ?? ''), 10);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.min(explicit, cap);
+  const profile = String(args.profile || '').trim().toLowerCase();
+  return defaults[profile] || fallback;
+}
+
 export function callBridgeParams(args = {}, context = {}) {
   return {
     agent: args.agent,
@@ -27,6 +34,7 @@ export function broadcastBridgeParams(args = {}, context = {}) {
     prompt: args.prompt,
     agents: args.agents,
     includeSelf: true,
+    recursive: args.recursive === true,
     ...governedContext(context, agents),
   };
 }
@@ -39,6 +47,7 @@ export function teamBridgeParams(args = {}, context = {}) {
     name: args.name,
     steps: args.steps,
     context: args.context,
+    ...(args.profile ? { profile: args.profile } : {}),
     ...governedContext(context, agents),
   };
 }
@@ -47,9 +56,10 @@ export function debateBridgeParams(args = {}, context = {}) {
   const targets = [...(Array.isArray(args.agents) ? args.agents : []), args.judge].filter(Boolean);
   return {
     topic: args.topic,
-    rounds: Math.min(args.rounds || 4, 36),
+    rounds: profiledRounds(args, { fast: 2, normal: 4, deep: 8 }, 4, 36),
     agents: args.agents,
     judge: args.judge,
+    ...(args.profile ? { profile: args.profile } : {}),
     ...governedContext(context, targets),
   };
 }
@@ -60,8 +70,9 @@ export function planBridgeParams(args = {}, context = {}) {
     description: args.description,
     author: args.author,
     reviewer: args.reviewer,
-    rounds: Math.min(args.rounds || 3, 36),
+    rounds: profiledRounds(args, { fast: 1, normal: 3, deep: 6 }, 3, 36),
     lenses: args.lenses,
+    ...(args.profile ? { profile: args.profile } : {}),
     ...governedContext(context, targets),
   };
 }
@@ -74,6 +85,7 @@ export function consensusBridgeParams(args = {}, context = {}) {
     agents: args.agents,
     judge: args.judge,
     quorum: args.quorum,
+    ...(args.profile ? { profile: args.profile } : {}),
     ...governed,
   };
 }
@@ -81,12 +93,17 @@ export function consensusBridgeParams(args = {}, context = {}) {
 export function ensembleBridgeParams(args = {}, context = {}) {
   const targets = [...(Array.isArray(args.agents) ? args.agents : []), args.judge].filter(Boolean);
   const governed = governedContext(context, targets);
-  return {
+  const result = {
     task: args.task,
     language: args.language || 'python',
-    rounds: Math.min(args.rounds || 1, 12),
     agents: args.agents,
     judge: args.judge,
+    ...(args.profile ? { profile: args.profile } : {}),
+    ...(args.deduplicate != null ? { deduplicate: args.deduplicate } : {}),
+    ...((args.early_exit ?? args.earlyExit) != null ? { early_exit: args.early_exit ?? args.earlyExit } : {}),
     ...governed,
   };
+  if (args.rounds != null) result.rounds = Math.min(args.rounds, 12);
+  else if (!args.profile) result.rounds = 1;
+  return result;
 }

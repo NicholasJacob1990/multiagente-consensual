@@ -5,6 +5,8 @@ centraliza aliases e rotas em um manifesto executável e transforma o consenso
 em camada decisória reutilizável por loops, perfil jurídico, councils e
 workflows.
 
+## Sobre esta edição
+
 A reauditoria desta edição reforça o runtime com ledger global antirreplay,
 estabilidade forte mínima de duas avaliações, vínculo exato entre recibo e
 rodada, gates colegiados atestados, publicação concorrente sem perda de ledger
@@ -65,6 +67,22 @@ cada etapa e o que o resultado realmente significa.
 11. Limites, falhas e solução de problemas
 12. Referência rápida dos 29 comandos
 13. Uso no Claude Cowork
+14. Instalação única com NPM/NPX
+
+### Índice visual dos fluxogramas
+
+1. Mapa geral dos comandos
+2. Árvore de escolha rápida
+3. Critérios de apuração colegiada
+4. Formação, votação e publicação colegiada
+5. Streaming e execução durável
+6. Modos do A2A Mesh
+7. Consenso dentro do loop
+8. Ensemble N×N
+9. Ensemble profundo até o canônico aprovado
+10. Redação jurídica consensual
+11. Workflows formais
+12. Histórico e retomada do Agent Council
 
 ## 1. Como usar em qualquer CLI
 
@@ -227,14 +245,18 @@ avança quando passa pelos gates configurados.
 
 ![Mapa geral dos comandos](diagramas-comandos-multiagente/01-mapa-geral.png)
 
+*Figura 1 — Mapa geral dos comandos e das famílias de coordenação.*
+
 ### Qual comando escolher?
 
 ![Árvore de escolha rápida](diagramas-comandos-multiagente/02-escolha-rapida.png)
 
+*Figura 2 — Árvore de escolha do comando conforme a finalidade do trabalho.*
+
 | Necessidade | Comece com |
 |---|---|
 | Fazer uma pergunta a um único agente do mesh | `/a2a-call` |
-| Comparar até quatro respostas rápidas | `/a2a-broadcast` |
+| Comparar até sete respostas rápidas | `/a2a-broadcast` |
 | Dar papéis diferentes a Codex, Claude, Gemini e Grok | `/a2a-team` |
 | Debater um tema sem produzir versões sucessivas | `/a2a-debate` ou `/council` |
 | Conselho multimodelo com crítica adversarial | `/llm-council` |
@@ -447,6 +469,10 @@ selecionada.
 A decisão colegiada formada ainda é intermediária: painel, fontes,
 consenso quando exigido e auditoria continuam necessários.
 
+![Critérios de apuração colegiada](diagramas-comandos-multiagente/10-criterios-apuracao.png)
+
+*Figura 3 — Critérios global, analítico e híbrido para apuração colegiada.*
+
 ### 3.6 Hash, candidata, canônico e pacote
 
 - **Hash:** impressão digital da versão exata do arquivo.
@@ -469,6 +495,8 @@ diversidade de modelo. Uma auditoria cega recebe somente o artefato final, as
 fontes e a rubrica; não recebe notas, críticas ou versões anteriores.
 
 ![Formação de decisão colegiada](diagramas-comandos-multiagente/09-decisao-colegiada.png)
+
+*Figura 4 — Formação, votação e publicação de uma decisão colegiada.*
 
 <!-- pagebreak -->
 
@@ -633,9 +661,11 @@ Exemplos naturais:
 
 ## 4. Comandos A2A Mesh
 
-O A2A Mesh é o caminho mais direto entre Codex, Claude, Gemini e Grok 4.6 High.
-O Grok é executado exclusivamente pelo Cursor CLI, na porta 3144 e com o modelo
-fixo `cursor-grok-4.6-high`; não há fallback silencioso.
+O A2A Mesh é o caminho mais direto entre sete peers: Codex, Claude, Gemini,
+Grok 4.6 High, GLM 5.3, DeepSeek V4 Pro e Kimi K3. O Grok usa exclusivamente
+o Cursor CLI na porta 3144; GLM e DeepSeek usam o OpenCode Go nas portas 3145 e
+3146, com variante `max`; Kimi usa exclusivamente o Kimi Code na porta 3147.
+Os modelos são fixos e não há fallback silencioso.
 
 Todos os trabalhos A2A são submetidos de forma durável. A resposta inicial é um recibo com
 `task_id`; o servidor prossegue independentemente da janela MCP ou do navegador. As skills aguardam
@@ -651,6 +681,12 @@ consulta a tarefa remota já criada em vez de abrir outra sessão. Em falha, a s
 recuperável é preservada como `partial-output.md`, combinando o checkpoint exato mais novo de cada
 agente com o diálogo cronológico legado das demais cadeiras. Tokens repetidos legítimos são
 preservados sem duplicar a resposta final sobre os próprios deltas.
+
+O cartão de cada tarefa apresenta um stepper coerente com a operação. No ensemble, por exemplo,
+as etapas são `Geração → Revisão cruzada → Revisão → Síntese → Resultado`; consenso,
+debate, equipe e plano possuem sequências próprias. A faixa de observabilidade exibe tempo total,
+TTFT, tokens, custo, duração das etapas e latência de cancelamento quando o runtime fornece esses
+dados. Um travessão indica dado indisponível, nunca uma estimativa inventada.
 
 O `request_id` fica no ledger SQLite compartilhado e impede duplicação entre coordenadores ou após
 reinício. Cancelamento explícito propaga para a tarefa remota conhecida; queda de streaming não
@@ -672,11 +708,17 @@ O timeout padrão por chamada de modelo é 30 minutos. A orquestração completa
 e aceita até cinco dias (`operation_timeout_ms: 432000000`) quando o caso exigir. Encerrar uma espera
 ou fechar o painel não cancela a tarefa.
 
+![Streaming e execução durável](diagramas-comandos-multiagente/11-streaming-duravel.png)
+
+*Figura 5 — Separação entre streaming ao vivo, ledger durável, replay e recuperação.*
+
 ![Modos do A2A Mesh](diagramas-comandos-multiagente/03-a2a-mesh.png)
+
+*Figura 6 — Modos de convocação e colaboração disponíveis no A2A Mesh.*
 
 ### 4.1 `/a2a-status`
 
-**Serve para:** verificar quais dos quatro backends estão ativos antes de um trabalho.
+**Serve para:** verificar quais dos sete backends estão ativos antes de um trabalho.
 
 ```text
 /a2a-status
@@ -694,20 +736,20 @@ Mostra agente, porta, modelo, modo CLI/API, tarefas ativas e estado `ok` ou
 ```
 
 Fluxo: prompt → agente escolhido → resposta integral. Os nomes aceitos pelo mesh
-são `codex`, `claude`, `gemini` e `grok`.
+são `codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek` e `kimi`.
 
 **Caso concreto:** você está no Claude, mas quer uma segunda opinião pontual do
 Codex sobre um diff, sem convocar o restante do painel.
 
 ### 4.3 `/a2a-broadcast`
 
-**Serve para:** enviar o mesmo prompt aos quatro agentes em paralelo.
+**Serve para:** enviar o mesmo prompt aos agentes online em paralelo.
 
 ```text
 /a2a-broadcast Identifique a causa mais provável deste deadlock e proponha um teste.
 ```
 
-Fluxo: um prompt → quatro respostas independentes → apresentação lado a lado. Não
+Fluxo: um prompt → até sete respostas independentes → apresentação lado a lado. Não
 há crítica entre os agentes nem síntese obrigatória.
 
 **Caso concreto:** levantar rapidamente três hipóteses antes de iniciar uma
@@ -993,9 +1035,17 @@ dependentes afetados, sem apagar a aprovação de itens independentes.
 
 ![Fluxo de consenso dentro do loop](diagramas-comandos-multiagente/04-consenso-loop.png)
 
+*Figura 7 — Debate, correção e novo consenso sobre cada versão do artefato.*
+
 #### Ensemble profundo N×N
 
 ![Fluxo do ensemble N por N](diagramas-comandos-multiagente/05-ensemble-nxn.png)
+
+*Figura 8 — Matriz de revisão cruzada do ensemble N×N.*
+
+![Ensemble profundo até o canônico](diagramas-comandos-multiagente/12-ensemble-consolidacao.png)
+
+*Figura 9 — Produção independente, revisão cruzada, consolidação e gates finais.*
 
 Use este perfil quando quiser que todos produzam sua própria versão, revisem as
 versões dos demais e participem do debate antes da consolidação. A geração das
@@ -1251,6 +1301,8 @@ assinatura ou decisão. Lacunas devem ser marcadas, nunca inventadas.
 
 ![Fluxo de redação jurídica consensual](diagramas-comandos-multiagente/08-redacao-juridica.png)
 
+*Figura 10 — Fluxo integral da redação jurídica consensual e de seus artefatos.*
+
 O perfil jurídico também aceita ensemble N×N e ensemble profundo. Assim, cada
 modelo pode produzir sua própria minuta ou parecer, participar da revisão
 cruzada e revisar sua candidata antes de uma seleção ou síntese.
@@ -1367,6 +1419,8 @@ na minuta.
 Eles produzem candidatas rastreáveis; não aprovam automaticamente o conteúdo.
 
 ![Mapa dos workflows formais](diagramas-comandos-multiagente/06-workflows.png)
+
+*Figura 11 — Protocolos formais disponíveis para organizar o trabalho multiagente.*
 
 ### 7.1 `/workflow-agentes`
 
@@ -1542,6 +1596,8 @@ o modelo no meio de uma resposta.
 Estes quatro comandos operam sobre sessões produzidas por `/council`.
 
 ![Ciclo de vida das sessões do Council](diagramas-comandos-multiagente/07-historico-council.png)
+
+*Figura 12 — Persistência, retomada, replay e encerramento de sessões do Council.*
 
 ### 8.1 `/council-list`
 
@@ -2181,7 +2237,7 @@ sigilosos em prompts enviados a provedores não autorizados.
 | # | Comando | Resultado principal |
 |---:|---|---|
 | 1 | `/a2a-call` | Resposta de um agente do mesh |
-| 2 | `/a2a-broadcast` | Até quatro respostas paralelas |
+| 2 | `/a2a-broadcast` | Até sete respostas paralelas |
 | 3 | `/a2a-team` | Equipe configurável de agentes com papéis |
 | 4 | `/a2a-consensus` | Veredito rápido e divergências |
 | 5 | `/a2a-debate` | Transcript de debate e síntese |

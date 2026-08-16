@@ -51,7 +51,7 @@ export function parseCursorStreamLine(line) {
   }
 }
 
-export function verifyCursorModelAvailable(binary, model = REQUIRED_GROK_MODEL, { timeoutMs = 30000 } = {}) {
+export function verifyCursorModelAvailable(binary, model = REQUIRED_GROK_MODEL, { timeoutMs = 90000 } = {}) {
   const result = spawnSync(binary, ['--list-models'], {
     encoding: 'utf8',
     timeout: timeoutMs,
@@ -197,6 +197,7 @@ export function createCursorExecutor({
       let terminal = null;
       let streamedText = '';
       let modelError = null;
+      const progressFilter = cliToolWrapper?.createToolCallStreamFilter?.();
 
       const onAbort = () => terminateProcessGroup(child);
       signal?.addEventListener('abort', onAbort, { once: true });
@@ -228,8 +229,11 @@ export function createCursorExecutor({
           if (parsed.text.startsWith(streamedText)) delta = parsed.text.slice(streamedText.length);
           if (delta) {
             streamedText += delta;
-            onChunk?.({ type: 'progress', text: delta });
-            taskManager.taskEmitter.emit(`task:${task.id}:chunk`, delta);
+            const visibleDelta = progressFilter ? progressFilter.push(delta) : delta;
+            if (visibleDelta) {
+              onChunk?.({ type: 'progress', text: visibleDelta });
+              taskManager.taskEmitter.emit(`task:${task.id}:chunk`, visibleDelta);
+            }
           }
         }
         if (parsed.terminal) terminal = parsed;
@@ -251,6 +255,11 @@ export function createCursorExecutor({
         cleanupProcess();
         if (spawnError) return;
         if (buffer.trim()) consumeLine(buffer);
+        const visibleTail = progressFilter?.flush?.() || '';
+        if (visibleTail) {
+          onChunk?.({ type: 'progress', text: visibleTail });
+          taskManager.taskEmitter.emit(`task:${task.id}:chunk`, visibleTail);
+        }
         if (modelError) return reject(modelError);
         if (signal?.aborted || task.status?.state === 'canceled') return reject(new Error('Task aborted'));
         if (code !== 0) return reject(new Error(`Cursor exited with code ${code}${closeSignal ? ` (${closeSignal})` : ''}: ${stderr.trim() || 'no diagnostic'}`));

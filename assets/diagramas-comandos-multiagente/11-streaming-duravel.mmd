@@ -1,0 +1,37 @@
+%% Diagrama: streaming e execução durável no A2A Mesh | Atualização: 2026-08-15
+%%{init: {'theme': 'base', 'themeVariables': {
+  'fontFamily': 'Lato, Arial, sans-serif',
+  'primaryColor': '#f8fafc', 'primaryTextColor': '#1e293b',
+  'primaryBorderColor': '#cbd5e1', 'lineColor': '#64748b',
+  'secondaryColor': '#eff6ff', 'tertiaryColor': '#ecfdf5',
+  'background': '#ffffff', 'mainBkg': '#f8fafc',
+  'nodeBorder': '#cbd5e1', 'clusterBkg': '#f8fafc',
+  'clusterBorder': '#e2e8f0', 'titleColor': '#1e3a5f',
+  'edgeLabelBackground': '#ffffff', 'textColor': '#1e293b'
+}, 'flowchart': {'nodeSpacing': 28, 'rankSpacing': 58, 'curve': 'basis'}}}%%
+flowchart TB
+    submit["Submissão do trabalho"] --> receipt["Recibo imediato<br/>com task_id"]
+    receipt --> worker["Worker durável<br/>coordena as CLIs"]
+    worker --> live["Deltas textuais<br/>em tempo real"]
+    live --> panel["Painel: agente,<br/>fase e estado"]
+
+    worker --> checkpoint["Checkpoint substituível<br/>por tarefa e agente"]
+    worker --> ledger["Ledger append-only:<br/>fases, argumentos e síntese"]
+    checkpoint --> recovery["Saída parcial<br/>recuperável"]
+    ledger --> replay["Replay paginado<br/>desde o último ID"]
+
+    disconnect{"Painel ou peer<br/>desconectou?"} --> replay
+    replay --> panel
+    worker --> terminal["Estado terminal<br/>compare-and-set"]
+    terminal --> artifact["Resultado final<br/>ou partial-output.md"]
+
+    classDef entry fill:#eff6ff,stroke:#60a5fa,color:#1e3a5f,stroke-width:1.5px;
+    classDef liveFlow fill:#f5f3ff,stroke:#8b5cf6,color:#4c1d95,stroke-width:1.5px;
+    classDef durable fill:#f8fafc,stroke:#cbd5e1,color:#1e293b;
+    classDef decision fill:#fff7ed,stroke:#fb923c,color:#7c2d12,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#064e3b,stroke-width:1.5px;
+    class submit,receipt entry;
+    class live,panel liveFlow;
+    class worker,checkpoint,ledger,recovery,replay,terminal durable;
+    class disconnect decision;
+    class artifact result;

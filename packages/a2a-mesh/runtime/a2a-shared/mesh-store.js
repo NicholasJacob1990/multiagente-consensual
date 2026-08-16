@@ -536,6 +536,7 @@ export class MeshStore {
       activeTasks: this.db.prepare("SELECT COUNT(*) as n FROM tasks WHERE state = 'working'").get().n,
       completedTasks: this.db.prepare("SELECT COUNT(*) as n FROM tasks WHERE state = 'completed'").get().n,
       failedTasks: this.db.prepare("SELECT COUNT(*) as n FROM tasks WHERE state = 'failed'").get().n,
+      totalEvents: this.db.prepare('SELECT COUNT(*) as n FROM task_events').get().n,
       byServer: this.db.prepare(`
         SELECT origin_server,
                COUNT(*) as total,

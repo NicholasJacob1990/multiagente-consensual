@@ -1,5 +1,5 @@
 ---
-description: Debate multi-turno entre codex/claude/gemini/grok sobre o tópico
+description: Debate multi-turno entre agentes selecionáveis do mesh
 argument-hint: <tópico>
 entrypoint: consenso
 profile: a2a_debate

@@ -1,11 +1,11 @@
 ---
-description: Envia o mesmo prompt para codex+claude+gemini+grok em paralelo
+description: Envia o mesmo prompt aos sete agentes do mesh em paralelo
 argument-hint: <prompt>
 entrypoint: workflow-agentes
 profile: a2a_broadcast
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_broadcast` com o prompt abaixo. Retorne as quatro respostas (codex, claude, gemini, grok) lado a lado, mantendo as separações.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_broadcast` com o prompt abaixo. Sem seleção explícita, use os agentes efetivamente online entre codex, claude, gemini, grok, glm, deepseek e kimi. Retorne cada resposta lado a lado, mantendo autoria, rota e separações; não substitua silenciosamente uma cadeira indisponível.
 
 A tool devolve um recibo durável por padrão. Guarde o `task_id` e use `a2a_task_wait` em esperas de até 240 segundos, repetindo enquanto o estado for ativo, salvo se o usuário pedir apenas o disparo. Use `a2a_task_status` para retomar acompanhamento; nunca reenvie o pedido só porque uma espera terminou. Se falhar, informe o estado e apresente `partial-output.md` quando existir. O diálogo ao vivo fica no painel A2A.
 

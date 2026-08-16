@@ -2,7 +2,7 @@
 // Mesh Code Ensemble — NxN cross-review code generation
 // ============================================
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { resolveSelfUrl } from './peer-registry.js';
 import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
@@ -27,6 +27,49 @@ function normalizeTimeoutMs(value, fallback, { min = 1000, max = 3600000 } = {})
 
 const CODE_PREVIEW_CHARS = normalizePositiveInt(process.env.A2A_ENSEMBLE_CODE_PREVIEW_CHARS, 12000);
 const REVIEW_PREVIEW_CHARS = normalizePositiveInt(process.env.A2A_ENSEMBLE_REVIEW_PREVIEW_CHARS, 6000);
+
+export const ENSEMBLE_PROFILES = Object.freeze({
+  fast: Object.freeze({ rounds: 1, deduplicate: true, earlyExit: true }),
+  normal: Object.freeze({ rounds: 2, deduplicate: true, earlyExit: true }),
+  deep: Object.freeze({ rounds: 5, deduplicate: false, earlyExit: false }),
+});
+
+function normalizeProfile(value) {
+  const profile = String(value || '').trim().toLowerCase();
+  return ENSEMBLE_PROFILES[profile] ? profile : 'custom';
+}
+
+function extractPrimaryCode(text) {
+  const value = String(text || '').trim();
+  const fenced = value.match(/```(?:[\w.+-]+)?\s*\n([\s\S]*?)```/);
+  return (fenced?.[1] || value).trim();
+}
+
+export function canonicalizeCodeSubmission(text) {
+  return extractPrimaryCode(text)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function clusterCodeSubmissions(submissions) {
+  const clusters = [];
+  const byCanonical = new Map();
+  for (const [agent, response] of Object.entries(submissions || {})) {
+    const canonical = canonicalizeCodeSubmission(response);
+    const hash = createHash('sha256').update(canonical).digest('hex');
+    let cluster = byCanonical.get(hash);
+    if (!cluster || cluster.canonical !== canonical) {
+      cluster = { representative: agent, agents: [], hash, canonical };
+      byCanonical.set(hash, cluster);
+      clusters.push(cluster);
+    }
+    cluster.agents.push(agent);
+  }
+  return clusters;
+}
 
 function truncateForPrompt(text, limit, label = 'content') {
   const value = String(text || '');
@@ -94,14 +137,27 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
    * @returns {Object} Ensemble result with final_code
    */
   async function execute(params, callContext = {}) {
-    const { task, language = 'python', rounds: rawRounds = 1, judge = 'claude', timeout_ms, agents: requestedAgents } = params;
+    const {
+      task,
+      language = 'python',
+      rounds: requestedRounds,
+      judge = 'claude',
+      timeout_ms,
+      agents: requestedAgents,
+      profile: requestedProfile,
+    } = params;
     if (!task) throw new Error('task is required');
     const timeoutMs = normalizeTimeoutMs(timeout_ms, DEFAULT_ENSEMBLE_TIMEOUT_MS);
     const parentDepth = normalizePositiveInt(callContext.depth, maxDepth);
     const parentChain = normalizeMeshChain(callContext.meshChain);
     const parentSelfCallDepth = normalizePositiveInt(callContext.selfCallDepth, 0);
 
+    const profile = normalizeProfile(requestedProfile);
+    const profileConfig = ENSEMBLE_PROFILES[profile] || null;
+    const rawRounds = requestedRounds ?? profileConfig?.rounds ?? 1;
     const rounds = Math.max(1, Math.min(12, rawRounds));
+    const deduplicate = params.deduplicate ?? profileConfig?.deduplicate ?? true;
+    const earlyExit = params.early_exit ?? params.earlyExit ?? profileConfig?.earlyExit ?? true;
     const ensembleId = randomUUID();
     const threadId = resolveThreadId(params, callContext, `ensemble-${ensembleId}`);
     const { prompt: taskForPrompt } = enrichPromptIfContinuation(task, { meshChain: parentChain, threadId }, meshStore);
@@ -142,7 +198,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
         mode: 'ensemble',
         title: task,
         summary: result.finalCode || 'No final code produced.',
-        decisions: [`judge=${result.judge}; rounds=${result.rounds}; activeAgents=${result.agents.join(', ')}`],
+        decisions: [`judge=${result.judge}; rounds=${result.rounds}; profile=${result.profile}; activeAgents=${result.agents.join(', ')}`],
         nextSteps: ['Review finalCode and apply it to the target workspace if accepted.'],
         errors: result.phases.flatMap(p => Array.isArray(p.results) ? p.results.filter(r => r.error).map(r => `${r.agent}: ${r.error}`) : []),
         artifacts: [{ kind: 'final_code', language, field: 'finalCode' }],
@@ -152,6 +208,8 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
           rounds: result.rounds,
           judge: result.judge,
           agents: result.agents,
+          profile: result.profile,
+          optimization: result.optimization,
         },
       }, '[mesh-ensemble]');
       return result;
@@ -220,27 +278,49 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       return persistResultContext(buildResult(ensembleId, task, allParticipants, '', phases, rounds, judge, startTime));
     }
 
+    const candidateClusters = clusterCodeSubmissions(submissions);
+    const workingAgents = deduplicate
+      ? candidateClusters.map(cluster => cluster.representative)
+      : activeAgents;
+    const equivalentCandidates = activeAgents.length - workingAgents.length;
+    const unanimousEquivalent = Boolean(
+      earlyExit
+      && activeAgents.length > 1
+      && candidateClusters.length === 1,
+    );
+    if (equivalentCandidates > 0) {
+      emitDialogue('deduplicate', '*', 'system',
+        `${equivalentCandidates} candidato(s) equivalente(s) agrupado(s); ${workingAgents.length} versão(ões) materialmente distinta(s) seguirá(ão).`,
+        { candidateClusters: candidateClusters.map(({ representative, agents, hash }) => ({ representative, agents, hash })) });
+    }
+    if (unanimousEquivalent) {
+      phases.push({ phase: 'equivalence-consensus', durationMs: 0 });
+      emitDialogue('deduplicate', '*', 'system',
+        'Consenso por equivalência detectado — REVIEW/REVISE omitidos; o juiz ainda validará o candidato final.',
+        { earlyExit: true });
+    }
+
     // ---- Phases 2+3: REVIEW + REVISE (repeated for rounds) ----
     let allReviews = {};  // reviewer -> review text (persists across rounds for synthesize phase)
-    for (let round = 1; round <= rounds; round++) {
+    for (let round = 1; round <= rounds && !unanimousEquivalent; round++) {
       context.signal?.throwIfAborted();
       // Phase 2: CROSS-REVIEW (each reviews all OTHERS)
       emitDialogue(`review-${round}`, '*', 'system', `Fase REVIEW round ${round} — cross-review NxN`, { round, agents: activeAgents });
       const reviewStart = Date.now();
       allReviews = {};
       const reviewsByAuthor = {}; // author -> [review texts]
-      for (const a of activeAgents) reviewsByAuthor[a] = [];
+      for (const a of workingAgents) reviewsByAuthor[a] = [];
 
-      for (const reviewer of activeAgents) {
+      for (const reviewer of workingAgents) {
         context.signal?.throwIfAborted();
-        const otherBlocks = activeAgents
+        const otherBlocks = workingAgents
           .filter(a => a !== reviewer)
           .map(a => codeBlockForPrompt(a, submissions[a]))
           .join('\n\n');
 
         if (!otherBlocks) continue;
 
-        const reviewing = activeAgents.filter(a => a !== reviewer);
+        const reviewing = workingAgents.filter(a => a !== reviewer);
         emitDialogue(`review-${round}`, reviewer, 'reviewer', `Revisando código de: ${reviewing.join(', ')}...`, { reviewing });
 
         const reviewPrompt = `You are an expert code reviewer. Review the following ${language} solutions for this task.\n\n## Task\n${taskForPrompt}\n\n## Code submissions\n${otherBlocks}\n\nFor each submission: correctness issues, performance, style, 1-10 score.`;
@@ -251,7 +331,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
           reviewResponse = selfResult.response || selfResult.error || '';
         } else {
           reviewResponse = await meshCaller.executeA2ACall(
-            { agent: reviewer, prompt: reviewPrompt, timeout_ms: timeoutForAgent(reviewer, timeoutMs) },
+            { agent: reviewer, prompt: reviewPrompt, timeout_ms: timeoutForAgent(reviewer, timeoutMs), allowDelegation: false },
             {
               depth: context.depth,
               meshChain: [...context.meshChain],
@@ -267,7 +347,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
         emitDialogue(`review-${round}`, reviewer, 'review', reviewText, { reviewing });
 
         // Distribute review to all OTHER authors
-        for (const author of activeAgents) {
+        for (const author of workingAgents) {
           if (author !== reviewer && reviewText) {
             reviewsByAuthor[author].push(reviewBlockForPrompt(reviewer, reviewText));
           }
@@ -279,7 +359,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       // Phase 3: REVISE (each agent revises with received reviews)
       emitDialogue(`revise-${round}`, '*', 'system', `Fase REVISE round ${round} — incorporando feedback`, { round, agents: activeAgents });
       const reviseStart = Date.now();
-      for (const agent of activeAgents) {
+      for (const agent of workingAgents) {
         context.signal?.throwIfAborted();
         const reviews = reviewsByAuthor[agent].join('\n\n');
         if (!reviews) continue;
@@ -294,7 +374,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
           revised = selfResult.response || selfResult.error || '';
         } else {
           revised = await meshCaller.executeA2ACall(
-            { agent, prompt: revisePrompt, timeout_ms: timeoutForAgent(agent, timeoutMs) },
+            { agent, prompt: revisePrompt, timeout_ms: timeoutForAgent(agent, timeoutMs), allowDelegation: false },
             {
               depth: context.depth,
               meshChain: [...context.meshChain],
@@ -308,7 +388,10 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
         // substantive. Bootstrap/echo/error revisions would replace the prior
         // round's good code with noise, then propagate forward.
         const revisedStr = String(revised || '');
-        const verdict = revisedStr ? classifySubmission(revisedStr, revisePrompt) : 'empty';
+        // Classify against the task prompt, not the revision prompt. The latter
+        // embeds the author's prior code, so a legitimate decision to keep an
+        // already-correct implementation looked like a prompt echo.
+        const verdict = revisedStr ? classifySubmission(revisedStr, writePrompt) : 'empty';
         if (verdict === 'ok') {
           submissions[agent] = revisedStr;
           emitDialogue(`revise-${round}`, agent, 'revised', revisedStr);
@@ -337,8 +420,12 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     emitDialogue('synthesize', synthJudge, 'system', `Fase SYNTHESIZE — ${synthJudge} sintetizando solução final`, { judge: synthJudge });
 
     const synthStart = Date.now();
-    const allCode = activeAgents
-      .map(a => codeBlockForPrompt(a, submissions[a]))
+    const allCode = workingAgents
+      .map((a) => {
+        const cluster = candidateClusters.find(item => item.representative === a);
+        const authors = cluster?.agents?.length > 1 ? ` equivalentAuthors="${cluster.agents.join(',')}"` : '';
+        return `<code author="${a}"${authors} truncated="${String(submissions[a] || '').length > CODE_PREVIEW_CHARS}">\n${truncateForPrompt(submissions[a], CODE_PREVIEW_CHARS, `${a} code`)}\n</code>`;
+      })
       .join('\n\n');
 
     const allReviewText = Object.entries(allReviews)
@@ -350,7 +437,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     let finalCode;
     if (judgeAgent && judgeAgent !== selfId) {
       finalCode = String(await meshCaller.executeA2ACall(
-        { agent: judgeAgent, prompt: synthPrompt, timeout_ms: timeoutForAgent(judgeAgent, timeoutMs) },
+        { agent: judgeAgent, prompt: synthPrompt, timeout_ms: timeoutForAgent(judgeAgent, timeoutMs), allowDelegation: false },
         {
           depth: context.depth - 1,
           meshChain: [...context.meshChain],
@@ -391,7 +478,26 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       }
     }
 
-    return persistResultContext(buildResult(ensembleId, task, activeAgents, finalCode, phases, rounds, synthJudge, startTime));
+    return persistResultContext(buildResult(
+      ensembleId,
+      task,
+      activeAgents,
+      finalCode,
+      phases,
+      rounds,
+      synthJudge,
+      startTime,
+      {
+        profile,
+        optimization: {
+          deduplicate: Boolean(deduplicate),
+          earlyExit: unanimousEquivalent,
+          originalCandidates: activeAgents.length,
+          uniqueCandidates: workingAgents.length,
+        },
+        candidateClusters: candidateClusters.map(({ representative, agents, hash }) => ({ representative, agents, hash })),
+      },
+    ));
   }
 
   /**
@@ -407,7 +513,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
         return { agent: selfId, response: null, durationMs: Date.now() - start, error: `max self-call depth exceeded (${MAX_SELF_CALL_DEPTH})` };
       }
       const response = await meshCaller.executeA2ACall(
-        { agent: selfId, prompt, timeout_ms: timeoutMs },
+        { agent: selfId, prompt, timeout_ms: timeoutMs, allowDelegation: false },
         {
           depth: 1,
           meshChain: [...context.meshChain],
@@ -461,7 +567,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     }
   }
 
-  function buildResult(ensembleId, task, agents, finalCode, phases, rounds, judge, startTime) {
+  function buildResult(ensembleId, task, agents, finalCode, phases, rounds, judge, startTime, extra = {}) {
     return {
       ensembleId,
       task: task.slice(0, 5000),
@@ -471,6 +577,14 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       finalCode: finalCode || '',
       phases,
       timing: { totalMs: Date.now() - startTime },
+      profile: extra.profile || 'custom',
+      optimization: extra.optimization || {
+        deduplicate: false,
+        earlyExit: false,
+        originalCandidates: agents.length,
+        uniqueCandidates: agents.length,
+      },
+      ...extra,
     };
   }
 

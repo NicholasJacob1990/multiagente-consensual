@@ -8,7 +8,7 @@ O manual completo atualizado acompanha o pacote em `assets/Manual-completo-coman
 
 ## Escolha rápida
 
-![Painel local do A2A Mesh com Claude, Codex, Gemini e Grok online](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel.png)
+![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 Você não precisa decorar os 29 comandos públicos. O manifesto também registra a skill interna
 `bridge-agentes`, usada como transporte do Cowork, totalizando 30 entradas governadas. Comece pelo
@@ -63,7 +63,7 @@ arquivo, pois o aplicativo hospedado não aceita instalação silenciosa pela CL
 ## Servidor A2A e painel local
 
 `--with-a2a` instala o pacote complementar `@nicholasjacob90/a2a-mesh`, registra o MCP `a2a-mesh`
-no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia quatro servidores vinculados
+no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia sete servidores vinculados
 somente a `127.0.0.1`:
 
 | Agente | Porta |
@@ -72,6 +72,9 @@ somente a `127.0.0.1`:
 | Claude | 3142 |
 | Gemini/Antigravity | 3143 |
 | Grok 4.6 High via Cursor | 3144 |
+| GLM 5.3 via OpenCode Go | 3145 |
+| DeepSeek V4 Pro via OpenCode Go | 3146 |
+| Kimi K3 via Kimi Code | 3147 |
 
 O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
 `http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
@@ -98,6 +101,9 @@ confundir janelas ou clientes independentes; para repetição após reinício, i
 
 O peer `grok` usa exclusivamente `cursor-agent --model cursor-grok-4.6-high`. O runtime confirma o
 modelo observado no stream, não usa fallback silencioso e só aceita a resposta após o evento terminal.
+GLM 5.3 e DeepSeek V4 Pro usam rotas fixas do OpenCode Go com esforço `max` e exclusão mútua entre
+processos para proteger o banco local. Kimi K3 usa exclusivamente o Kimi Code; sem credencial válida
+do provedor configurado, o peer continua visível, mas não é marcado como modelo verificado.
 
 ```bash
 a2a-mesh status
@@ -185,7 +191,7 @@ ser gravado na pasta compartilhada.
 |---|---|---|
 | Entrada e gates | `/multiagente`, `/consenso` | roteamento automático e aprovação por hash |
 | Melhoria de artefatos | `/loop-debate-agentes`, `/redacao-juridica-consensual` | crítica, réplica, revisão e novas versões |
-| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os quatro peers locais |
+| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os sete peers locais |
 | Workflows | `/workflow-agentes`, `/pipeline-agentes`, `/dag-agentes`, `/swarm-agentes`, `/map-reduce-agentes` | papéis, dependências e paralelismo |
 | Seleção | `/torneio-agentes`, `/votacao-agentes`, `/roteamento-adaptativo` | comparar candidatas ou escolher modelos |
 | Conselhos | `/council`, `/council-high`, `/llm-council`, `/multi-debate`, `/pal-council`, `/sage-debate` | deliberação consultiva especializada |

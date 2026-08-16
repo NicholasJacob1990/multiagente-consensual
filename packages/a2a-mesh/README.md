@@ -2,13 +2,13 @@
 
 Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 
-- servidores A2A locais para Codex, Claude, Gemini e Grok 4.6 High via Cursor;
+- sete servidores A2A locais para Codex, Claude, Gemini, Grok, GLM, DeepSeek e Kimi;
 - bridge MCP `a2a-mesh`;
 - painel web de chamadas, debates, consenso, ensemble, equipes e planos;
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
-![Painel local do A2A Mesh com os quatro peers online](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel.png)
+![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 O servidor se vincula exclusivamente a `127.0.0.1`. Credenciais, `.env`, sessões e históricos não
 são distribuídos. As CLIs usam a autenticação já existente na máquina do usuário.
@@ -38,10 +38,19 @@ a2a-mesh open
 | Claude | `127.0.0.1:3142` | `http://127.0.0.1:3142/ui` | `http://127.0.0.1:3142/sandbox` |
 | Gemini | `127.0.0.1:3143` | `http://127.0.0.1:3143/ui` | `http://127.0.0.1:3143/sandbox` |
 | Grok | `127.0.0.1:3144` | `http://127.0.0.1:3144/ui` | `http://127.0.0.1:3144/sandbox` |
+| GLM 5.3 | `127.0.0.1:3145` | `http://127.0.0.1:3145/ui` | `http://127.0.0.1:3145/sandbox` |
+| DeepSeek V4 Pro | `127.0.0.1:3146` | `http://127.0.0.1:3146/ui` | `http://127.0.0.1:3146/sandbox` |
+| Kimi K3 | `127.0.0.1:3147` | `http://127.0.0.1:3147/ui` | `http://127.0.0.1:3147/sandbox` |
 
 O Grok é um peer nativo com rota fixa pelo `cursor-agent`, modelo obrigatório
 `cursor-grok-4.6-high` e limite padrão de dois processos simultâneos. A execução usa `stream-json`,
 confirma `system/init.model` e falha de forma explícita se faltar o evento final `result`.
+
+GLM e DeepSeek são peers nativos pelo OpenCode Go, respectivamente com os modelos fixos
+`opencode-go/glm-5.3` e `opencode-go/deepseek-v4-pro`, ambos na variante `max`. Como as duas rotas
+compartilham o banco local do OpenCode, o adaptador serializa seus processos para evitar disputa de
+lock. O Kimi é invocado exclusivamente pelo Kimi Code com `kimi-code/k3`; sua saúde permanece como
+"verificação pendente" até a primeira execução autenticada e não há fallback silencioso.
 
 ## Comandos do painel
 
@@ -50,7 +59,7 @@ os agentes. Use comandos curtos para escolher outro modo:
 
 | Comando | Ação |
 |---|---|
-| `/call <agente> <prompt>` | Chama Claude, Codex, Gemini ou Grok |
+| `/call <agente> <prompt>` | Chama qualquer um dos sete agentes |
 | `/broadcast <prompt>` | Consulta todos em paralelo, sem síntese |
 | `/consensus <questão>` | Consulta todos e pede síntese ao juiz |
 | `/debate <tema>` | Executa rodadas adversariais e julgamento |
@@ -78,6 +87,12 @@ fase. Esses deltas não ocupam o ledger append-only: o schema v4 mantém um chec
 por tarefa e agente, enquanto fases, argumentos e síntese continuam como eventos duráveis. O painel
 não exibe raciocínio interno oculto; se uma CLI só entregar a resposta ao final, ele
 mostra estados e fases até o texto ficar disponível.
+
+Cada cartão de execução possui um stepper adaptado ao protocolo escolhido: por exemplo,
+`Geração → Revisão cruzada → Revisão → Síntese → Resultado` no ensemble. A mesma faixa
+mostra tempo decorrido, TTFT, tokens, custo e tempos por etapa quando esses dados são fornecidos
+pela CLI. Cancelamentos registram também o tempo entre o clique e a confirmação do coordenador.
+Métricas ausentes aparecem como `—`; o painel não inventa estimativas.
 
 Os eventos possuem IDs persistidos em SQLite. Após queda de rede, recarga da página ou reconexão do
 SSE, o painel solicita os eventos posteriores ao último ID e busca o resultado completo da tarefa

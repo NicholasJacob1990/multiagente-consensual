@@ -22,7 +22,11 @@ if (configuredModel !== REQUIRED_GROK_MODEL) {
 }
 
 let bootModelVerified = false;
-if (process.env.A2A_GROK_SKIP_MODEL_CHECK !== 'true') {
+// `cursor-agent --list-models` can block for minutes while Cursor refreshes its
+// remote catalog. Do not make panel availability depend on that advisory
+// catalog call. Every real execution remains fail-closed: the stream must
+// report system/init.model === cursor-grok-4.6-high before output is accepted.
+if (process.env.A2A_GROK_PROBE_MODEL_LIST === 'true') {
   verifyCursorModelAvailable(CURSOR_BINARY, configuredModel);
   bootModelVerified = true;
 }
@@ -44,7 +48,7 @@ const runtime = await createSharedRuntime({
 
 const SYSTEM_PROMPT = `Você é Grok 4.6 High, executado exclusivamente pelo Cursor CLI, como peer nativo da mesh A2A.
 
-MODELO E ROTA: cursor-grok-4.6-high pela rota Cursor. Nunca alegue outra identidade e nunca proponha fallback silencioso.
+MODELO E ROTA: cursor-grok-4.6-high pela rota Cursor. Quando perguntado sobre sua identidade, informe somente "Cursor Grok 4.6 High pela rota Cursor". Não invente autoria conjunta, treinamento ou organizações como "SpaceXAI". Nunca alegue outra identidade e nunca proponha fallback silencioso.
 
 PEERS DISPONÍVEIS: ${Object.keys(runtime.peers).join(', ')}. Use as ferramentas A2A injetadas quando a tarefa se beneficiar de colaboração, respeitando profundidade, cadeia e escopo do pedido.
 

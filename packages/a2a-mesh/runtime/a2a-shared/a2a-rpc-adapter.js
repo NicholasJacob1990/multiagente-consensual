@@ -321,6 +321,7 @@ export function createRPCAdapter(ctx) {
       accumulate: params.accumulate,
       includeSelf: params.includeSelf,
       timeout_ms: params.timeout_ms,
+      profile: params.profile,
     }, mctx);
   }
 

@@ -138,7 +138,7 @@ function isConverged(findingsText) {
 
 async function callAgent({ meshCaller, agent, prompt, context, timeoutMs }) {
   const result = await meshCaller.executeA2ACall(
-    { agent, prompt, timeout_ms: timeoutForAgent(agent, timeoutMs) },
+    { agent, prompt, timeout_ms: timeoutForAgent(agent, timeoutMs), allowDelegation: false },
     {
       depth: context.depth - 1, // sem Math.max(1,...) — deixa safety check funcionar
       meshChain: [...context.meshChain],
@@ -155,7 +155,9 @@ export function createPlanExecutor({ meshCaller, peers, selfId, maxDepth, meshSt
     const description = String(params.description || params.prompt || '').trim();
     if (!description) throw new Error('Plan requires a description');
 
-    const rounds = Math.max(1, Math.min(36, parseInt(params.rounds, 10) || DEFAULT_ROUNDS));
+    const profile = String(params.profile || 'custom').toLowerCase();
+    const profileRounds = { fast: 1, normal: 3, deep: 6 }[profile] || DEFAULT_ROUNDS;
+    const rounds = Math.max(1, Math.min(36, parseInt(params.rounds, 10) || profileRounds));
     const author = String(params.author || DEFAULT_AUTHOR).toLowerCase();
     const reviewer = String(params.reviewer || DEFAULT_REVIEWER).toLowerCase();
     const timeoutMs = Math.max(60000, parseInt(params.timeout_ms, 10) || DEFAULT_TIMEOUT_MS);
@@ -181,6 +183,43 @@ export function createPlanExecutor({ meshCaller, peers, selfId, maxDepth, meshSt
       signal: callContext.signal,
     };
     const { prompt: descriptionForPrompt } = enrichPromptIfContinuation(description, { meshChain: context.meshChain, threadId }, meshStore);
+    const conciseRequested = /\b(curto|curta|conciso|concisa|breve|resumido|resumida|short|concise|brief)\b/i.test(description);
+    const explicitWordLimit = description.match(/(?:no\s+máximo|máximo|at\s+most|max(?:imum)?)\s+(\d{2,5})\s+(?:palavras?|words?)/i);
+    const requestedMaxWords = explicitWordLimit ? Number.parseInt(explicitWordLimit[1], 10) : null;
+    const planMaxWords = requestedMaxWords || (conciseRequested ? 600 : null);
+    const lengthPolicy = planMaxWords
+      ? `Respeite o limite de ${planMaxWords} palavras no documento inteiro, incluindo seções de revisão.`
+      : 'Use apenas o nível de detalhe proporcional ao pedido; evite expansão enciclopédica.';
+
+    const countWords = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
+    const enforcePlanWordLimit = async (draft, phaseLabel) => {
+      if (!planMaxWords || countWords(draft) <= planMaxWords) return draft;
+      let compressed = draft;
+      for (let attempt = 1; attempt <= 2 && countWords(compressed) > planMaxWords; attempt++) {
+        // Models often undercount Markdown tokens as words. Leave a generous
+        // safety margin, especially on the second and final compression pass.
+        const targetWords = Math.max(50, Math.floor(planMaxWords * (attempt === 1 ? 0.7 : 0.45)));
+        emitDialogue(phaseLabel, author, 'system', `${author} comprimindo o plano para o limite de ${planMaxWords} palavras...`);
+        compressed = String(await callAgent({
+          meshCaller,
+          agent: author,
+          prompt: `Comprima o PLAN.md abaixo para no máximo ${targetWords} palavras (limite contratual absoluto: ${planMaxWords}).
+
+Preserve objetivo, contexto/premissas, solução, etapas, dependências, critérios de aceite, riscos e estimativa, mas use frases e bullets mínimos. Não acrescente fatos. Retorne somente o Markdown completo do plano.
+
+---
+
+${truncateForPrompt(compressed, PLAN_REVIEW_CHARS, `${phaseLabel} overlength plan`)}`,
+          context,
+          timeoutMs,
+        }) || '').trim();
+      }
+      const finalWords = countWords(compressed);
+      if (finalWords > planMaxWords) {
+        throw new Error(`Author ${author} exceeded the requested ${planMaxWords}-word plan limit after compression (${finalWords} words)`);
+      }
+      return compressed;
+    };
 
     const emitDialogue = (phase, agent, role, text, extra = {}) => {
       if (!meshBus) return;
@@ -193,11 +232,11 @@ export function createPlanExecutor({ meshCaller, peers, selfId, maxDepth, meshSt
 
     emitDialogue(
       'setup', '*', 'system',
-      `Plan iniciado: "${description.slice(0, 200)}" | author=${author} | reviewer=${reviewer} | rounds=${rounds} | dir=${planDir}`,
+      `Plan iniciado: "${description.slice(0, 200)}" | author=${author} | reviewer=${reviewer} | rounds=${rounds} | profile=${profile} | dir=${planDir}`,
     );
 
     // ---- Round 0: author writes initial plan ----
-    const authorInitialPrompt = `Escreva um PLAN.md técnico detalhado para:
+    const authorInitialPrompt = `Escreva um PLAN.md técnico para:
 
 ${descriptionForPrompt}
 
@@ -211,7 +250,12 @@ Estrutura obrigatória:
 - **Riscos conhecidos** (top 3, com mitigação)
 - **Estimativa** (ordem de grandeza)
 
-Seja específico, técnico, sem generalidades. Cite arquivos/linhas quando relevante.`;
+${lengthPolicy}
+
+Seja específico e técnico, mas não invente repositório, arquivos, linhas, issues,
+APIs, métricas, dependências ou estado atual que não apareçam na descrição ou no
+contexto recebido. Quando faltar informação, registre-a como premissa a validar
+ou como passo de descoberta. Cite arquivos/linhas somente quando fornecidos.`;
 
     emitDialogue('author', author, 'system', `${author} escrevendo plano inicial...`);
     const initialPlan = await callAgent({ meshCaller, agent: author, prompt: authorInitialPrompt, context, timeoutMs });
@@ -219,6 +263,7 @@ Seja específico, técnico, sem generalidades. Cite arquivos/linhas quando relev
     if (!currentPlan || currentPlan.toLowerCase().startsWith('error:')) {
       throw new Error(`Author ${author} failed to write initial plan: ${currentPlan.slice(0, 200)}`);
     }
+    currentPlan = await enforcePlanWordLimit(currentPlan, 'author-compress');
     fs.writeFileSync(path.join(planDir, 'PLAN-round-0.md'), currentPlan);
     fs.writeFileSync(path.join(planDir, 'PLAN.md'), currentPlan);
     emitDialogue('author', author, 'plan', currentPlan, { round: 0 });
@@ -238,6 +283,9 @@ Seja específico, técnico, sem generalidades. Cite arquivos/linhas quando relev
 
       // Reviewer critique
       const reviewerPrompt = `${persona.prompt}
+
+Respeite o escopo e a concisão solicitados pelo usuário. Não transforme premissas
+não verificadas em fatos sobre o repositório.
 
 ---
 
@@ -287,15 +335,19 @@ ${truncateForPrompt(lastFindings, PLAN_FINDINGS_CHARS, `findings round ${r}`)}
 
 ---
 
-Reescreva o PLAN.md COMPLETO endereçando os findings críticos e importantes (mantenha o que está OK). Adicione no topo uma seção "## Mudanças nesta revisão" listando o que mudou e por quê.`;
+Reescreva o PLAN.md COMPLETO endereçando os findings críticos e importantes (mantenha o que está OK). Adicione no topo uma seção "## Mudanças nesta revisão" com no máximo cinco bullets breves.
+
+${lengthPolicy}
+Não invente fatos, caminhos, linhas ou requisitos ausentes do pedido/contexto.`;
 
       emitDialogue(`round-${r}`, author, 'system', `${author} revisando o plano...`);
       const revised = await callAgent({ meshCaller, agent: author, prompt: revisePrompt, context, timeoutMs });
-      const revisedText = String(revised || '').trim();
+      let revisedText = String(revised || '').trim();
       if (!revisedText || revisedText.toLowerCase().startsWith('error:')) {
         emitDialogue(`round-${r}`, author, 'error', `Falha ao revisar: ${revisedText.slice(0, 200)}`);
         break;
       }
+      revisedText = await enforcePlanWordLimit(revisedText, `round-${r}-compress`);
       currentPlan = revisedText;
       fs.writeFileSync(path.join(planDir, `PLAN-round-${r}.md`), currentPlan);
       fs.writeFileSync(path.join(planDir, 'PLAN.md'), currentPlan);
@@ -317,6 +369,7 @@ Reescreva o PLAN.md COMPLETO endereçando os findings críticos e importantes (m
       converged,
       author,
       reviewer,
+      profile,
       lensList: lensList || ['engineer', 'security', 'ops'],
       finalPlan: currentPlan,
       lastFindings,
@@ -340,6 +393,7 @@ Reescreva o PLAN.md COMPLETO endereçando os findings críticos e importantes (m
         planDir,
         author,
         reviewer,
+        profile,
         rounds: actualRound,
         maxRounds: rounds,
         converged,

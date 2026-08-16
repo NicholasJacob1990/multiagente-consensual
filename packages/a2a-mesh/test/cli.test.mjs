@@ -10,15 +10,31 @@ import {
   PACKAGE_ROOT,
   agentCliAvailability,
   cursorModelAvailability,
+  openCodeModelAvailability,
   parseArgs,
   pathsFor,
 } from "../npm/cli.mjs";
 
 test("usa somente portas locais fixas e distintas", () => {
-  assert.deepEqual(Object.values(AGENTS).map((agent) => agent.port), [3141, 3142, 3143, 3144]);
-  assert.equal(new Set(Object.values(AGENTS).map((agent) => agent.port)).size, 4);
+  assert.deepEqual(Object.values(AGENTS).map((agent) => agent.port), [3141, 3142, 3143, 3144, 3145, 3146, 3147]);
+  assert.equal(new Set(Object.values(AGENTS).map((agent) => agent.port)).size, 7);
   assert.equal(AGENTS.grok.route, "cursor");
   assert.equal(AGENTS.grok.model, "cursor-grok-4.6-high");
+  assert.equal(AGENTS.glm.model, "opencode-go/glm-5.3");
+  assert.equal(AGENTS.deepseek.model, "opencode-go/deepseek-v4-pro");
+  assert.equal(AGENTS.kimi.model, "kimi-code/k3");
+});
+
+test("reconhece GLM 5.3 e DeepSeek V4 Pro no catálogo OpenCode Go", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-opencode-model-"));
+  const opencode = path.join(root, "opencode");
+  fs.writeFileSync(opencode, "#!/bin/sh\nprintf 'opencode-go/glm-5.3\\nopencode-go/deepseek-v4-pro\\n'\n", { mode: 0o700 });
+  try {
+    assert.equal(openCodeModelAvailability("glm", { PATH: root }).available, true);
+    assert.equal(openCodeModelAvailability("deepseek", { PATH: root }).available, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("analisa instalação completa e opções MCP", () => {
@@ -47,7 +63,7 @@ test("mantém estado e dados fora do pacote", () => {
 
 test("ausência do Cursor degrada apenas o peer Grok", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-cli-availability-"));
-  for (const binary of ["codex", "claude", "gemini"]) {
+  for (const binary of ["codex", "claude", "gemini", "opencode", "kimi"]) {
     const file = path.join(root, binary);
     fs.writeFileSync(file, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   }
@@ -57,6 +73,9 @@ test("ausência do Cursor degrada apenas o peer Grok", () => {
     assert.equal(availability.claude.available, true);
     assert.equal(availability.gemini.available, true);
     assert.equal(availability.grok.available, false);
+    assert.equal(availability.glm.available, true);
+    assert.equal(availability.deepseek.available, true);
+    assert.equal(availability.kimi.available, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

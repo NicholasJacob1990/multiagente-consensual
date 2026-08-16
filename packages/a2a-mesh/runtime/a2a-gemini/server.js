@@ -28,6 +28,12 @@ import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
+import {
+  REQUIRED_ANTIGRAVITY_MODEL,
+  antigravityModelLabelsMatch,
+  parseAntigravityStreamLine,
+  verifyAntigravityModelAvailable,
+} from './antigravity-cli-adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -70,8 +76,9 @@ const GEMINI_APPROVAL_MODE = process.env.GEMINI_APPROVAL_MODE || 'yolo';
 const GEMINI_YOLO = process.env.GEMINI_YOLO !== 'false';
 const ANTIGRAVITY_CLI = process.env.ANTIGRAVITY_CLI || join(os.homedir(), '.local', 'bin', 'agy');
 const USE_ANTIGRAVITY_CLI = process.env.GEMINI_CLI_PROVIDER !== 'gemini' && fs.existsSync(ANTIGRAVITY_CLI);
-const ANTIGRAVITY_MODEL = process.env.ANTIGRAVITY_MODEL || 'Gemini 3.1 Pro (High)';
-const ANTIGRAVITY_FALLBACK_MODEL = process.env.ANTIGRAVITY_FALLBACK_MODEL || 'Gemini 3.6 Flash (High)';
+const ANTIGRAVITY_MODEL = process.env.ANTIGRAVITY_MODEL || REQUIRED_ANTIGRAVITY_MODEL;
+const ANTIGRAVITY_FALLBACK_MODEL = process.env.ANTIGRAVITY_FALLBACK_MODEL || ANTIGRAVITY_MODEL;
+const ALLOW_ANTIGRAVITY_MODEL_FALLBACK = process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK === 'true';
 const GEMINI_VERTEX_FALLBACK_MODEL = process.env.GEMINI_VERTEX_FALLBACK_MODEL || GEMINI_CLI_MODEL || 'gemini-2.5-pro';
 // Output token cap for direct API calls (PublicAPI/Vertex). CLI mode (`gemini -o json`)
 // is governed by the CLI's own internal cap. 65536 was the historical default; raise
@@ -87,6 +94,15 @@ const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 const FORCE_CLI = process.env.USE_CLI === 'force';
 const USE_API = !FORCE_CLI;
 const USE_CLI = !FORCE_CLI;
+const EFFECTIVE_GEMINI_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : (FORCE_CLI ? GEMINI_CLI_MODEL : GEMINI_MODEL);
+const CLI_EXECUTION_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : GEMINI_CLI_MODEL;
+let antigravityBootModelVerified = false;
+if (USE_ANTIGRAVITY_CLI && process.env.A2A_GEMINI_SKIP_MODEL_CHECK !== 'true') {
+  verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, ANTIGRAVITY_MODEL);
+  antigravityBootModelVerified = true;
+}
+let lastObservedGeminiModel = antigravityBootModelVerified ? ANTIGRAVITY_MODEL : null;
+let lastObservedGeminiAt = antigravityBootModelVerified ? new Date().toISOString() : null;
 
 const A2A_AUTH_TOKEN = loadA2AAuthToken();
 const MAX_CONCURRENT_TASKS = parseInt(process.env.MAX_CONCURRENT_TASKS || '15', 10);
@@ -489,7 +505,9 @@ const MESH_SYSTEM_SUFFIX = `
 
 ---
 
-Você é Gemini, um agente técnico em uma mesh A2A (Agent-to-Agent) com outros agentes AI.
+Você é Gemini 3.7 Flash High, executado pela rota Antigravity CLI
+(${ANTIGRAVITY_MODEL}), como agente técnico da mesh A2A. Nunca alegue uma
+versão diferente da rota efetivamente configurada.
 
 FERRAMENTAS LOCAIS: shell_exec, read_file, search_content, list_directory, directory_probe.
 
@@ -689,7 +707,7 @@ async function executeGeminiAPIWithTools(task, onChunk, runContext = {}) {
 
 function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
   const signal = runContext.signal;
-  const useModel = modelOverride || GEMINI_MODEL;
+  const useModel = modelOverride || EFFECTIVE_GEMINI_MODEL;
   const currentDepth = task.metadata?.maxDepth ?? A2A_MESH_MAX_DEPTH;
   const toolContext = {
     depth: currentDepth,
@@ -717,9 +735,7 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
 
   function runCLIRound(currentPrompt, round) {
     if (signal?.aborted || task.status?.state === 'canceled') return;
-    const effectiveCliModel = USE_ANTIGRAVITY_CLI
-      ? (useModel === GEMINI_FALLBACK_MODEL ? ANTIGRAVITY_FALLBACK_MODEL : ANTIGRAVITY_MODEL)
-      : useModel;
+    const effectiveCliModel = useModel;
     console.log(`[CLI] Task ${task.id} using ${USE_ANTIGRAVITY_CLI ? 'agy' : 'gemini'} model ${effectiveCliModel} (round ${round})`);
     // A2A_SUPPRESS_HOOKS=1: hooks (mem0 SessionStart, vault digest) fazem exit silent.
     // stdin='ignore' fecha stdin, gemini não fica esperando input.
@@ -741,7 +757,7 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
     const cliArgs = USE_ANTIGRAVITY_CLI
       ? [
           '--print', toolPrefix + currentPrompt,
-          '--output-format', 'json',
+          '--output-format', 'stream-json',
           '--mode', antigravityMode,
           '--dangerously-skip-permissions',
           '--model', effectiveCliModel,
@@ -770,7 +786,44 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
     task.process = child;
     let stdout = '';
     let stderr = '';
-    let antigravityEnvelopeSeen = false;
+    let antigravityLineBuffer = '';
+    let antigravityTerminal = null;
+    let observedModel = null;
+    let modelError = null;
+    let streamedText = '';
+    const progressFilter = cliToolWrapper?.createToolCallStreamFilter?.();
+
+    function emitProgress(text) {
+      if (!text) return;
+      const safeText = progressFilter ? progressFilter.push(text) : text;
+      if (!safeText) return;
+      if (onChunk) onChunk({ type: 'progress', text: safeText });
+      tm.taskEmitter.emit(`task:${task.id}:chunk`, safeText);
+    }
+
+    function consumeAntigravityLine(line) {
+      const parsed = parseAntigravityStreamLine(line);
+      if (!parsed) return;
+      if (parsed.model) {
+        observedModel = parsed.model;
+        lastObservedGeminiModel = parsed.model;
+        lastObservedGeminiAt = new Date().toISOString();
+        if (!antigravityModelLabelsMatch(effectiveCliModel, parsed.model)) {
+          modelError = new Error(`model_mismatch: configured=${effectiveCliModel} observed=${parsed.model}`);
+          try { child.kill('SIGTERM'); } catch { /* already exited */ }
+          return;
+        }
+      }
+      if (parsed.text) {
+        let delta = parsed.text;
+        if (parsed.text.startsWith(streamedText)) delta = parsed.text.slice(streamedText.length);
+        if (delta) {
+          streamedText += delta;
+          emitProgress(delta);
+        }
+      }
+      if (parsed.terminal) antigravityTerminal = parsed;
+    }
 
     // Fail-fast capacity detection: gemini-cli runs its own internal
     // retry-with-backoff (Attempt 1, Attempt 2, ...) on 429/CAPACITY_EXHAUSTED
@@ -781,8 +834,10 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
     function scanForCapacityError(text) {
       if (capacityErrorDetected) return;
       if (!cliToolWrapper?.hasCapacityError?.(text)) return;
-      // Only short-circuit if we have a fallback to try.
-      if (useModel === GEMINI_FALLBACK_MODEL) return;
+      // Only short-circuit when the operator explicitly authorized the
+      // configured Antigravity fallback. Otherwise let 3.7 finish/fail and
+      // report that model's real outcome instead of silently changing routes.
+      if (!ALLOW_ANTIGRAVITY_MODEL_FALLBACK || useModel === ANTIGRAVITY_FALLBACK_MODEL) return;
       capacityErrorDetected = true;
       console.log(`[CLI fallback] Capacity error detected on ${useModel} — killing child early to fail fast`);
       try {
@@ -803,21 +858,14 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      if (onChunk) onChunk({ type: 'progress', text });
-      tm.taskEmitter.emit(`task:${task.id}:chunk`, text);
       scanForCapacityError(text);
-
-      // agy can keep its process alive after emitting the complete print-mode
-      // envelope. Once a terminal envelope is safely parsed, stop that idle
-      // process so the synchronous A2A request returns without extra latency.
-      if (USE_ANTIGRAVITY_CLI && !antigravityEnvelopeSeen) {
-        try {
-          const envelope = JSON.parse(stdout.trim());
-          if (envelope?.status === 'SUCCESS' || envelope?.status === 'ERROR') {
-            antigravityEnvelopeSeen = true;
-            child.kill('SIGTERM');
-          }
-        } catch { /* wait for the rest of the JSON envelope */ }
+      if (USE_ANTIGRAVITY_CLI) {
+        antigravityLineBuffer += text;
+        const lines = antigravityLineBuffer.split(/\r?\n/);
+        antigravityLineBuffer = lines.pop() || '';
+        for (const line of lines) consumeAntigravityLine(line);
+      } else {
+        emitProgress(text);
       }
     });
 
@@ -830,31 +878,67 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
     child.on('close', async (code) => {
       task.process = null;
       if (signal?.aborted || task.status?.state === 'canceled') return;
+      if (USE_ANTIGRAVITY_CLI && antigravityLineBuffer.trim()) {
+        consumeAntigravityLine(antigravityLineBuffer);
+        antigravityLineBuffer = '';
+      }
+      const safeTail = progressFilter?.flush?.() || '';
+      if (safeTail) {
+        if (onChunk) onChunk({ type: 'progress', text: safeTail });
+        tm.taskEmitter.emit(`task:${task.id}:chunk`, safeTail);
+      }
+      if (modelError) {
+        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro Gemini CLI: ${modelError.message}` }] };
+        tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
+        if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
+        return;
+      }
       // Gemini CLI -o json wraps response in { session_id, response, stats }.
       // Hooks/skills/warnings polluem stdout antes do JSON; extraímos só o objeto JSON e seu response.
-      let output = stdout.trim();
-      const jsonStart = output.lastIndexOf('{\n  "session_id"');
-      const jsonMatch = jsonStart >= 0
-        ? [output.slice(jsonStart)]
-        : output.match(/\{[\s\S]*"response"[\s\S]*\}\s*$/);
-      let extractedFromJson = false;
-      let parsedEnvelope = null;
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          parsedEnvelope = parsed;
-          if (typeof parsed.response === 'string') {
-            output = parsed.response;
-            extractedFromJson = true;
-          }
-        } catch { /* fallback to raw output */ }
+      let output = USE_ANTIGRAVITY_CLI ? (antigravityTerminal?.response || '') : stdout.trim();
+      let extractedFromJson = USE_ANTIGRAVITY_CLI && Boolean(antigravityTerminal);
+      let parsedEnvelope = USE_ANTIGRAVITY_CLI ? antigravityTerminal : null;
+      if (!USE_ANTIGRAVITY_CLI) {
+        const jsonStart = output.lastIndexOf('{\n  "session_id"');
+        const jsonMatch = jsonStart >= 0
+          ? [output.slice(jsonStart)]
+          : output.match(/\{[\s\S]*"response"[\s\S]*\}\s*$/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            parsedEnvelope = parsed;
+            if (typeof parsed.response === 'string') {
+              output = parsed.response;
+              extractedFromJson = true;
+            }
+          } catch { /* fallback to raw output */ }
+        }
+      }
+      if (USE_ANTIGRAVITY_CLI && !observedModel) {
+        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: 'Erro Gemini CLI: model_unconfirmed — Antigravity stream omitted init.model' }] };
+        tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
+        if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
+        return;
+      }
+      if (USE_ANTIGRAVITY_CLI && !antigravityTerminal) {
+        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: 'Erro Gemini CLI: incomplete_stream — Antigravity exited without a result event' }] };
+        tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
+        if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
+        return;
+      }
+      if (USE_ANTIGRAVITY_CLI && antigravityTerminal.isError) {
+        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro Gemini CLI: ${output || antigravityTerminal.status || 'Antigravity returned an error result'}` }] };
+        tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
+        if (onChunk) onChunk({ type: 'failed', task: tm.taskToJSON(task) });
+        return;
       }
       // Truncation diagnostics: log model + chars + everything we can extract
       // about why the response ended. If a response ever comes back exactly at
       // the maxOutputTokens cap, finishReason should reveal it.
       try {
         const stats = parsedEnvelope?.stats;
-        const tokens = stats?.models?.[useModel]?.tokens
+        const tokens = parsedEnvelope?.usage
+                    || stats?.models?.[useModel]?.tokens
                     || (stats?.models && Object.values(stats.models)[0]?.tokens)
                     || null;
         const finishReason = parsedEnvelope?.candidates?.[0]?.finishReason
@@ -897,10 +981,10 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
         (combinedErr.includes('code: 404') && combinedErr.includes('Error'))
       );
 
-      if ((isQuotaError || isModelNotFound) && useModel !== GEMINI_FALLBACK_MODEL) {
+      if (ALLOW_ANTIGRAVITY_MODEL_FALLBACK && (isQuotaError || isModelNotFound) && useModel !== ANTIGRAVITY_FALLBACK_MODEL) {
         const trigger = capacityErrorDetected ? 'early-kill' : 'post-close';
-        console.log(`[CLI fallback] Model ${useModel} ${isModelNotFound ? 'not found' : 'exhausted'} (${trigger}), retrying with ${GEMINI_FALLBACK_MODEL}`);
-        executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL, runContext);
+        console.log(`[CLI fallback] Model ${useModel} ${isModelNotFound ? 'not found' : 'exhausted'} (${trigger}), retrying with ${ANTIGRAVITY_FALLBACK_MODEL}`);
+        executeGeminiCLI(task, onChunk, ANTIGRAVITY_FALLBACK_MODEL, runContext);
         return;
       }
 
@@ -915,9 +999,9 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
       // Non-zero exit with output that looks like an error (not real content)
       if (code !== 0 && output) {
         const looksLikeError = output.includes('critical error') || output.includes('RetryableQuotaError') || output.includes('RESOURCE_EXHAUSTED') || output.includes('ModelNotFoundError');
-        if (looksLikeError && useModel !== GEMINI_FALLBACK_MODEL) {
-          console.log(`[CLI fallback] Output looks like error, retrying with ${GEMINI_FALLBACK_MODEL}`);
-          executeGeminiCLI(task, onChunk, GEMINI_FALLBACK_MODEL, runContext);
+        if (ALLOW_ANTIGRAVITY_MODEL_FALLBACK && looksLikeError && useModel !== ANTIGRAVITY_FALLBACK_MODEL) {
+          console.log(`[CLI fallback] Output looks like error, retrying with ${ANTIGRAVITY_FALLBACK_MODEL}`);
+          executeGeminiCLI(task, onChunk, ANTIGRAVITY_FALLBACK_MODEL, runContext);
           return;
         }
         if (looksLikeError) {
@@ -939,8 +1023,6 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
           result = `Tool error: ${toolErr.message}`;
         }
         allText += (toolCall.beforeCall ? toolCall.beforeCall + '\n' : '');
-        if (onChunk) onChunk({ type: 'progress', text: `\n[tool: ${toolCall.name}]\n` });
-        tm.taskEmitter.emit(`task:${task.id}:chunk`, `\n[tool: ${toolCall.name}]\n`);
 
         const followUp = wrapper.buildFollowUpPrompt(basePrompt, output, toolCall.name, normalizeToolOutput(result));
         if (!signal?.aborted && task.status?.state !== 'canceled') runCLIRound(followUp, round + 1);
@@ -955,6 +1037,12 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
         artifacts: [...task.artifacts, ...artifacts],
+        metadata: {
+          ...task.metadata,
+          observedModel: observedModel || effectiveCliModel,
+          providerSessionId: antigravityTerminal?.conversationId || task.metadata?.providerSessionId,
+          providerRuntime: USE_ANTIGRAVITY_CLI ? 'antigravity' : 'gemini-cli',
+        },
       });
       if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
     });
@@ -1492,8 +1580,8 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
       console.error(`[API→CLI fallback] task=${task.id?.slice(0,8)} API error: ${err.message?.slice(0, 200)}`);
       if (USE_CLI) {
         tm.updateTask(task, { status: { state: 'working' } });
-        console.log(`[CLI fallback] Task ${task.id} retrying via Gemini CLI (model: ${GEMINI_CLI_MODEL})`);
-        if (!runContext.signal?.aborted) executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL, runContext);
+        console.log(`[CLI fallback] Task ${task.id} retrying via Gemini CLI (model: ${CLI_EXECUTION_MODEL})`);
+        if (!runContext.signal?.aborted) executeGeminiCLI(task, onChunk, CLI_EXECUTION_MODEL, runContext);
       } else {
         const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro API Gemini: ${err.message}` }] };
         tm.updateTask(task, { status: { state: 'failed', message: errorMessage }, history: [...task.history, errorMessage] });
@@ -1503,7 +1591,7 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
     return;
   }
   // CLI-only mode (USE_CLI=force)
-  return executeGeminiCLI(task, onChunk, GEMINI_CLI_MODEL, runContext);
+  return executeGeminiCLI(task, onChunk, CLI_EXECUTION_MODEL, runContext);
 }
 
 // ============================================
@@ -1512,7 +1600,7 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
 
 const AGENT_CARD = {
   name: 'Gemini Agent',
-  description: 'Agente Gemini CLI exposto via protocolo A2A. Executa tarefas de programacao, review, debug e geracao de codigo usando Google Gemini.',
+  description: `Gemini 3.7 Flash High via Antigravity CLI (${ANTIGRAVITY_MODEL}), exposto pelo protocolo A2A.`,
   url: `http://localhost:${PORT}`,
   version: '1.0.0',
   capabilities: {
@@ -1541,8 +1629,8 @@ const AGENT_CARD = {
 createA2AServer({
   port: PORT,
   selfId: SELF_ID,
-  model: FORCE_CLI && USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : GEMINI_MODEL,
-  cliModel: USE_API && USE_CLI ? GEMINI_CLI_MODEL : undefined,
+  model: EFFECTIVE_GEMINI_MODEL,
+  cliModel: USE_API && USE_CLI ? CLI_EXECUTION_MODEL : undefined,
   useApi: USE_API,
   authToken: A2A_AUTH_TOKEN,
   taskTimeoutMs: 2700000, // 45 min
@@ -1560,4 +1648,13 @@ createA2AServer({
   debateExecutor,
   planExecutor,
   executeTask: executeGeminiTask,
+  healthDetails: () => ({
+    route: USE_ANTIGRAVITY_CLI ? 'antigravity' : (USE_API ? 'google-api' : 'gemini-cli'),
+    provider: 'google',
+    configuredModel: EFFECTIVE_GEMINI_MODEL,
+    modelPolicy: ALLOW_ANTIGRAVITY_MODEL_FALLBACK ? 'explicit-fallback-enabled' : 'fixed',
+    modelVerified: USE_ANTIGRAVITY_CLI ? antigravityBootModelVerified : null,
+    lastObservedModel: lastObservedGeminiModel,
+    lastObservedAt: lastObservedGeminiAt,
+  }),
 });

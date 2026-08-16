@@ -1,0 +1,40 @@
+%% Diagrama: critérios de apuração colegiada | Atualização: 2026-08-15
+%%{init: {'theme': 'base', 'themeVariables': {
+  'fontFamily': 'Lato, Arial, sans-serif',
+  'primaryColor': '#f8fafc', 'primaryTextColor': '#1e293b',
+  'primaryBorderColor': '#cbd5e1', 'lineColor': '#64748b',
+  'secondaryColor': '#eff6ff', 'tertiaryColor': '#ecfdf5',
+  'background': '#ffffff', 'mainBkg': '#f8fafc',
+  'nodeBorder': '#cbd5e1', 'clusterBkg': '#f8fafc',
+  'clusterBorder': '#e2e8f0', 'titleColor': '#1e3a5f',
+  'edgeLabelBackground': '#ffffff', 'textColor': '#1e293b'
+}, 'flowchart': {'nodeSpacing': 30, 'rankSpacing': 58, 'curve': 'basis'}}}%%
+flowchart TB
+    request["Pedido de deliberação"] --> criterion{"Critério de apuração"}
+
+    criterion -->|global| globalVote["Cada cadeira vota<br/>no resultado final"]
+    globalVote --> globalCount["Placar direto<br/>por opção"]
+
+    criterion -->|analítico| issueVote["Votação separada<br/>de cada questão"]
+    issueVote --> frozenRule["Regra de derivação<br/>congelada"]
+    frozenRule --> derived["Dispositivo derivado"]
+    derived --> paradox{"Maioria cruzada<br/>ou paradoxo?"}
+
+    criterion -->|híbrido| hybridIssues["Questões votadas<br/>separadamente"]
+    hybridIssues --> confirmation["Confirmação bloqueante<br/>do resultado derivado"]
+    confirmation -->|confirmado| proclaimed["Resultado proclamado"]
+    confirmation -->|não confirmado| reopen["Retorno ao loop<br/>ou decisão humana"]
+
+    globalCount --> receipt["Recibo: placar, ratio,<br/>adesões e dissensos"]
+    paradox --> receipt
+    proclaimed --> receipt
+    reopen --> receipt
+
+    classDef entry fill:#eff6ff,stroke:#60a5fa,color:#1e3a5f,stroke-width:1.5px;
+    classDef operation fill:#f8fafc,stroke:#cbd5e1,color:#1e293b;
+    classDef decision fill:#fff7ed,stroke:#fb923c,color:#7c2d12,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#064e3b,stroke-width:1.5px;
+    class request,criterion entry;
+    class globalVote,globalCount,issueVote,frozenRule,derived,hybridIssues,confirmation operation;
+    class paradox,reopen decision;
+    class proclaimed,receipt result;

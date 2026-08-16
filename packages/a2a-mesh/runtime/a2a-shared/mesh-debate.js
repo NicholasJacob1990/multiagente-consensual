@@ -76,8 +76,9 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
    * @param {string} [params.order] - Agent order strategy: 'rotate' or 'fixed'
    */
   async function execute(params, callContext = {}) {
-    const { topic, rounds: rawRounds = 4, judge = 'claude', order = 'rotate', timeout_ms } = params;
-    const rounds = Math.max(1, Math.min(36, parseInt(rawRounds, 10) || 4));
+    const { topic, rounds: requestedRounds, judge = 'claude', order = 'rotate', timeout_ms, profile = 'custom' } = params;
+    const profileRounds = { fast: 2, normal: 4, deep: 8 }[String(profile).toLowerCase()] || 4;
+    const rounds = Math.max(1, Math.min(36, parseInt(requestedRounds, 10) || profileRounds));
     const debateId = randomUUID();
     const threadId = resolveThreadId(params, callContext, `debate-${debateId}`);
     const timeoutMs = normalizeTimeoutMs(timeout_ms, DEFAULT_DEBATE_TIMEOUT_MS);
@@ -115,7 +116,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
     };
 
     // Setup
-    emitDialogue('setup', '*', 'system', `Debate iniciado: "${topic}" | ${rounds} rounds | Debatedores: ${agents.join(', ')} | Juiz: ${judge}`);
+    emitDialogue('setup', '*', 'system', `Debate iniciado: "${topic}" | ${rounds} rounds | perfil=${profile} | Debatedores: ${agents.join(', ')} | Juiz: ${judge}`);
     const startTime = Date.now();
     const history = [];
 
@@ -133,14 +134,15 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         context.signal?.throwIfAborted();
         const prompt = buildDebaterPrompt(topicForPrompt, history, agent, round, rounds, agents);
         let response;
+        let participantFailed = false;
 
-        emitDialogue(`round-${round}`, '*', 'system', `${agent} elaborando argumento…`);
+        emitDialogue(`round-${round}`, agent, 'system', `${agent} elaborando argumento…`);
 
         try {
           if (agent === selfId) {
             // Generate self response by calling own URL
             response = await meshCaller.executeA2ACall(
-              { agent: selfId, prompt, timeout_ms: timeoutForAgent(selfId, timeoutMs) },
+              { agent: selfId, prompt, timeout_ms: timeoutForAgent(selfId, timeoutMs), allowDelegation: false },
               {
                 depth: context.depth - 1,
                 meshChain: [...context.meshChain],
@@ -151,7 +153,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
             );
           } else if (peers[agent]) {
             response = await meshCaller.executeA2ACall(
-              { agent, prompt, timeout_ms: timeoutForAgent(agent, timeoutMs) },
+              { agent, prompt, timeout_ms: timeoutForAgent(agent, timeoutMs), allowDelegation: false },
               {
                 depth: context.depth - 1,
                 meshChain: [...context.meshChain],
@@ -164,7 +166,8 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
             response = `[${agent} indisponível]`;
           }
         } catch (err) {
-          response = `[Erro de ${agent}: ${formatError(err)}]`;
+          response = null;
+          participantFailed = true;
           emitDialogue(`round-${round}`, agent, 'error', formatError(err));
         }
 
@@ -174,8 +177,13 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         if (isMeshErrorText(response)) {
           const errText = String(response).trim();
           emitDialogue(`round-${round}`, agent, 'error', errText);
-          response = `[Erro de ${agent}: ${errText}]`;
+          participantFailed = true;
         }
+
+        // A provider/transport failure is an explicit missing argument, never
+        // debate content. The judge can see the absence from the roster; the
+        // UI already received one error event above.
+        if (participantFailed) continue;
 
         const entry = { round, agent, argument: String(response) };
         history.push(entry);
@@ -210,7 +218,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
       let judgeResponse;
       if (actualJudge === selfId) {
         judgeResponse = await meshCaller.executeA2ACall(
-          { agent: selfId, prompt: judgePrompt, timeout_ms: timeoutForAgent(selfId, timeoutMs) },
+          { agent: selfId, prompt: judgePrompt, timeout_ms: timeoutForAgent(selfId, timeoutMs), allowDelegation: false },
           {
             depth: context.depth - 1,
             meshChain: [...context.meshChain],
@@ -221,7 +229,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         );
       } else if (peers[actualJudge]) {
         judgeResponse = await meshCaller.executeA2ACall(
-          { agent: actualJudge, prompt: judgePrompt, timeout_ms: timeoutForAgent(actualJudge, timeoutMs) },
+          { agent: actualJudge, prompt: judgePrompt, timeout_ms: timeoutForAgent(actualJudge, timeoutMs), allowDelegation: false },
           {
             depth: context.depth - 1,
             meshChain: [...context.meshChain],
@@ -252,6 +260,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
       agents,
       judge: actualJudge,
       rounds,
+      profile,
       history,
       synthesis,
       timing: {
@@ -272,6 +281,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
           agents,
           judge: actualJudge,
           rounds,
+          profile,
           winner: synthesis.winner,
           scores: synthesis.scores,
         },
@@ -281,7 +291,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
     if (meshStore) {
       try {
         meshStore.createEvent(context.taskId, 'debate', selfId, {
-          debateId, agents, judge: actualJudge, rounds,
+          debateId, agents, judge: actualJudge, rounds, profile,
           winner: synthesis.winner,
           scores: synthesis.scores,
           topic: topic.slice(0, 5000),
@@ -297,7 +307,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
       mode: 'debate',
       title: topic,
       summary: synthesis.verdict || synthesis.summary || 'Debate completed without verdict text.',
-      decisions: [`winner=${synthesis.winner || 'indeterminado'}; confidence=${synthesis.confidence ?? 0}`],
+      decisions: [`winner=${synthesis.winner || 'indeterminado'}; confidence=${synthesis.confidence ?? 0}; profile=${profile}`],
       nextSteps: ['Use the verdict and strongest objections as context for the next mesh mode.'],
       artifacts: [{ kind: 'debate_history', field: 'history' }],
       metadata: {
@@ -305,6 +315,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         agents,
         judge: actualJudge,
         rounds,
+        profile,
         winner: synthesis.winner,
         scores: synthesis.scores,
         confidence: synthesis.confidence,
@@ -325,6 +336,8 @@ RODADA: ${round}/${totalRounds}
 
 REGRAS:
 - Argumento conciso (máx 20 linhas)
+- Entregue somente o argumento final; não narre preparação, leitura de skills ou uso de ferramentas
+- Não delegue nem consulte outros agentes: os demais participantes já são coordenados pelo motor
 - Responda DIRETAMENTE aos pontos dos oponentes
 - Use evidências técnicas concretas
 - Aponte falhas nos argumentos alheios

@@ -1,11 +1,11 @@
 ---
-description: Ensemble configurável de código por codex/claude/gemini/grok com revisão cruzada e síntese
+description: Ensemble configurável de código pelos agentes selecionados com revisão cruzada e síntese
 argument-hint: <descrição do código/feature>
 entrypoint: loop-debate-agentes
 profile: a2a_ensemble
 approval-ceiling: candidate_only
 ---
-Interprete a linguagem, o juiz, os participantes e o número de rodadas pedidos em `$ARGUMENTS` e invoque a tool MCP `mcp__a2a-mesh__a2a_ensemble`. O A2A pode usar qualquer conjunto explícito de Codex, Claude, Gemini e Grok, aceita de 1 a 12 rodadas de revisão e tem Claude como juiz padrão. Apresente a versão consolidada, as discrepâncias materiais e os dados intermediários devolvidos pela ferramenta. Não trate a síntese como consenso auditado.
+Interprete a linguagem, o juiz, os participantes e o número de rodadas pedidos em `$ARGUMENTS` e invoque a tool MCP `mcp__a2a-mesh__a2a_ensemble`. O A2A pode usar qualquer conjunto explícito de Codex, Claude, Gemini, Grok, GLM, DeepSeek e Kimi, aceita de 1 a 12 rodadas de revisão e tem Claude como juiz padrão. Apresente a versão consolidada, as discrepâncias materiais e os dados intermediários devolvidos pela ferramenta. Não trate a síntese como consenso auditado.
 
 Se o pedido exigir N configurável, documentos, repetição até critérios, hashes, consenso por versão ou auditoria cega, encaminhe-o ao perfil `ensemble_nxn_v1` de `$loop-debate-agentes` em vez de prometer essas garantias no A2A simples.
 
