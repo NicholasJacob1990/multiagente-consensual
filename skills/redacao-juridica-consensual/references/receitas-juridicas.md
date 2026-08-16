@@ -84,7 +84,7 @@ Distinguir eixos:
 
 - N produtores e revisão cruzada de todos por todos: `ensemble_juridico`;
 - versões finais independentes sem matriz N×N: `consolidacao_final.modo = multipla_cega`;
-- votos de julgadores: `formacao_decisao_colegiada`, não ensemble por si só.
+- votos de julgadores: `formacao_decisao_colegiada`, não ensemble por si só; escolher separadamente modalidade e método `global`, `analitico` ou `hibrido`.
 
 ## 3. `parecer_consensual`
 
@@ -144,9 +144,10 @@ lentes_minimas: [relatorio, contraditorio, fundamentacao, pressupostos, congruen
                  efeitos]
 ```
 
-Herdar o perfil comum. Ativar `decisao_colegiada_v1` somente quando o pedido envolver colegiado,
-votos, julgamento ou opinião da corte. Propor `opinion_of_court`; permitir `seriatim` e
-`per_curiam`, sem confundir maioria do colegiado com consenso dos agentes.
+Herdar o perfil comum. Ativar a formação colegiada somente quando o pedido envolver colegiado,
+votos, julgamento ou opinião da corte. Propor `opinion_of_court` e método `global`; permitir
+`seriatim`, `per_curiam`, `analitico` e `hibrido` por escolha explícita, sem confundir maioria do
+colegiado com consenso dos agentes.
 
 ## 7. Overlay `ensemble_juridico`
 

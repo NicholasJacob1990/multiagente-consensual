@@ -23,7 +23,7 @@ INCLUDED_ROOTS = {
 }
 # Executáveis auxiliares locais podem permanecer no repositório, mas plugins
 # hospedados em claude.ai não podem publicar um diretório bin/ de nível superior.
-LOCAL_ONLY_ROOTS = {"bin", "npm", "packages"}
+LOCAL_ONLY_ROOTS = {"bin", "cowork", "docs", "npm", "packages"}
 LOCAL_ONLY_ROOT_FILES = {".gitignore", ".npmignore", "package.json", "package-lock.json"}
 HOSTED_EXCLUDED_PATHS = {Path(".claude-plugin/marketplace.json")}
 INCLUDED_ROOT_FILES = {"README.md"}

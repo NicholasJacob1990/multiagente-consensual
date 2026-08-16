@@ -9,6 +9,8 @@ Interprete a linguagem, o juiz, os participantes e o número de rodadas pedidos 
 
 Se o pedido exigir N configurável, documentos, repetição até critérios, hashes, consenso por versão ou auditoria cega, encaminhe-o ao perfil `ensemble_nxn_v1` de `$loop-debate-agentes` em vez de prometer essas garantias no A2A simples.
 
+A tool devolve um recibo durável por padrão. Guarde o `task_id` e use `a2a_task_wait` em esperas de até 240 segundos, repetindo enquanto o estado for ativo, salvo se o usuário pedir apenas o disparo. Use `a2a_task_status` para retomar acompanhamento; nunca reenvie o pedido só porque uma espera terminou. Se falhar, informe o estado e apresente `partial-output.md` quando existir. O diálogo ao vivo fica no painel A2A.
+
 $ARGUMENTS
 
 

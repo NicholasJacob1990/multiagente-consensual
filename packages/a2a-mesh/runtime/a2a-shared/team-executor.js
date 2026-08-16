@@ -9,6 +9,8 @@ import { resolveSelfUrl } from './peer-registry.js';
 import { persistContextSnapshot, resolveThreadId } from './mesh-context.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
 import { capTimeoutForAgent } from './agent-catalog.js';
+import { A2A_PROTOCOL_VERSION, A2A_VERSION_HEADER } from './protocol.js';
+import { cancelRemoteTask, recoverRemoteTask } from './remote-task-control.js';
 
 function normalizePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -55,7 +57,7 @@ function timeoutForAgent(agent, timeoutMs) {
  */
 export async function executeA2ATeam(input, context) {
   const { steps, name, context: initialContext, accumulate = true, includeSelf = false, timeout_ms } = input;
-  const { depth, meshChain, taskId, selfId, peers, meshBus, meshStore, authToken = '', selfUrl = '', selfCallDepth = 0 } = context;
+  const { depth, meshChain, taskId, selfId, peers, meshBus, meshStore, authToken = '', selfUrl = '', selfCallDepth = 0, signal } = context;
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
   const globalTimeoutMs = normalizeTimeoutMs(timeout_ms, null);
 
@@ -101,6 +103,7 @@ export async function executeA2ATeam(input, context) {
   };
 
   for (let stepIdx = 0; stepIdx < steps.length; stepIdx++) {
+    signal?.throwIfAborted();
     const step = steps[stepIdx];
     const chain = meshChain || [];
     const stepIncludeSelf = step.includeSelf ?? includeSelf;
@@ -152,6 +155,56 @@ export async function executeA2ATeam(input, context) {
 
     let stepResult;
     const stepTimeoutMs = normalizeTimeoutMs(step.timeout_ms, globalTimeoutMs);
+    const progressSnapshots = new Map();
+    const onProgress = (agent, text, remoteTaskId) => {
+      if (!text) return;
+      const previous = progressSnapshots.get(agent) || { text: '', savedLength: 0, savedAt: 0 };
+      previous.text += text;
+      const now = Date.now();
+      if (meshStore?.upsertPartialSnapshot
+        && (previous.text.length - previous.savedLength >= 4096 || now - previous.savedAt >= 1000)) {
+        meshStore.upsertPartialSnapshot(taskId, agent, previous.text.slice(-200_000), {
+          operation: 'team', phase: `step-${stepIdx + 1}`, remoteTaskId: remoteTaskId || null,
+        });
+        previous.savedLength = previous.text.length;
+        previous.savedAt = now;
+      }
+      progressSnapshots.set(agent, previous);
+      if (meshBus) meshBus.publish({
+          taskId,
+          type: 'dialogue',
+          payload: {
+            operation: 'team',
+            phase: `step-${stepIdx + 1}`,
+            agent,
+            role: 'response',
+            text,
+            remoteTaskId: remoteTaskId || null,
+            // Allows any upstream A2A hop to preserve the live-only nature of
+            // token deltas instead of turning them back into durable events.
+            transient: true,
+          },
+        }, { persist: false });
+    };
+    const onPartial = (agent, text, remoteTaskId, reason) => {
+      if (!text) return;
+      meshStore?.upsertPartialSnapshot?.(taskId, agent, String(text).slice(-200_000), {
+        operation: 'team', phase: `step-${stepIdx + 1}`, remoteTaskId: remoteTaskId || null,
+        reason, complete: false,
+      });
+      if (meshBus) meshBus.publish({
+        taskId,
+        type: 'partial_output',
+        payload: {
+          operation: 'team',
+          phase: `step-${stepIdx + 1}`,
+          agent,
+          remoteTaskId: remoteTaskId || null,
+          reason,
+          text: String(text).slice(-200_000),
+        },
+      });
+    };
     if (step.mode === 'parallel') {
       stepResult = await executeTeamParallel(agents, prompt, childMetadata, {
         peers,
@@ -160,6 +213,9 @@ export async function executeA2ATeam(input, context) {
         authToken,
         timeoutMs: stepTimeoutMs,
         selfCallDepth,
+        signal,
+        onProgress,
+        onPartial,
       });
     } else {
       stepResult = await executeTeamSequential(agents, prompt, childMetadata, {
@@ -169,11 +225,28 @@ export async function executeA2ATeam(input, context) {
         authToken,
         timeoutMs: stepTimeoutMs,
         selfCallDepth,
+        signal,
+        onProgress,
+        onPartial,
       });
     }
 
     stepResult.stepIndex = stepIdx;
     stepResult.mode = step.mode || 'sequential';
+    for (const result of stepResult.results || []) {
+      if (result.response) {
+        meshStore?.upsertPartialSnapshot?.(taskId, result.agent, String(result.response).slice(-200_000), {
+          operation: 'team', phase: `step-${stepIdx + 1}`, complete: true,
+        });
+      } else {
+        const partial = progressSnapshots.get(result.agent)?.text;
+        if (partial) {
+          meshStore?.upsertPartialSnapshot?.(taskId, result.agent, partial.slice(-200_000), {
+            operation: 'team', phase: `step-${stepIdx + 1}`, complete: false,
+          });
+        }
+      }
+    }
     stepResults.push(stepResult);
 
     // Accumulate for next steps
@@ -224,35 +297,145 @@ export async function executeA2ATeam(input, context) {
 function buildPeerHeaders(authToken = '') {
   return {
     'Content-Type': 'application/json',
+    [A2A_VERSION_HEADER]: A2A_PROTOCOL_VERSION,
     ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
   };
 }
 
-function extractPeerResponseText(data) {
-  const msg = data?.result?.status?.message;
-  return msg?.parts?.map(p => p.text).join('\n') || JSON.stringify(data?.result ?? data);
+function remoteCallError(message, { partial = '', remoteTaskId = null } = {}) {
+  const error = new Error(message);
+  error.partial = partial || '';
+  error.remoteTaskId = remoteTaskId;
+  return error;
 }
 
-async function callPeer(peer, prompt, metadata, authToken = '', timeoutMs = 1500000) {
+export async function callPeer(peer, prompt, metadata, authToken = '', timeoutMs = 1800000, {
+  signal: externalSignal,
+  onProgress,
+} = {}) {
   const body = JSON.stringify({
     message: { role: 'user', parts: [{ type: 'text', text: prompt }] },
     metadata,
   });
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error('Request timeout')), timeoutMs);
+  const deadline = Date.now() + timeoutMs;
+  let remoteTaskId = null;
+  let cancelPromise = null;
+  let timedOut = false;
+  let lastText = '';
+  const cancelKnownRemote = () => {
+    if (remoteTaskId && !cancelPromise) {
+      cancelPromise = cancelRemoteTask(peer, remoteTaskId, { authToken });
+    }
+    return cancelPromise;
+  };
+  const abortFromCaller = () => {
+    cancelKnownRemote();
+    controller.abort(externalSignal?.reason || new Error('Task canceled by caller'));
+  };
+  if (externalSignal?.aborted) abortFromCaller();
+  else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    cancelKnownRemote();
+    controller.abort(new Error('Request timeout'));
+  }, timeoutMs);
   try {
-    const response = await fetch(`${peer}/tasks/send`, {
+    const response = await fetch(`${peer}/tasks/sendSubscribe`, {
       method: 'POST',
       headers: buildPeerHeaders(authToken),
       body,
       signal: controller.signal,
     });
-    const raw = await response.text();
-    const parsed = JSON.parse(raw);
-    return extractPeerResponseText(parsed);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 2000)}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let eventType = '';
+    let eventData = '';
+    let finalTask = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      let progressBatch = '';
+      for (const rawLine of lines) {
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+        if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+        else if (line.startsWith('data: ')) eventData = line.slice(6);
+        else if (line === '' && eventData) {
+          try {
+            const data = JSON.parse(eventData);
+            remoteTaskId = data.id || remoteTaskId;
+            if (eventType === 'task-progress' && data.chunk) {
+              const chunk = String(data.chunk);
+              // task-progress is an exact delta, not a cumulative snapshot.
+              lastText += chunk;
+              progressBatch += chunk;
+            }
+            if (eventType === 'task-status' && ['completed', 'failed', 'canceled'].includes(data.status?.state)) {
+              finalTask = data;
+            }
+          } catch (error) {
+            if (process.env.A2A_DEBUG === 'true') {
+              console.warn('[team-executor] Ignored malformed peer SSE event', {
+                remoteTaskId,
+                eventType,
+                dataPreview: String(eventData).slice(0, 1000),
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+          eventType = '';
+          eventData = '';
+        }
+      }
+      if (progressBatch) onProgress?.(progressBatch, remoteTaskId);
+    }
+    const message = finalTask?.status?.message?.parts?.map(part => part.text).filter(Boolean).join('\n');
+    if (finalTask?.status?.state === 'completed' && message) return message;
+    if (finalTask?.status?.state) {
+      throw remoteCallError(message || `Remote task ${finalTask.status.state}`, { partial: lastText, remoteTaskId });
+    }
+    if (remoteTaskId && Date.now() < deadline) {
+      const recovered = await recoverRemoteTask(peer, remoteTaskId, { authToken, deadline, signal: controller.signal });
+      if (recovered.response) return recovered.response;
+      if (externalSignal?.aborted || /still running after the call timeout/i.test(recovered.error || '')) {
+        await cancelKnownRemote();
+      }
+      throw remoteCallError(recovered.error, { partial: lastText, remoteTaskId });
+    }
+    throw remoteCallError(
+      `Stream ended without terminal status${remoteTaskId ? ` (remote task ${remoteTaskId})` : ''}`,
+      { partial: lastText, remoteTaskId },
+    );
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      await cancelKnownRemote();
+      throw remoteCallError('Task canceled by caller', { partial: lastText, remoteTaskId });
+    }
+    if (timedOut) {
+      await cancelKnownRemote();
+      throw remoteCallError(`Timeout (${timeoutMs}ms)`, { partial: lastText, remoteTaskId });
+    }
+    if (remoteTaskId && !error?.remoteTaskId && Date.now() < deadline) {
+      const recovered = await recoverRemoteTask(peer, remoteTaskId, {
+        authToken, deadline, signal: controller.signal,
+      });
+      if (recovered.response) return recovered.response;
+      if (externalSignal?.aborted || /still running after the call timeout/i.test(recovered.error || '')) {
+        await cancelKnownRemote();
+      }
+      throw remoteCallError(recovered.error, { partial: lastText, remoteTaskId });
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -261,8 +444,9 @@ async function callPeer(peer, prompt, metadata, authToken = '', timeoutMs = 1500
  */
 async function executeTeamParallel(agents, prompt, metadata, {
   peers, selfId, selfUrl, authToken = '', timeoutMs = null, selfCallDepth = 0,
+  signal, onProgress, onPartial,
 }) {
-  const requestTimeoutMs = normalizeTimeoutMs(timeoutMs, 300000);
+  const requestTimeoutMs = normalizeTimeoutMs(timeoutMs, 1_800_000);
   const results = await Promise.all(agents.map(async (agent) => {
     const start = Date.now();
     try {
@@ -273,9 +457,13 @@ async function executeTeamParallel(agents, prompt, metadata, {
       const targetMetadata = agent === selfId
         ? { ...metadata, selfCallDepth: selfCallDepth + 1 }
         : metadata;
-      const responseText = await callPeer(targetUrl, prompt, targetMetadata, authToken, timeoutForAgent(agent, requestTimeoutMs));
+      const responseText = await callPeer(
+        targetUrl, prompt, targetMetadata, authToken, timeoutForAgent(agent, requestTimeoutMs),
+        { signal, onProgress: (text, remoteTaskId) => onProgress?.(agent, text, remoteTaskId) },
+      );
       return { agent, response: responseText, durationMs: Date.now() - start };
     } catch (err) {
+      if (err.partial) onPartial?.(agent, err.partial, err.remoteTaskId, err.message);
       return { agent, error: err.message, durationMs: Date.now() - start };
     }
   }));
@@ -287,8 +475,9 @@ async function executeTeamParallel(agents, prompt, metadata, {
  */
 async function executeTeamSequential(agents, prompt, metadata, {
   peers, selfId, selfUrl, authToken = '', timeoutMs = null, selfCallDepth = 0,
+  signal, onProgress, onPartial,
 }) {
-  const requestTimeoutMs = normalizeTimeoutMs(timeoutMs, 120000);
+  const requestTimeoutMs = normalizeTimeoutMs(timeoutMs, 1_800_000);
   const results = [];
   let withinStepContext = '';
 
@@ -315,7 +504,10 @@ async function executeTeamSequential(agents, prompt, metadata, {
       const targetMetadata = agent === selfId
         ? { ...metadata, selfCallDepth: selfCallDepth + 1 }
         : metadata;
-      const responseText = await callPeer(targetUrl, agentPrompt, targetMetadata, authToken, timeoutForAgent(agent, requestTimeoutMs));
+      const responseText = await callPeer(
+        targetUrl, agentPrompt, targetMetadata, authToken, timeoutForAgent(agent, requestTimeoutMs),
+        { signal, onProgress: (text, remoteTaskId) => onProgress?.(agent, text, remoteTaskId) },
+      );
 
       results.push({ agent, response: responseText, durationMs: Date.now() - start });
       withinStepContext = truncateForPrompt(
@@ -324,6 +516,7 @@ async function executeTeamSequential(agents, prompt, metadata, {
         'within-step team context',
       );
     } catch (err) {
+      if (err.partial) onPartial?.(agent, err.partial, err.remoteTaskId, err.message);
       results.push({ agent, error: err.message, durationMs: Date.now() - start });
       withinStepContext += `**${agent}**: (error: ${err.message})\n\n`;
     }

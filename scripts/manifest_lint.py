@@ -352,6 +352,20 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     if collegiate:
         if collegiate.get("contract") != "decisao_colegiada_v1":
             errors.append("collegiate_decision.contract deve ser decisao_colegiada_v1")
+        if collegiate.get("analytic_schema") != "decisao_colegiada_v2":
+            errors.append("collegiate_decision.analytic_schema deve ser decisao_colegiada_v2")
+        if set(collegiate.get("tally_methods", [])) != {
+            "global", "analitico", "hibrido"
+        }:
+            errors.append("collegiate_decision.tally_methods diverge do contrato")
+        if collegiate.get("default_tally_method") != "global":
+            errors.append("global deve ser o método de apuração padrão")
+        if collegiate.get("analytic_dependency_graph") != "single_parent_forest":
+            errors.append("a apuração analítica deve usar floresta de pai único")
+        if collegiate.get("analytic_max_reachable_worlds") != 4096:
+            errors.append("o limite analítico deve ser 4096 mundos alcançáveis")
+        if collegiate.get("hybrid_confirmation_policy") != "bloqueante":
+            errors.append("a confirmação híbrida deve ser bloqueante")
         if set(collegiate.get("modalities", [])) != {
             "seriatim", "per_curiam", "opinion_of_court"
         }:

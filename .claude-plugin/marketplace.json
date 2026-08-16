@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Plugins locais de colaboração e consenso multiagente",
-    "version": "1.8.0+codex.20260815195643"
+    "version": "1.9.0+codex.20260816011508"
   },
   "plugins": [
     {
       "name": "multiagente-consensual",
       "description": "Debate, consenso, loops de melhoria, ensemble, workflows e redação jurídica com redline DOCX.",
       "source": "./",
-      "version": "1.8.0+codex.20260815195643",
+      "version": "1.9.0+codex.20260816011508",
       "author": {
         "name": "Nicholas Jacob"
       },

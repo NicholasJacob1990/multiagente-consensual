@@ -1,6 +1,7 @@
 node_modules/
 packages/*/node_modules/
 *.tgz
+cowork/*.plugin
 .DS_Store
 .pytest_cache/
 __pycache__/

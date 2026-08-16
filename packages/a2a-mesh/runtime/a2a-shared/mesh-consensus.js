@@ -35,14 +35,6 @@ function normalizeMeshChain(meshChain) {
   return normalized;
 }
 
-function appendSelfToMeshChain(meshChain, selfId) {
-  const normalized = normalizeMeshChain(meshChain);
-  if (normalized[normalized.length - 1] !== selfId) {
-    normalized.push(selfId);
-  }
-  return normalized;
-}
-
 /**
  * Create a consensus executor.
  *
@@ -56,7 +48,7 @@ function appendSelfToMeshChain(meshChain, selfId) {
  */
 export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '', peerDiscovery = null, selfResponder = null }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
-  const DEFAULT_CONSENSUS_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_CONSENSUS_MS, 2400000); // 40 min
+  const DEFAULT_CONSENSUS_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_CONSENSUS_MS, 1800000); // 30 min per model call
   const MAX_SELF_CALL_DEPTH = normalizePositiveInt(process.env.A2A_MAX_SELF_CALL_DEPTH, 3);
 
   /**
@@ -105,9 +97,10 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       depth: 1,
       // Keep parent chain as-is; mesh caller appends selfId per hop.
       meshChain: [...parentChain],
-      taskId: `consensus-${consensusId}`,
+      taskId: callContext.taskId || `consensus-${consensusId}`,
       selfCallDepth: parentSelfCallDepth,
       timeoutMs,
+      signal: callContext.signal,
     };
 
     const emitDialogue = (phase, agent, role, text, extra = {}) => {
@@ -196,6 +189,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
           meshChain: [...context.meshChain],
           taskId: context.taskId,
           selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
       );
       synthesis = parseJudgeResponse(judgeResponse, rawResults);
@@ -286,35 +280,20 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
       if (context.selfCallDepth >= MAX_SELF_CALL_DEPTH) {
         return { agent: selfId, response: null, durationMs: Date.now() - start, error: `max self-call depth exceeded (${MAX_SELF_CALL_DEPTH})` };
       }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const resp = await fetch(`${resolvedSelfUrl}/tasks/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      const response = await meshCaller.executeA2ACall(
+        { agent: selfId, prompt, timeout_ms: timeoutMs },
+        {
+          depth: 1,
+          meshChain: [...context.meshChain],
+          taskId: context.taskId,
+          selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
-        body: JSON.stringify({
-          message: { role: 'user', parts: [{ type: 'text', text: prompt }] },
-          metadata: {
-            maxDepth: 0,
-            calledBy: selfId,
-            meshChain: appendSelfToMeshChain(context.meshChain, selfId),
-            skipSelfCall: true,
-            selfCallDepth: context.selfCallDepth + 1,
-          },
-        }),
-        signal: controller.signal,
-      });
-      // NOTE: do NOT clearTimeout before resp.json() — the body read can also hang.
-      // The AbortController must cover the entire operation (fetch + body read).
-      const data = await resp.json();
-      clearTimeout(timeout);
-      const msg = data.result?.status?.message;
-      const text = msg?.parts?.map(p => p.text).join('\n');
-      if (text) return { agent: selfId, response: text, durationMs: Date.now() - start, error: null };
-      return { agent: selfId, response: JSON.stringify(data.result ?? data), durationMs: Date.now() - start, error: null };
+      );
+      if (isMeshErrorText(response)) {
+        return { agent: selfId, response: null, durationMs: Date.now() - start, error: String(response) };
+      }
+      return { agent: selfId, response: String(response), durationMs: Date.now() - start, error: null };
     } catch (err) {
       return { agent: selfId, response: null, durationMs: Date.now() - start, error: err.message };
     }
@@ -336,6 +315,7 @@ export function createConsensusExecutor({ meshCaller, peers, selfId, maxDepth, m
           meshChain: [...context.meshChain],
           taskId: context.taskId,
           selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
       );
 

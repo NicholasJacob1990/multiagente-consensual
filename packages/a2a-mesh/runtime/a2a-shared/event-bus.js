@@ -25,11 +25,23 @@ export class MeshEventBus extends EventEmitter {
     this._reconnectTimers = new Map();
   }
 
+  _markDelivered(client, key) {
+    if (!key) return true;
+    if (client._deliveredEventKeys.has(key)) return false;
+    client._deliveredEventKeys.add(key);
+    client._deliveredEventOrder.push(key);
+    while (client._deliveredEventOrder.length > 10_000) {
+      client._deliveredEventKeys.delete(client._deliveredEventOrder.shift());
+    }
+    return true;
+  }
+
   /**
-   * Publish an event — writes to SQLite + sends to all local SSE subscribers.
-   * Only sends to non-peer SSE clients to prevent amplification loops.
+   * Publish an event — writes to SQLite + sends it to dashboards and peer
+   * subscribers. A receiving peer only forwards to its own dashboards; it
+   * never calls publish(), which is the actual loop-prevention boundary.
    */
-  publish(event) {
+  publish(event, { persist = true } = {}) {
     const fullEvent = {
       ...event,
       server: this.selfId,
@@ -37,9 +49,23 @@ export class MeshEventBus extends EventEmitter {
     };
 
     // Write to SQLite
-    if (this.store && event.taskId) {
+    let eventId = null;
+    let dropped = false;
+    if (persist && this.store && event.taskId) {
       try {
-        this.store.createEvent(event.taskId, event.type, this.selfId, event.payload || {});
+        if (typeof this.store.createEventDetailed === 'function') {
+          const persisted = this.store.createEventDetailed(
+            event.taskId, event.type, this.selfId, event.payload || {},
+          );
+          eventId = persisted.id;
+          dropped = persisted.dropped;
+          if (persisted.gapPayload) {
+            fullEvent.type = 'mesh_gap';
+            fullEvent.payload = persisted.gapPayload;
+          }
+        } else {
+          eventId = this.store.createEvent(event.taskId, event.type, this.selfId, event.payload || {});
+        }
       } catch (err) {
         console.warn('[mesh:event-bus] Failed to persist mesh event', {
           taskId: event.taskId,
@@ -49,17 +75,20 @@ export class MeshEventBus extends EventEmitter {
         });
       }
     }
+    if (dropped && !eventId) return null;
+    if (eventId) fullEvent.eventId = eventId;
 
     // Emit locally (for in-process listeners)
     this.emit('event', fullEvent);
 
-    // Push to non-peer SSE clients only (dashboards, external tools)
-    // Peers receive events via their _connectToPeer subscription, not via publish()
-    const payload = `event: mesh-event\ndata: ${JSON.stringify(fullEvent)}\n\n`;
+    // Push to dashboards, external tools and peer subscribers. Peer receivers
+    // do not re-publish, so an event traverses at most one peer hop.
+    const payload = `${eventId ? `id: ${eventId}\n` : ''}event: mesh-event\ndata: ${JSON.stringify(fullEvent)}\n\n`;
     for (const client of this.sseClients) {
-      if (client._isPeerConnection) continue;
       try {
-        client.write(payload);
+        const dedupeKey = eventId ? `${this.selfId}:${eventId}` : null;
+        if (client._replaying) client._pendingMeshEvents.push({ payload, dedupeKey });
+        else if (this._markDelivered(client, dedupeKey)) client.write(payload);
       } catch (err) {
         console.warn('[mesh:event-bus] Failed to write event payload to SSE client', {
           server: this.selfId,
@@ -83,18 +112,86 @@ export class MeshEventBus extends EventEmitter {
       'Access-Control-Allow-Origin': '*',
     });
 
-    res.write(`: connected to ${this.selfId}\n\n`);
     // Mark peer connections to prevent event amplification loops
     const url = new URL(req.url, 'http://localhost');
     res._isPeerConnection = url.searchParams.get('peer') === 'true';
+    res._replaying = true;
+    res._pendingMeshEvents = [];
+    res._replayedEventKeys = new Set();
+    res._deliveredEventKeys = new Set();
+    res._deliveredEventOrder = [];
     this.sseClients.add(res);
+
+    // Dashboard reconnects can request a durable replay by SQLite event id.
+    // Peer links intentionally skip replay to avoid propagating old events.
+    if (!res._isPeerConnection && this.store) {
+      const headerId = Number.parseInt(String(req.headers['last-event-id'] || ''), 10);
+      const queryId = Number.parseInt(String(url.searchParams.get('after') || ''), 10);
+      const afterId = Number.isFinite(headerId) ? headerId : (Number.isFinite(queryId) ? queryId : 0);
+      if (afterId > 0) {
+        try {
+          const configuredLimit = Number.parseInt(process.env.MESH_SSE_REPLAY_MAX || '1000', 10);
+          const replayLimit = Number.isFinite(configuredLimit)
+            ? Math.max(1, configuredLimit)
+            : 1_000;
+          const pageSize = Math.min(1000, replayLimit);
+          let cursor = afterId;
+          let replayedCount = 0;
+          while (replayedCount < replayLimit) {
+            const limit = Math.min(pageSize, replayLimit - replayedCount);
+            const missed = this.store.getTimeline({ afterId: cursor, order: 'asc', limit });
+            for (const item of missed) {
+              const replay = {
+                taskId: item.task_id,
+                type: item.event_type,
+                payload: item.payload,
+                server: item.server,
+                timestamp: item.created_at,
+                eventId: item.id,
+                replayed: true,
+              };
+              res.write(`id: ${item.id}\nevent: mesh-event\ndata: ${JSON.stringify(replay)}\n\n`);
+              const replayKey = `${item.server}:${item.id}`;
+              res._replayedEventKeys.add(replayKey);
+              this._markDelivered(res, replayKey);
+              cursor = item.id;
+              replayedCount += 1;
+            }
+            if (missed.length < limit) break;
+          }
+          const more = this.store.getTimeline({ afterId: cursor, order: 'asc', limit: 1 });
+          if (more.length > 0) {
+            res.write(`event: mesh-gap\ndata: ${JSON.stringify({
+              fromEventId: afterId,
+              nextAfterId: cursor,
+              replayLimit,
+              message: 'Replay limit reached; request the remaining timeline pages.',
+            })}\n\n`);
+          }
+        } catch (err) {
+          console.warn('[mesh:event-bus] Failed to replay missed events', { error: formatError(err), afterId });
+        }
+      }
+    }
+    res._replaying = false;
+    for (const pending of res._pendingMeshEvents) {
+      if (!pending.dedupeKey || (
+        !res._replayedEventKeys.has(pending.dedupeKey)
+        && this._markDelivered(res, pending.dedupeKey)
+      )) {
+        res.write(pending.payload);
+      }
+    }
+    res._pendingMeshEvents.length = 0;
+    res._replayedEventKeys.clear();
+    res.write(`: connected to ${this.selfId}\n\n`);
 
     // Heartbeat every 30s to keep connection alive
     const heartbeat = setInterval(() => {
       try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
     }, 30000);
 
-    req.on('close', () => {
+    res.on('close', () => {
       this.sseClients.delete(res);
       clearInterval(heartbeat);
     });
@@ -148,11 +245,15 @@ export class MeshEventBus extends EventEmitter {
 
                 // Forward ONLY to non-peer SSE clients (dashboards, external)
                 // Skip peer connections to prevent event amplification loops
+                // A peer's numeric event id is namespaced and must not become
+                // EventSource's global Last-Event-ID cursor for this server.
                 const payload = `event: peer-event\ndata: ${JSON.stringify({ peerId, ...event })}\n\n`;
                 for (const client of this.sseClients) {
                   if (client._isPeerConnection) continue; // skip peers
                   try {
-                    client.write(payload);
+                    const dedupeKey = event.eventId ? `${event.server || peerId}:${event.eventId}` : null;
+                    if (client._replaying) client._pendingMeshEvents.push({ payload, dedupeKey });
+                    else if (this._markDelivered(client, dedupeKey)) client.write(payload);
                   } catch (err) {
                     console.warn('[mesh:event-bus] Failed to forward peer event to SSE client', {
                       peerId,

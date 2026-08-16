@@ -144,6 +144,7 @@ async function callAgent({ meshCaller, agent, prompt, context, timeoutMs }) {
       meshChain: [...context.meshChain],
       taskId: context.taskId,
       selfCallDepth: context.selfCallDepth,
+      signal: context.signal,
     },
   );
   return result;
@@ -175,8 +176,9 @@ export function createPlanExecutor({ meshCaller, peers, selfId, maxDepth, meshSt
     const context = {
       depth: (callContext.depth ?? maxDepth) - 1,
       meshChain: callContext.meshChain || [],
-      taskId: `plan-${planId}`,
+      taskId: callContext.taskId || `plan-${planId}`,
       selfCallDepth: callContext.selfCallDepth || 0,
+      signal: callContext.signal,
     };
     const { prompt: descriptionForPrompt } = enrichPromptIfContinuation(description, { meshChain: context.meshChain, threadId }, meshStore);
 
@@ -228,6 +230,7 @@ Seja específico, técnico, sem generalidades. Cite arquivos/linhas quando relev
     const roundLog = [];
 
     for (let r = 1; r <= rounds; r++) {
+      context.signal?.throwIfAborted();
       actualRound = r;
       const persona = pickPersona(r, lensList);
 

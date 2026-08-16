@@ -4,6 +4,8 @@
 
 import { TERMINAL_STATES } from './task-states.js';
 import { mergeRequestTaskMetadata } from './provider-session.js';
+import { recoverPartialArtifacts } from './partial-output.js';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Create an RPC adapter that translates JSON-RPC 2.0 requests to internal handlers.
@@ -29,6 +31,30 @@ export function createRPCAdapter(ctx) {
     teamExecutor, consensusExecutor, ensembleExecutor, debateExecutor, planExecutor,
     maxDepth, selfId, peers, push, authToken = '',
   } = ctx;
+
+  const DEFAULT_ASYNC_OPERATION_TIMEOUT_MS = 86_400_000; // 24 h
+  const MAX_ASYNC_OPERATION_TIMEOUT_MS = 432_000_000; // 5 days
+
+  function asyncOperationTimeout(params = {}) {
+    const configuredDefault = Number.parseInt(
+      process.env.A2A_MESH_OPERATION_TIMEOUT_MS || String(DEFAULT_ASYNC_OPERATION_TIMEOUT_MS),
+      10,
+    );
+    const fallback = Number.isFinite(configuredDefault) && configuredDefault > 0
+      ? configuredDefault
+      : DEFAULT_ASYNC_OPERATION_TIMEOUT_MS;
+    const requested = Number.parseInt(String(params.operation_timeout_ms ?? fallback), 10);
+    return Math.min(
+      MAX_ASYNC_OPERATION_TIMEOUT_MS,
+      Math.max(60_000, Number.isFinite(requested) ? requested : fallback),
+    );
+  }
+
+  function taskInputPreview(methodName, params = {}) {
+    const value = params.prompt || params.topic || params.task || params.description
+      || params.name || methodName;
+    return String(value).slice(0, 20_000);
+  }
 
   function clampDepth(value) {
     const parsed = Number.parseInt(String(value ?? maxDepth), 10);
@@ -176,8 +202,18 @@ export function createRPCAdapter(ctx) {
     if (TERMINAL_STATES.has(task.status.state)) {
       throw rpcError(-32000, `Cannot cancel task in '${task.status.state}' state`);
     }
+    const partial = recoverPartialArtifacts(meshStore, task.id);
     abortTaskExecution(task, 'Task cancelled by user');
-    tm.updateTask(task, { status: { state: 'canceled' } });
+    tm.updateTask(task, {
+      status: {
+        state: 'canceled',
+        message: { role: 'agent', parts: [{
+          type: 'text',
+          text: `Task canceled by user.${partial.length ? ' Saída parcial preservada em partial-output.md.' : ''}`,
+        }] },
+      },
+      artifacts: [...task.artifacts, ...partial],
+    });
     return tm.taskToJSON(task);
   }
 
@@ -246,34 +282,37 @@ export function createRPCAdapter(ctx) {
   }
 
   // Mesh handlers
-  async function handleMeshCall(params) {
+  async function handleMeshCall(params, execution = {}) {
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     return meshCaller.executeA2ACall({ agent: params.agent, prompt: params.prompt, timeout_ms: params.timeout_ms }, mctx);
   }
 
-  async function handleMeshBroadcast(params) {
+  async function handleMeshBroadcast(params, execution = {}) {
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     const includeSelf = params.includeSelf === true;
     return meshCaller.executeA2ABroadcast({ prompt: params.prompt, agents: params.agents, includeSelf, timeout_ms: params.timeout_ms }, mctx);
   }
 
-  async function handleMeshTeam(params) {
+  async function handleMeshTeam(params, execution = {}) {
     if (!teamExecutor) throw rpcError(-32601, 'Team executor not available');
     const mctx = {
       depth: clampDepth(params.depth), meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
       selfId, peers, meshBus, authToken,
+      signal: execution.signal,
     };
     return teamExecutor({
       name: params.name,
@@ -285,46 +324,50 @@ export function createRPCAdapter(ctx) {
     }, mctx);
   }
 
-  async function handleMeshConsensus(params) {
+  async function handleMeshConsensus(params, execution = {}) {
     if (!consensusExecutor) throw rpcError(-32601, 'Consensus executor not available');
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     return consensusExecutor.execute(params, mctx);
   }
 
-  async function handleMeshEnsemble(params) {
+  async function handleMeshEnsemble(params, execution = {}) {
     if (!ensembleExecutor) throw rpcError(-32601, 'Code ensemble executor not available');
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     return ensembleExecutor.execute(params, mctx);
   }
 
-  async function handleMeshDebate(params) {
+  async function handleMeshDebate(params, execution = {}) {
     if (!debateExecutor) throw rpcError(-32601, 'Debate executor not available');
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     return debateExecutor.execute(params, mctx);
   }
 
-  async function handleMeshPlan(params) {
+  async function handleMeshPlan(params, execution = {}) {
     if (!planExecutor) throw rpcError(-32601, 'Plan executor not available');
     const mctx = {
       depth: clampDepth(params.depth),
       meshChain: params.meshChain || [],
       taskId: params.taskId || `rpc-${Date.now()}`,
       selfCallDepth: params.selfCallDepth || 0,
+      signal: execution.signal,
     };
     return planExecutor.execute(params, mctx);
   }
@@ -339,16 +382,61 @@ export function createRPCAdapter(ctx) {
   }
 
   function createAsyncMeshTask(methodName, params, runner) {
+    const requestId = String(params?.request_id || '').trim();
+    if (requestId) {
+      const existing = [...tm.tasks.values()].find((candidate) =>
+        candidate.metadata?.requestId === requestId
+        && candidate.metadata?.type === methodName,
+      );
+      if (existing) {
+        return { id: existing.id, status: existing.status, reused: true, requestId, coordinator: selfId };
+      }
+    }
+
     if (tm.getActiveTasks().length >= tm.maxConcurrent) {
       throw rpcError(-32000, `Too many concurrent tasks (max ${tm.maxConcurrent})`);
     }
     tm.evictOldTasks();
 
+    const operationTimeoutMs = asyncOperationTimeout(params);
+
     const message = {
       role: 'user',
-      parts: [{ type: 'text', text: `[${methodName}] ${params?.prompt || ''}` }],
+      parts: [{ type: 'text', text: `[${methodName}] ${taskInputPreview(methodName, params)}` }],
     };
-    const task = tm.createTask(message, mergeRequestTaskMetadata(params, { type: methodName }));
+    const reservedTaskId = randomUUID();
+    let claimed = false;
+    if (requestId && meshStore?.claimIdempotency) {
+      const claim = meshStore.claimIdempotency(methodName, requestId, reservedTaskId);
+      if (!claim.claimed) {
+        const existing = meshStore.getIdempotentTask(methodName, requestId);
+        if (existing?.reservationOnly) {
+          throw rpcError(
+            -32009,
+            `Idempotency reservation ${requestId} is pending without a task; retry after the reservation TTL`,
+          );
+        }
+        return {
+          id: claim.taskId,
+          status: { state: existing?.state || 'submitted' },
+          reused: true,
+          requestId,
+          coordinator: existing?.originServer || selfId,
+        };
+      }
+      claimed = true;
+    }
+    let task;
+    try {
+      task = tm.createTask(message, mergeRequestTaskMetadata(params, {
+        type: methodName,
+        requestId: requestId || undefined,
+        operationTimeoutMs,
+      }), reservedTaskId);
+    } catch (error) {
+      if (claimed) meshStore.releaseIdempotency(methodName, requestId, reservedTaskId);
+      throw error;
+    }
     const controller = ensureTaskAbortController(task);
 
     let timeoutId;
@@ -356,6 +444,7 @@ export function createRPCAdapter(ctx) {
       .then(async () => {
         tm.updateTask(task, { status: { state: 'working' } });
         const result = await runner(task);
+        if (TERMINAL_STATES.has(task.status.state)) return;
         const text = formatAsyncResultText(result);
         const agentMessage = { role: 'agent', parts: [{ type: 'text', text }] };
         tm.updateTask(task, {
@@ -364,11 +453,16 @@ export function createRPCAdapter(ctx) {
         });
       })
       .catch((err) => {
+        if (TERMINAL_STATES.has(task.status.state)) return;
         const msg = err instanceof Error ? err.message : String(err);
-        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro: ${msg}` }] };
+        const partial = recoverPartialArtifacts(meshStore, task.id);
+        const retained = partial.length > 0 ? ' Saída parcial preservada em partial-output.md.' : '';
+        const suffix = /[.!?]$/.test(msg) ? '' : '.';
+        const errorMessage = { role: 'agent', parts: [{ type: 'text', text: `Erro: ${msg}${suffix}${retained}` }] };
         tm.updateTask(task, {
           status: { state: 'failed', message: errorMessage },
           history: [...task.history, errorMessage],
+          artifacts: [...task.artifacts, ...partial],
         });
       })
       .finally(() => {
@@ -377,58 +471,69 @@ export function createRPCAdapter(ctx) {
 
     timeoutId = setTimeout(() => {
       if (task.status.state === 'working' || task.status.state === 'submitted') {
-        abortTaskExecution(task, `Task timed out after ${taskTimeoutMs}ms`);
+        const partial = recoverPartialArtifacts(meshStore, task.id);
+        abortTaskExecution(task, `Task timed out after ${operationTimeoutMs}ms`);
         tm.updateTask(task, {
           status: {
             state: 'failed',
-            message: { role: 'agent', parts: [{ type: 'text', text: `Timeout: ${taskTimeoutMs / 60000} min` }] },
+            message: { role: 'agent', parts: [{
+              type: 'text',
+              text: `Timeout da operação: ${Math.round(operationTimeoutMs / 60000)} min.${partial.length ? ' Saída parcial preservada em partial-output.md.' : ''}`,
+            }] },
           },
+          artifacts: [...task.artifacts, ...partial],
         });
       }
-    }, taskTimeoutMs);
+    }, operationTimeoutMs);
 
-    return { id: task.id, status: task.status };
+    return {
+      id: task.id,
+      status: task.status,
+      requestId: requestId || null,
+      operationTimeoutMs,
+      coordinator: selfId,
+    };
   }
 
   function handleMeshCallAsync(params) {
     return createAsyncMeshTask('mesh/call', params, (task) =>
-      handleMeshCall({ ...params, taskId: task.id }),
+      handleMeshCall({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshBroadcastAsync(params) {
     return createAsyncMeshTask('mesh/broadcast', params, (task) =>
-      handleMeshBroadcast({ ...params, taskId: task.id }),
+      handleMeshBroadcast({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshTeamAsync(params) {
     return createAsyncMeshTask('mesh/team', params, (task) =>
-      handleMeshTeam({ ...params, taskId: task.id }),
+      handleMeshTeam({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshConsensusAsync(params) {
     return createAsyncMeshTask('mesh/consensus', params, (task) =>
-      handleMeshConsensus({ ...params, taskId: task.id }),
+      handleMeshConsensus({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshEnsembleAsync(params) {
     return createAsyncMeshTask('mesh/ensemble', params, (task) =>
-      handleMeshEnsemble({ ...params, taskId: task.id }),
+      handleMeshEnsemble({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshDebateAsync(params) {
     return createAsyncMeshTask('mesh/debate', params, (task) =>
-      handleMeshDebate({ ...params, taskId: task.id }),
+      handleMeshDebate({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 
   function handleMeshPlanAsync(params) {
     return createAsyncMeshTask('mesh/plan', params, (task) =>
-      handleMeshPlan({ ...params, taskId: task.id }),
+      handleMeshPlan({ ...params, taskId: task.id }, { signal: task._abortController?.signal }),
     );
   }
 

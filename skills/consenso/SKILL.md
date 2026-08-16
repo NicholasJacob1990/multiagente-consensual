@@ -1,6 +1,6 @@
 ---
 name: consenso
-description: "Orquestrar deliberação configurável sobre arquivos locais entre modelos escolhidos caso a caso, com governança do artefato canônico, consenso verificável, decisão ou dissenso explícito e formação colegiada seriatim, per curiam ou opinion of the court. Usar com /consenso, $consenso, conselho multi-CLI, crítica–réplica–revisão, decisão colegiada, acórdão, votos, comparação de arquivos ou seleção de modelos em linguagem natural."
+description: "Orquestrar deliberação configurável sobre arquivos locais entre modelos escolhidos caso a caso, com governança do artefato canônico, consenso verificável, decisão ou dissenso explícito e formação colegiada seriatim, per curiam ou opinion of the court, por apuração global, analítica ou híbrida. Usar com /consenso, $consenso, conselho multi-CLI, crítica–réplica–revisão, decisão colegiada, votação case-by-case ou issue-by-issue, acórdão, votos, comparação de arquivos ou seleção de modelos em linguagem natural."
 ---
 
 # Consenso multi-CLI
@@ -39,13 +39,15 @@ Exemplos:
 /consenso Claude redige a primeira versão, Codex critica e Gemini consolida as correções
 /consenso avalie separadamente as duas consolidações finais cegas; não escolha nem combine automaticamente
 /consenso forme uma opinion of the court, apure adesão por fundamento e publique votos concorrentes e dissidentes
+/consenso vote o recurso questão por questão e derive o resultado; informe maiorias cruzadas
+/consenso use critério híbrido: vote as questões e só proclame após confirmação bloqueante do dispositivo derivado
 ```
 
 Quando o pedido incluir produção e melhoria sucessiva de um artefato, usar também `$loop-debate-agentes`. O debate desta skill é a camada deliberativa interna; tentativas de redação, painel quantitativo e auditoria cega pertencem ao loop externo.
 
 ## Confirmar antes de executar
 
-Antes da primeira chamada externa, interpretar o pedido e mostrar **Entendi assim** com: modo deliberativo, política por tentativa, efeito na aprovação, eventual formação colegiada com modalidade, regra do resultado, quórum, adesão aos fundamentos, ratio e votos separados, participantes, redator inicial, política das correções, eventual consolidador designado, decisor, estabilidade, rodadas por tentativa, ciclo de melhoria, tentativas máximas, meta média, piso por critério, consolidação final, auditoria final e persistência das sessões nativas. Esperar confirmação explícita.
+Antes da primeira chamada externa, interpretar o pedido e mostrar **Entendi assim** com: modo deliberativo, política por tentativa, efeito na aprovação, eventual formação colegiada com modalidade, método de apuração (`global`, `analitico` ou `hibrido`), regra do resultado, quórum, questões e derivação quando aplicáveis, confirmação bloqueante no híbrido, adesão aos fundamentos, ratio e votos separados, participantes, redator inicial, política das correções, eventual consolidador designado, decisor, estabilidade, rodadas por tentativa, ciclo de melhoria, tentativas máximas, meta média, piso por critério, consolidação final, auditoria final e persistência das sessões nativas. Esperar confirmação explícita.
 
 Menções como `@Estrategista` identificam agentes cadastrados. Resolver seu CLI, modelo e provedor sem confundir o nome do agente com o do modelo. Se uma associação indispensável não puder ser descoberta localmente, mostrar o campo como não fixado e pedir somente a informação faltante.
 
@@ -72,7 +74,9 @@ Nunca chamar maioria, votação, recomendação consultiva ou decisão de consen
 
 Quando houver pedido de acórdão, votos, decisão colegiada, `seriatim`, `per curiam` ou `opinion of the court`, ler integralmente `../loop-debate-agentes/references/decisao-colegiada.md`. Resolver essa camada separadamente do modo de consenso. Por padrão apenas para pedidos colegiados, propor `opinion_of_court`, maioria simples, adesão por proposição e publicação dos votos concorrentes e dissidentes.
 
-Congelar o mesmo hash, decompor fundamentos candidatos em proposições, colher dispositivo e adesões de cada cadeira e validar a proclamação com `scripts/collegiate_gate.py`. Uma maioria pode formar decisão colegiada sem formar consenso. Se houver maioria no resultado sem fundamento essencial comum, registrar `ratio_status = somente_resultado`; quando `ratio_exigida = true`, devolver o ponto ao loop. Nunca ocultar dissenso do recibo de auditoria.
+Resolver `metodo_apuracao` separadamente da modalidade. Usar `global` e `decisao_colegiada_v1` por padrão: cada cadeira vota no dispositivo. Ativar `analitico` ou `hibrido` e `decisao_colegiada_v2` somente por pedido explícito de votar por questões, premissa a premissa ou confirmar o derivado. Não inferir o modo analítico de “acórdão”, “preliminares” ou “opinião da corte” isoladamente.
+
+Congelar o mesmo hash. No global, decompor fundamentos em proposições e colher dispositivo e adesões. No analítico, congelar questões, floresta de dependências e regras de derivação antes das cédulas; publicar o dispositivo derivado, o resultado por cadeira, as coalizões por questão e qualquer `paradoxo_doutrinario`. No híbrido, exigir ainda confirmação bloqueante em segundo ato. Validar a proclamação com `scripts/collegiate_gate.py`. Uma maioria pode formar decisão colegiada sem formar consenso. Se não houver maioria aderente ao pacote derivado, registrar `ratio_status = somente_resultado`; quando `ratio_exigida = true`, devolver o ponto ao loop. Nunca ocultar dissenso do recibo de auditoria.
 
 ## Resolver a configuração
 
@@ -87,6 +91,7 @@ Aplicar estes padrões, salvo pedido explícito:
 - saída: `adaptive_up_to_native_max`, sem obrigação de preencher o teto;
 - acesso técnico: integral e irrestrito dentro das permissões da conta do sistema;
 - idioma: o do usuário.
+- método de apuração colegiada: `global`; analítico ou híbrido somente por confirmação explícita;
 
 Aceitar configurações como “3 rodadas”, “até 10 rodadas”, “um ciclo”, “quatro ciclos”, “somente Claude e Grok” ou “você também participa”. Limites:
 

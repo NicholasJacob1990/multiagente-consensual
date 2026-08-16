@@ -52,19 +52,19 @@ cada etapa e o que o resultado realmente significa.
 
 ## Sumário
 
-1. [Como usar em qualquer CLI](#1-como-usar-em-qualquer-cli)
-2. [Mapa geral e escolha rápida](#2-mapa-geral-e-escolha-rápida)
-3. [Conceitos essenciais](#3-conceitos-essenciais)
-4. [Comandos A2A Mesh](#4-comandos-a2a-mesh)
-5. [Conselhos, debates e consenso](#5-conselhos-debates-e-consenso)
-6. [Criação e aprovação de artefatos](#6-criação-e-aprovação-de-artefatos)
-7. [Workflows formais](#7-workflows-formais)
-8. [Histórico do Agent Council](#8-histórico-do-agent-council)
-9. [Agentes nomeados no OpenCode](#9-agentes-nomeados-no-opencode)
-10. [Receitas completas](#10-receitas-completas)
-11. [Limites, falhas e solução de problemas](#11-limites-falhas-e-solução-de-problemas)
-12. [Referência rápida dos 29 comandos](#12-referência-rápida-dos-29-comandos)
-13. [Uso no Claude Cowork](#13-uso-no-claude-cowork)
+1. Como usar em qualquer CLI
+2. Mapa geral e escolha rápida
+3. Conceitos essenciais
+4. Comandos A2A Mesh
+5. Conselhos, debates e consenso
+6. Criação e aprovação de artefatos
+7. Workflows formais
+8. Histórico do Agent Council
+9. Agentes nomeados no OpenCode
+10. Receitas completas
+11. Limites, falhas e solução de problemas
+12. Referência rápida dos 29 comandos
+13. Uso no Claude Cowork
 
 ## 1. Como usar em qualquer CLI
 
@@ -142,6 +142,7 @@ Estratégia: consenso estrito dentro do loop
 Modo deliberativo: estrito
 Política por tentativa: sempre
 Formação colegiada: não ativa
+Método de apuração: não aplicável
 Redator: Claude
 Crítico: Codex
 Auditor: Gemini em sessão nova
@@ -174,7 +175,11 @@ unanimidade apenas no dispositivo, decisão de terceiro e booleanos declaratóri
 consenso. A HMAC protege a integridade documental e o antirreplay; com shell irrestrito no mesmo
 usuário, não substitui isolamento por conta, contêiner ou sandbox de sistema operacional.
 Fora do consenso estrito, um gate colegiado forte exige ainda o arquivo real e um recibo HMAC por
-voto, vinculado à cadeira, ao hash e à opção. Sem isso, a apuração é apenas `formation_only`.
+voto. No método global, ele se vincula à opção; no analítico, ao vetor de respostas, às questões e
+à tabela congelada; no híbrido, há um segundo recibo cujo hash cobre cadeira, booleano
+`confirma`, eventual fundamento de divergência, dispositivo derivado e política de confirmação.
+Alterar a confirmação sem novo ato assinado falha fechado. Sem essas provas, a apuração é apenas
+`formation_only`.
 
 ### 1.4 Arquitetura simplificada, sem perda de comandos
 
@@ -366,6 +371,20 @@ pedido envolver colegiado, acórdão, votos ou uma modalidade expressa.
 | `per_curiam` | O colegiado publica texto institucional impessoal | opinião única, com dissensos preservados e publicados conforme a política |
 | `opinion_of_court` | Uma coalizão majoritária adere à opinião principal | opinião da maioria, votos concorrentes e votos dissidentes |
 
+Modalidade e critério de apuração são escolhas diferentes. A modalidade define
+como o colegiado fala; o critério define **o que cada cadeira vota**:
+
+| Critério | Objeto do voto | Contrato | Resultado |
+|---|---|---|---|
+| `global` (*case-by-case*) | dispositivo final do caso | `decisao_colegiada_v1` | placar direto por opção |
+| `analitico` (*issue-by-issue*) | cada questão ou premissa | `decisao_colegiada_v2` | dispositivo derivado por regra congelada |
+| `hibrido` | questões e, depois, confirmação do derivado | `decisao_colegiada_v2` | só proclama após confirmação bloqueante |
+
+`global` continua sendo o padrão. O sistema só ativa `analitico` ou `hibrido`
+quando você pedir expressamente votação por questões ou confirmação do resultado
+derivado. Dizer apenas “acórdão” ou “vote as preliminares em separado” não muda o
+critério silenciosamente.
+
 A regra de resultado é configurada à parte: unanimidade, maioria simples,
 maioria qualificada, consenso estrito ou decisão de terceiro. O placar responde
 **quem venceu**; a matriz de adesões responde **quais proposições formam a
@@ -390,6 +409,29 @@ Consenso: não
 Se a maioria concordar apenas no dispositivo, o recibo declara
 `ratio_status = somente_resultado`. Quando `ratio_exigida = true`, isso reprova
 o gate e devolve a matéria ao loop.
+
+No critério analítico, o sistema também compara o resultado das maiorias por
+questão com os pacotes individuais. Isso detecta a maioria cruzada:
+
+```text
+Cadeira A: P = sim, Q = não  → dispositivo B
+Cadeira B: P = não, Q = sim  → dispositivo B
+Cadeira C: P = sim, Q = sim  → dispositivo A
+
+Maioria em P: sim
+Maioria em Q: sim
+Dispositivo derivado de P ∧ Q: A
+Cadeiras que chegariam individualmente a A: 1 de 3
+
+Resultado: A por derivação das questões
+Paradoxo doutrinário: sim
+Ratio comum do pacote: não
+```
+
+O recibo mostra `dispositivo_derivado`, `dispositivo_por_cadeira`, coalizões por
+questão e `paradoxo_doutrinario`. Sem maioria aderente ao pacote, ele não escreve
+“a maioria decidiu A”. No híbrido, a confirmação pode impedir a proclamação e
+devolver o caso ao loop, mas nunca transforma maioria em consenso.
 
 O sistema não inventa um fundamento comum.
 Qualquer alteração do artefato, da opinião principal ou de uma proposição
@@ -594,6 +636,41 @@ Exemplos naturais:
 O A2A Mesh é o caminho mais direto entre Codex, Claude, Gemini e Grok 4.6 High.
 O Grok é executado exclusivamente pelo Cursor CLI, na porta 3144 e com o modelo
 fixo `cursor-grok-4.6-high`; não há fallback silencioso.
+
+Todos os trabalhos A2A são submetidos de forma durável. A resposta inicial é um recibo com
+`task_id`; o servidor prossegue independentemente da janela MCP ou do navegador. As skills aguardam
+o mesmo ID por blocos de até 240 segundos e repetem a consulta, sem reenviar o prompt. Para controle
+manual, use as tools MCP `a2a_task_status`, `a2a_task_wait` e `a2a_task_cancel`.
+
+O painel mostra em tempo real os deltas textuais efetivamente produzidos pelas CLIs, além de agente,
+fase e estado. Isso não inclui raciocínio interno oculto. Os deltas trafegam ao vivo sem ocupar o
+ledger append-only; o schema v4 atualiza um checkpoint substituível por tarefa e agente. Eventos de
+fase, argumentos, síntese e estado recebem IDs persistidos; uma
+reconexão busca tudo o que ocorreu desde o último ID. Se a conexão com um peer cair, o coordenador
+consulta a tarefa remota já criada em vez de abrir outra sessão. Em falha, a saída parcial
+recuperável é preservada como `partial-output.md`, combinando o checkpoint exato mais novo de cada
+agente com o diálogo cronológico legado das demais cadeiras. Tokens repetidos legítimos são
+preservados sem duplicar a resposta final sobre os próprios deltas.
+
+O `request_id` fica no ledger SQLite compartilhado e impede duplicação entre coordenadores ou após
+reinício. Cancelamento explícito propaga para a tarefa remota conhecida; queda de streaming não
+equivale a cancelamento. Estados terminais usam compare-and-set, de modo que uma conclusão tardia
+não substitui `canceled` ou `failed`. O replay é paginado; uma lacuna acima do teto defensivo gera
+`mesh-gap`, e o painel busca as páginas restantes sem truncamento silencioso. **Clear** define um
+corte temporal persistente, evitando que mensagens antigas reapareçam na reconexão.
+Se uma tarefa ultrapassar o teto defensivo de eventos, o ledger grava `mesh_gap`, suprime apenas
+eventos intermediários excedentes e continua aceitando o evento terminal. Como tokens ao vivo usam
+checkpoints substituíveis, eles não conseguem consumir o orçamento antes da síntese.
+
+Quando a chamada MCP omite `request_id`, o bridge deriva uma chave estável do conteúdo numa janela
+deslizante padrão de 60 segundos e somente dentro da sessão daquele processo MCP. Assim, uma
+repetição imediata do host recupera a mesma tarefa sem confundir clientes independentes nem sofrer
+com fronteiras fixas de tempo. Para repetir de propósito nessa janela, informe um `request_id`
+novo; para deduplicar depois de reiniciar o bridge, forneça um `request_id` explícito.
+
+O timeout padrão por chamada de modelo é 30 minutos. A orquestração completa tem 24 horas por padrão
+e aceita até cinco dias (`operation_timeout_ms: 432000000`) quando o caso exigir. Encerrar uma espera
+ou fechar o painel não cancela a tarefa.
 
 ![Modos do A2A Mesh](diagramas-comandos-multiagente/03-a2a-mesh.png)
 
@@ -1126,12 +1203,12 @@ verifica congruência e fontes e Grok audita. Preserve contraditório, competên
 cabimento e todos os pontos controvertidos.
 ```
 
-Exemplo de acórdão no perfil híbrido:
+Exemplo de acórdão com publicação *opinion of the court* e apuração global:
 
 ```text
 /redacao-juridica-consensual forme um colegiado com Claude Opus 5, Codex e Grok
 sobre a minuta atual. Use opinion_of_court e maioria simples. Cada julgador deve
-votar no dispositivo e aderir separadamente a cada proposição essencial. Codex
+votar no dispositivo pelo critério global e aderir separadamente a cada proposição essencial. Codex
 redige a opinião da maioria; publique votos concorrentes e dissidentes. Exija
 ratio unificada, repita o debate quando o hash mudar e use Kimi em auditoria
 cega. Maioria não é consenso; entregue certidão, mapa de adesões, opinião
@@ -1146,6 +1223,15 @@ apure o placar e identifique a ratio comum sem fundir artificialmente as razões
 
 /redacao-juridica-consensual use per_curiam com texto institucional impessoal e
 maioria qualificada de dois terços. Preserve e publique eventual voto vencido.
+
+/redacao-juridica-consensual use critério analítico issue-by-issue. Congele as
+questões prejudiciais e de mérito e a regra que deriva o dispositivo antes dos
+votos. Mostre as coalizões por questão, compare com os pacotes individuais e
+informe toda maioria cruzada; não declare ratio comum sem coalizão do pacote.
+
+/redacao-juridica-consensual use critério híbrido. Depois da apuração analítica,
+exija confirmação bloqueante do dispositivo derivado. Se a confirmação falhar,
+não proclame o resultado: devolva os pontos controvertidos ao loop.
 ```
 
 No pacote colegiado, cada voto, a certidão, o mapa de adesões e a opinião

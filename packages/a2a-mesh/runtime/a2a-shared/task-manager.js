@@ -91,12 +91,12 @@ export function createTaskManager({
             for (const id of recoveredTasks) {
               try {
                 const reason = 'Task failed: server restarted while task was in progress';
-                meshStore.updateTask(id, {
+                const persisted = meshStore.updateTask(id, {
                   state: 'failed',
                   outputText: reason,
                   error: reason,
                 });
-                if (typeof meshStore.createEvent === 'function') {
+                if (persisted?.updateAccepted && typeof meshStore.createEvent === 'function') {
                   meshStore.createEvent(id, 'failed', selfId, { outputPreview: reason });
                 }
               } catch (e) {
@@ -155,8 +155,8 @@ export function createTaskManager({
     saveTasks();
   }
 
-  function createTask(message, metadata = {}) {
-    const id = randomUUID();
+  function createTask(message, metadata = {}, requestedId = null) {
+    const id = requestedId || randomUUID();
     const sessionId = metadata.sessionId || randomUUID();
     const taskMetadata = mergeProviderSessionMetadata(metadata, { sessionId, agentId: selfId });
     const parsedDepth = Number.parseInt(String(taskMetadata.maxDepth ?? maxDepth), 10);
@@ -191,13 +191,30 @@ export function createTaskManager({
           metadata: taskMetadata,
           ...providerSession,
         });
-      } catch (e) { console.warn('[mesh] createTask error:', e.message); }
+      } catch (e) {
+        console.warn('[mesh] createTask error:', e.message);
+        if (taskMetadata.requestId) {
+          tasks.delete(id);
+          saveTasks();
+          throw e;
+        }
+      }
     }
 
     return task;
   }
 
   function updateTask(task, updates) {
+    const currentState = task.status?.state;
+    const nextState = updates.status?.state;
+    if (TERMINAL_STATES.has(currentState)) {
+      if (process.env.A2A_DEBUG === 'true') {
+        console.warn('[task-manager] Ignored update to immutable terminal task', {
+          taskId: task.id, currentState, nextState,
+        });
+      }
+      return false;
+    }
     Object.assign(task, updates, { updatedAt: new Date().toISOString() });
     taskEmitter.emit(`task:${task.id}`, task);
     saveTasks();
@@ -220,6 +237,7 @@ export function createTaskManager({
         payload: { outputPreview: updates.status?.message?.parts?.[0]?.text?.slice(0, 200) },
       });
     }
+    return true;
   }
 
   function taskToJSON(task) {
@@ -247,12 +265,16 @@ export function createTaskManager({
   const reaperStats = { totalReaped: 0, totalRuns: 0, lastReaped: 0, lastRunAt: null };
 
   function reapStuckTasks({ staleThresholdMs, now = Date.now() } = {}) {
-    const cutoff = now - staleThresholdMs;
     let reaped = 0;
     for (const task of tasks.values()) {
       if (!ACTIVE_STATES.has(task.status?.state)) continue;
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || '');
-      if (!Number.isFinite(updatedAt) || updatedAt > cutoff) continue;
+      const operationTimeoutMs = Number.parseInt(String(task.metadata?.operationTimeoutMs || ''), 10);
+      const taskThresholdMs = Number.isFinite(operationTimeoutMs) && operationTimeoutMs > 0
+        ? Math.max(staleThresholdMs, operationTimeoutMs + 15 * 60_000)
+        : staleThresholdMs;
+      const taskCutoff = now - taskThresholdMs;
+      if (!Number.isFinite(updatedAt) || updatedAt > taskCutoff) continue;
       const ageMs = now - updatedAt;
       const reason = `Task failed: stuck in '${task.status.state}' for ${Math.round(ageMs / 60000)}min (reaper)`;
       // Best-effort: kill any lingering child process before flipping state.

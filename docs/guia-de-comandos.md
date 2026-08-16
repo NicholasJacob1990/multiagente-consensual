@@ -133,6 +133,28 @@ Consolide somente uma minuta após consenso e auditoria cega. Entregue a versão
 limpa e a versão com alterações do Word.
 ```
 
+#### Votação global, analítica e híbrida
+
+Em decisões colegiadas, escolha separadamente a forma de publicação e o objeto
+do voto. `seriatim`, `per_curiam` e `opinion_of_court` definem a voz da decisão.
+`global`, `analitico` e `hibrido` definem como o resultado é apurado.
+
+```text
+/consenso Forme uma opinion of the court por votação global case-by-case.
+Cada cadeira vota no dispositivo e adere separadamente às proposições.
+
+/consenso Use votação issue-by-issue. Congele as questões e a regra de
+derivação antes das cédulas. Mostre maiorias por questão, dispositivo derivado,
+resultado por cadeira e eventual maioria cruzada.
+
+/consenso Use método híbrido: questões primeiro e confirmação bloqueante do
+dispositivo derivado. Se a confirmação falhar, não proclame o resultado.
+```
+
+O método global continua sendo o padrão e usa `decisao_colegiada_v1`. Os modos
+analítico e híbrido só são ativados por pedido explícito e usam
+`decisao_colegiada_v2`. Nenhuma maioria é convertida em consenso.
+
 ### `/workflow-agentes`
 
 Use para combinar papéis e dependências sem exigir debate em todas as etapas.
@@ -162,6 +184,25 @@ Estes comandos usam o MCP local e os agentes `codex`, `claude`, `gemini` e
 | `/a2a-debate` | Fazer debate adversarial com juiz | Consultivo |
 | `/a2a-consensus` | Buscar acordo rápido com quórum | Consultivo |
 | `/a2a-ensemble` | Gerar código, revisar e sintetizar | Somente candidata |
+
+As seis operações de trabalho acima são submetidas como tarefas duráveis. O comando retorna um ID,
+o servidor segue executando e a skill acompanha esse mesmo ID com esperas curtas até o estado
+terminal. No MCP, os controles são `a2a_task_status`, `a2a_task_wait` e `a2a_task_cancel`. Não repita
+o comando após o fim de uma espera: consulte o ID. O `request_id` impede duplicação acidental.
+
+Essa idempotência fica no SQLite comum aos coordenadores e sobrevive a reinícios. O cancelamento
+explícito é encaminhado ao ID remoto já conhecido; uma queda do SSE apenas ativa a consulta da
+mesma tarefa. Estados terminais são imutáveis por compare-and-set. Em reconexões muito longas, o
+replay é paginado e o painel acusa qualquer lacuna antes de buscar as páginas restantes.
+
+No painel, o texto aparece em tempo real quando a CLI emite deltas; caso contrário, aparecem agente,
+fase e estado até a resposta final. A reconexão usa o último ID de evento persistido e recompõe as
+lacunas. O painel mostra a saída produzida, não o raciocínio interno privado do modelo. Em falha ou
+timeout, procure `partial-output.md` nos artefatos da tarefa.
+
+Cada chamada de modelo usa 30 minutos por padrão. A orquestração completa usa 24 horas por padrão e
+aceita `operation_timeout_ms` até 432.000.000 ms (cinco dias). Uma espera MCP individual nunca passa
+de 240 segundos; ela pode ser repetida sem interromper ou duplicar a execução.
 
 Exemplos:
 

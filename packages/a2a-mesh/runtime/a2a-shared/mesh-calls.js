@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { A2A_PROTOCOL_VERSION, A2A_VERSION_HEADER } from './protocol.js';
 import { enrichPromptIfContinuation } from './mesh-continuation.js';
 import { extractProviderSession, mergeProviderSessionMetadata } from './provider-session.js';
+import { cancelRemoteTask, recoverRemoteTask } from './remote-task-control.js';
 
 function formatError(err) {
   return err instanceof Error ? err.message : String(err);
@@ -160,6 +161,19 @@ class PeerCircuitBreaker {
       entry.openedAt = now;
     }
   }
+
+  onNeutral(peerId) {
+    const entry = this._state(peerId);
+    // A caller cancellation is not evidence about peer health. If it happened
+    // during the single HALF_OPEN probe, release the probe slot for the next
+    // request instead of wedging the breaker indefinitely.
+    entry.probeInFlight = false;
+  }
+
+  isProbeInFlight(peerId) {
+    const entry = this._state(peerId);
+    return entry.state === 'HALF_OPEN' && entry.probeInFlight;
+  }
 }
 
 /**
@@ -183,13 +197,10 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
     failureThreshold: parseInt(process.env.A2A_PEER_CB_FAILURE_THRESHOLD || '5', 10),
     openMs: parseInt(process.env.A2A_PEER_CB_OPEN_MS || '30000', 10),
   });
-  const DEFAULT_CALL_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_CALL_MS, 2400000); // 40 min
+  const DEFAULT_CALL_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_CALL_MS, 1800000); // 30 min per model call
 
-  // Dedup cache: maps `${taskId}|${agent}` → last-seen chunk text. Prevents
-  // forwarding of redundant identical chunks (observed bug: peer CLI emitting
-  // same buffer repeatedly). Bounded LRU via Map insertion-order: when full,
-  // shift the oldest entry. Avoids the thundering-herd from a periodic clear()
-  // that nuked all keys at once.
+  // Dedup cache applies only to complete task-dialogue turns. task-progress is
+  // an exact delta stream and may legitimately repeat the same token.
   const CHUNK_DEDUP_MAX = normalizePositiveInt(process.env.A2A_CHUNK_DEDUP_MAX, 1000);
   const _chunkDedupCache = new Map();
   function chunkDedupSet(key, value) {
@@ -221,16 +232,62 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
    * Stream SSE from /tasks/sendSubscribe and collect result.
    * Emits real-time dialogue events to meshBus.
    */
-  async function streamTaskAttempt(peerUrl, body, agent, parentTaskId, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, { tripCircuit = true } = {}) {
+  async function streamTaskAttempt(
+    peerUrl,
+    body,
+    agent,
+    parentTaskId,
+    timeoutMs = DEFAULT_CALL_TIMEOUT_MS,
+    { tripCircuit = true, signal: externalSignal } = {},
+  ) {
     if (!rateLimiter.allow(agent)) {
       return { error: `Rate limit exceeded for ${agent}`, retryable: false };
     }
     if (!circuitBreaker.canRequest(agent)) {
       return { error: `Circuit breaker OPEN for ${agent}`, retryable: true };
     }
+    const circuitProbe = circuitBreaker.isProbeInFlight(agent);
+    const shouldRecordCircuitFailure = tripCircuit || circuitProbe;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    let remoteTaskId = null;
+    let cancelPromise = null;
+    let timedOut = false;
+    let completedText = '';
+    let checkpointAt = 0;
+    let checkpointLength = 0;
+    const checkpoint = (text = lastText, { complete = false, force = false } = {}) => {
+      if (!meshStore?.upsertPartialSnapshot || !text) return;
+      const now = Date.now();
+      if (!force && now - checkpointAt < 1000 && text.length - checkpointLength < 4096) return;
+      meshStore.upsertPartialSnapshot(
+        parentTaskId,
+        agent,
+        String(text).slice(-200_000),
+        { operation: 'stream', remoteTaskId, complete },
+      );
+      checkpointAt = now;
+      checkpointLength = text.length;
+    };
+    const cancelKnownRemote = () => {
+      if (remoteTaskId && !cancelPromise) {
+        cancelPromise = cancelRemoteTask(peerUrl, remoteTaskId, { authToken });
+      }
+      return cancelPromise;
+    };
+    const abortFromCaller = () => {
+      cancelKnownRemote();
+      controller.abort(externalSignal?.reason || new Error('Task canceled by caller'));
+    };
+    if (externalSignal?.aborted) abortFromCaller();
+    else externalSignal?.addEventListener('abort', abortFromCaller, { once: true });
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      cancelKnownRemote();
+      controller.abort(new Error(`Timeout (${timeoutMs}ms)`));
+    }, timeoutMs);
+    let lastText = '';
 
     try {
       const resp = await fetch(`${peerUrl}/tasks/sendSubscribe`, {
@@ -251,20 +308,21 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
       }
 
       if (!resp.ok) {
-        clearTimeout(timeout);
         const text = await resp.text().catch(() => '');
         const retryable = isRetryableHttpStatus(resp.status);
-        if (tripCircuit && retryable) circuitBreaker.onFailure(agent);
+        if (shouldRecordCircuitFailure && retryable) circuitBreaker.onFailure(agent);
+        else if (!retryable) circuitBreaker.onSuccess(agent);
         return { error: `HTTP ${resp.status}: ${text.slice(0, 4000)}`, retryable };
       }
 
       let finalStatus = null;
-      let lastText = '';
 
       // Parse SSE stream
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let eventType = '';
+      let eventData = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -274,10 +332,8 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
         const lines = buffer.split('\n');
         buffer = lines.pop() || ''; // keep incomplete line
 
-        let eventType = '';
-        let eventData = '';
-
-        for (const line of lines) {
+        for (const rawLine of lines) {
+          const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
           if (line.startsWith('event: ')) {
             eventType = line.slice(7).trim();
           } else if (line.startsWith('data: ')) {
@@ -286,16 +342,21 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
             // End of SSE event — process it
             try {
               const data = JSON.parse(eventData);
+              if (data.id) remoteTaskId = data.id;
               handleSSEEvent(eventType, data, agent, parentTaskId);
 
               if (eventType === 'task-status') {
                 const state = data.status?.state;
-                if (state === 'completed' || state === 'failed') {
+                if (state === 'completed' || state === 'failed' || state === 'canceled') {
                   finalStatus = data;
                 }
               }
               if (eventType === 'task-progress' && data.chunk) {
-                lastText += data.chunk;
+                const chunk = String(data.chunk);
+                // task-progress is a delta in the local A2A contract. Append
+                // byte-for-byte; repeated tokens are legitimate output.
+                lastText += chunk;
+                checkpoint();
               }
             } catch (err) {
               console.warn('[mesh-calls] Failed to parse SSE event from peer', {
@@ -314,51 +375,132 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
         }
       }
 
-      clearTimeout(timeout);
-
       // Extract response text from final status
       if (finalStatus) {
         const msg = finalStatus.status?.message;
-        if (msg) {
+        const finalState = finalStatus.status?.state;
+        if (finalState === 'completed' && msg) {
           const text = msg.parts?.map(p => p.text).join('\n');
           if (text) {
             circuitBreaker.onSuccess(agent);
-            return { response: text, retryable: false };
+            completedText = text;
+            checkpoint(text, { complete: true, force: true });
+            return { response: text, remoteTaskId, retryable: false };
           }
         }
-        if (finalStatus.status?.state === 'failed') {
-          if (tripCircuit) circuitBreaker.onFailure(agent);
-          const errorText = msg?.parts?.[0]?.text || 'Task failed';
-          const retryable = /timeout|aborted|temporar|unavailable|overload|busy/i.test(errorText);
-          return { error: errorText, retryable };
+        if (finalState === 'failed' || finalState === 'canceled') {
+          if (shouldRecordCircuitFailure && finalState === 'failed') circuitBreaker.onFailure(agent);
+          else if (finalState === 'canceled') circuitBreaker.onNeutral(agent);
+          checkpoint(lastText, { force: true });
+          const errorText = msg?.parts?.[0]?.text || `Task ${finalState}`;
+          return { error: errorText, partial: lastText || undefined, remoteTaskId, retryable: false };
         }
+      }
+
+      // The SSE transport may disappear while the remote CLI keeps running.
+      // Recover by polling the already-created remote task instead of starting
+      // a duplicate call with a new model session.
+      if (remoteTaskId && Date.now() < deadline) {
+        const recovered = await recoverRemoteTask(peerUrl, remoteTaskId, {
+          authToken, deadline, signal: controller.signal,
+          onPollError: (err) => {
+            if (process.env.A2A_DEBUG === 'true') console.warn('[mesh-calls] Remote recovery poll failed', {
+              agent, parentTaskId, remoteTaskId, error: formatError(err),
+            });
+          },
+        });
+        if (recovered.response) {
+          circuitBreaker.onSuccess(agent);
+          completedText = recovered.response;
+          checkpoint(recovered.response, { complete: true, force: true });
+        } else if (externalSignal?.aborted) {
+          circuitBreaker.onNeutral(agent);
+          await cancelKnownRemote();
+        }
+        else if (timedOut || /still running after the call timeout/i.test(recovered.error || '')) {
+          await cancelKnownRemote();
+          if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+          recovered.error = `Timeout (${timeoutMs}ms)`;
+        } else if (shouldRecordCircuitFailure && !/canceled by caller/i.test(recovered.error || '')) {
+          circuitBreaker.onFailure(agent);
+        }
+        if (!recovered.response) checkpoint(lastText, { force: true });
+        return { ...recovered, partial: recovered.response ? undefined : lastText || undefined };
       }
 
       // Partial progress is diagnostic evidence, never a completed response.
       // Promoting it would let a dropped stream or killed model count as a
       // valid vote in debate/consensus/ensemble.
       if (lastText) {
-        if (tripCircuit) circuitBreaker.onFailure(agent);
+        if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+        checkpoint(lastText, { force: true });
         return {
           error: 'Stream ended without a terminal task status',
           partial: lastText,
-          retryable: true,
+          remoteTaskId,
+          retryable: !remoteTaskId,
         };
       }
 
-      if (tripCircuit) circuitBreaker.onFailure(agent);
-      return { error: 'No response received from agent', retryable: true };
+      if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+      return { error: 'No response received from agent', remoteTaskId, retryable: !remoteTaskId };
 
     } catch (err) {
+      if (externalSignal?.aborted) {
+        await cancelKnownRemote();
+        circuitBreaker.onNeutral(agent);
+        checkpoint(lastText, { force: true });
+        return { error: 'Task canceled by caller', partial: lastText || undefined, remoteTaskId, retryable: false };
+      }
+      if (timedOut) {
+        await cancelKnownRemote();
+        if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+        checkpoint(lastText, { force: true });
+        return { error: `Timeout (${timeoutMs}ms)`, partial: lastText || undefined, remoteTaskId, retryable: false };
+      }
+      if (remoteTaskId && Date.now() < deadline) {
+        const recovered = await recoverRemoteTask(peerUrl, remoteTaskId, {
+          authToken, deadline, signal: controller.signal,
+          onPollError: (pollError) => {
+            if (process.env.A2A_DEBUG === 'true') console.warn('[mesh-calls] Remote recovery poll failed', {
+              agent, parentTaskId, remoteTaskId, error: formatError(pollError),
+            });
+          },
+        });
+        if (recovered.response) {
+          circuitBreaker.onSuccess(agent);
+          completedText = recovered.response;
+          checkpoint(recovered.response, { complete: true, force: true });
+        } else if (externalSignal?.aborted) {
+          circuitBreaker.onNeutral(agent);
+          await cancelKnownRemote();
+        }
+        else if (timedOut || /still running after the call timeout/i.test(recovered.error || '')) {
+          await cancelKnownRemote();
+          if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+          recovered.error = `Timeout (${timeoutMs}ms)`;
+        } else if (shouldRecordCircuitFailure && !/canceled by caller/i.test(recovered.error || '')) {
+          circuitBreaker.onFailure(agent);
+        }
+        if (!recovered.response) checkpoint(lastText, { force: true });
+        return { ...recovered, partial: recovered.response ? undefined : lastText || undefined };
+      }
+      if (shouldRecordCircuitFailure) circuitBreaker.onFailure(agent);
+      if (err.name === 'AbortError') {
+        return { error: `Timeout (${timeoutMs}ms)`, partial: lastText || undefined, remoteTaskId, retryable: false };
+      }
+      return { error: err.message, partial: lastText || undefined, remoteTaskId, retryable: !remoteTaskId };
+    } finally {
+      if (completedText) checkpoint(completedText, { complete: true, force: true });
+      else if (lastText) checkpoint(lastText, { force: true });
       clearTimeout(timeout);
-      if (tripCircuit) circuitBreaker.onFailure(agent);
-      if (err.name === 'AbortError') return { error: `Timeout (${timeoutMs}ms)`, retryable: true };
-      return { error: err.message, retryable: true };
+      externalSignal?.removeEventListener('abort', abortFromCaller);
     }
   }
 
-  async function streamTask(peerUrl, body, agent, parentTaskId, timeoutMs = DEFAULT_CALL_TIMEOUT_MS) {
+  async function streamTask(peerUrl, body, agent, parentTaskId, timeoutMs = DEFAULT_CALL_TIMEOUT_MS, options = {}) {
     let lastResult = { error: 'Unknown stream error', retryable: false };
+    let bestPartial = '';
     const attempts = Math.max(1, PEER_RETRY_ATTEMPTS);
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -369,12 +511,13 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
         agent,
         parentTaskId,
         timeoutMs,
-        { tripCircuit: isFinalAttempt },
+        { tripCircuit: isFinalAttempt, signal: options.signal },
       );
       if (!result.error) return result;
 
-      lastResult = result;
-      if (isFinalAttempt || !result.retryable) return result;
+      if ((result.partial || '').length > bestPartial.length) bestPartial = result.partial;
+      lastResult = { ...result, partial: result.partial || bestPartial || undefined };
+      if (isFinalAttempt || !result.retryable || result.remoteTaskId) return lastResult;
 
       const delayMs = computeRetryDelayMs(attempt);
       if (meshBus) {
@@ -418,7 +561,6 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
 
     switch (eventType) {
       case 'task-progress':
-        if (checkAndDedupe(data.chunk)) break;
         meshBus.publish({
           taskId: parentTaskId,
           type: 'dialogue',
@@ -426,12 +568,19 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
             operation: 'stream', phase: 'progress',
             agent, role: 'response',
             text: data.chunk || '',
+            // Keep the non-durable contract when this dialogue is forwarded
+            // again by an intermediate A2A server (A -> B -> C).
+            transient: true,
           },
-        });
+        }, { persist: false });
         break;
 
-      case 'task-dialogue':
-        if (checkAndDedupe(data.text)) break;
+      case 'task-dialogue': {
+        const transient = data.extra?.transient === true;
+        // A transient dialogue is an exact token delta propagated through an
+        // intermediate peer. Repeated adjacent tokens are content, not
+        // duplicate turns, so only complete durable dialogue is deduplicated.
+        if (!transient && checkAndDedupe(data.text)) break;
         meshBus.publish({
           taskId: parentTaskId,
           type: 'dialogue',
@@ -441,9 +590,11 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
             agent: data.agent || agent,
             role: data.role || 'response',
             text: data.text || '',
+            ...(transient ? { transient: true } : {}),
           },
-        });
+        }, { persist: !transient });
         break;
+      }
 
       case 'task-status': {
         const state = data.status?.state;
@@ -535,8 +686,25 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
       });
     }
 
-    const result = await streamTask(peerUrl, body, input.agent, context.taskId, timeoutMs);
-    if (result.error) return `Error from ${input.agent}: ${result.error}`;
+    const result = await streamTask(
+      peerUrl, body, input.agent, context.taskId, timeoutMs, { signal: context.signal },
+    );
+    if (result.error) {
+      if (result.partial && meshBus) {
+        meshBus.publish({
+          taskId: context.taskId,
+          type: 'partial_output',
+          payload: {
+            operation: 'call',
+            agent: input.agent,
+            remoteTaskId: result.remoteTaskId || null,
+            reason: result.error,
+            text: String(result.partial).slice(-200_000),
+          },
+        });
+      }
+      return `Error from ${input.agent}: ${result.error}${result.remoteTaskId ? ` (remote task ${result.remoteTaskId})` : ''}`;
+    }
     return result.response;
   }
 
@@ -599,8 +767,28 @@ export function createMeshCaller({ selfId, peers, maxDepth, meshBus, meshStore =
         ]
       : agents.map(agent => ({ agent, url: peers[agent], body: bodyForAgent(agent) }));
     const results = await Promise.all(broadcastTargets.map(async ({ agent, url, body: targetBody }) => {
-      const result = await streamTask(url, targetBody || body, agent, context.taskId, timeoutMs);
-      return { agent, response: result.response || null, error: result.error || null };
+      const result = await streamTask(
+        url, targetBody || body, agent, context.taskId, timeoutMs, { signal: context.signal },
+      );
+      if (result.error && result.partial && meshBus) {
+        meshBus.publish({
+          taskId: context.taskId,
+          type: 'partial_output',
+          payload: {
+            operation: 'broadcast',
+            agent,
+            remoteTaskId: result.remoteTaskId || null,
+            reason: result.error,
+            text: String(result.partial).slice(-200_000),
+          },
+        });
+      }
+      return {
+        agent,
+        response: result.response || null,
+        error: result.error || null,
+        remoteTaskId: result.remoteTaskId || null,
+      };
     }));
 
     return results.map(r => `**${r.agent}**: ${r.response || r.error}`).join('\n\n---\n\n');

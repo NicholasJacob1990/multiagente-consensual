@@ -21,6 +21,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 import consensus_gate  # noqa: E402
+import analytic_tally  # noqa: E402
 provenance = consensus_gate.provenance
 
 
@@ -66,6 +67,11 @@ def valid_hash(value: Any) -> bool:
 
 
 def config_report(config: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    method = config.get("metodo_apuracao", contract.get("default_tally_method", "global"))
+    if method in {"analitico", "hibrido"}:
+        analytic_config = dict(config)
+        analytic_config["metodo_apuracao"] = method
+        return analytic_tally.config_report(analytic_config, contract)
     errors: list[str] = []
     warnings: list[str] = []
     modality = config.get("modalidade", contract["default_modality"])
@@ -78,6 +84,12 @@ def config_report(config: dict[str, Any], contract: dict[str, Any]) -> dict[str,
     dissent_policy = config.get("votos_dissidentes", "publicar")
     concurrence_policy = config.get("votos_concorrentes", "publicar")
     freeze = config.get("proclamacao_congela_votos", True)
+
+    if method != "global":
+        errors.append(f"metodo_apuracao inválido: {method}")
+    explicit_contract = config.get("contrato")
+    if explicit_contract is not None and explicit_contract != contract["contract"]:
+        errors.append(f"o método global exige {contract['contract']}")
 
     if modality not in contract["modalities"]:
         errors.append(f"modalidade inválida: {modality}")
@@ -120,6 +132,7 @@ def config_report(config: dict[str, Any], contract: dict[str, Any]) -> dict[str,
         "valid": not errors,
         "contract": contract["contract"],
         "normalized": {
+            "metodo_apuracao": "global",
             "modalidade": modality,
             "regra_resultado": result_rule,
             "base_calculo": calculation_base,
@@ -140,7 +153,13 @@ def required_support(rule: str, total: int, threshold: float | None) -> int:
     if rule in {"unanimidade", "consenso_estrito"}:
         return total
     if rule == "maioria_qualificada":
-        return math.ceil(total * float(threshold))
+        try:
+            numeric = float(threshold)
+        except (TypeError, ValueError):
+            return total + 1
+        if not math.isfinite(numeric) or not 0.5 < numeric <= 1:
+            return total + 1
+        return math.ceil(total * numeric)
     return total // 2 + 1
 
 
@@ -153,6 +172,19 @@ def verdict_report(
     nonce_ledger: str | Path | None = None,
     consume_nonce: bool = False,
 ) -> dict[str, Any]:
+    method = verdict.get("metodo_apuracao", contract.get("default_tally_method", "global"))
+    if verdict.get("schema") == contract.get("analytic_schema") or method in {
+        "analitico", "hibrido"
+    }:
+        return analytic_tally.verdict_report(
+            verdict,
+            contract,
+            manifest=manifest or provenance.load_manifest(PACKAGED_MANIFEST),
+            consensus_gate=consensus_gate,
+            secret=secret,
+            nonce_ledger=nonce_ledger,
+            consume_nonce=consume_nonce,
+        )
     errors: list[str] = []
     warnings: list[str] = []
     pending_nonce_receipts: list[dict[str, Any]] = []
@@ -160,6 +192,8 @@ def verdict_report(
         errors.append(f"schema deve ser {contract['contract']}")
 
     config_input = {
+        "contrato": verdict.get("schema"),
+        "metodo_apuracao": method,
         "modalidade": verdict.get("modalidade"),
         "regra_resultado": verdict.get("regra_resultado"),
         "base_calculo": verdict.get("base_calculo", contract["default_calculation_base"]),

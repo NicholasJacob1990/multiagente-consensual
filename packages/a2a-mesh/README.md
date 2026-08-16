@@ -69,6 +69,58 @@ PostgreSQL ou SQLite para este produto?
 O consenso do painel é consultivo. Use o comando principal `/consenso` para
 aprovar um arquivo real por hash e recibos independentes.
 
+### Execução durável e streaming
+
+Os comandos do painel são submetidos pelos métodos `mesh/*Async`: a interface recebe um ID em
+segundos, libera o campo de entrada e acompanha a tarefa sem manter a requisição original aberta.
+Cada delta textual que a CLI realmente fornece aparece ao vivo por SSE, acompanhado do agente e da
+fase. Esses deltas não ocupam o ledger append-only: o schema v4 mantém um checkpoint substituível
+por tarefa e agente, enquanto fases, argumentos e síntese continuam como eventos duráveis. O painel
+não exibe raciocínio interno oculto; se uma CLI só entregar a resposta ao final, ele
+mostra estados e fases até o texto ficar disponível.
+
+Os eventos possuem IDs persistidos em SQLite. Após queda de rede, recarga da página ou reconexão do
+SSE, o painel solicita os eventos posteriores ao último ID e busca o resultado completo da tarefa
+terminal. Perder a conexão não reinicia o modelo. Se um stream cair, o coordenador consulta o ID da
+tarefa remota já criada; não abre outra sessão silenciosamente. Saída parcial de uma execução
+malsucedida é preservada como `partial-output.md`. O recuperador combina, por agente,
+o checkpoint exato mais novo quando houver e o diálogo cronológico legado dos demais. Tokens
+repetidos legítimos são preservados, mas a resposta final não é duplicada sobre seus próprios deltas.
+
+O replay é paginado em até mil eventos por conexão. Se a lacuna ultrapassar esse teto defensivo,
+o servidor emite
+`mesh-gap` e o painel busca as páginas restantes pela timeline durável. O botão **Clear** grava um
+corte temporal: eventos anteriores não reaparecem ao reconectar. Duas notificações terminais
+simultâneas são coalescidas na UI, e estados terminais usam transição compare-and-set para que uma
+conclusão tardia nunca sobrescreva cancelamento ou falha.
+Ao alcançar o limite defensivo de eventos de uma tarefa, o ledger grava um evento
+`mesh_gap`, suprime somente deltas intermediários excedentes e ainda persiste o estado terminal.
+Como tokens ao vivo usam checkpoints substituíveis, eles não conseguem saturar esse limite antes
+de uma síntese.
+
+No MCP, `a2a_call`, `a2a_broadcast`, `a2a_team`, `a2a_consensus`, `a2a_debate`, `a2a_ensemble` e
+`a2a_plan` também devolvem recibo durável por padrão. Use:
+
+- `a2a_task_status` para consultar sem bloquear;
+- `a2a_task_wait` para esperar até 240 segundos por chamada, repetindo com o mesmo ID;
+- `a2a_task_cancel` para cancelar a tarefa e a chamada de modelo corrente.
+
+`request_id` torna o envio idempotente no ledger SQLite compartilhado, inclusive entre
+coordenadores e após reinício. O timeout padrão de cada chamada de modelo é 30 minutos. O
+timeout da orquestração completa é 24 horas por padrão e pode ser configurado, caso a caso, por
+`operation_timeout_ms` até cinco dias. Término de uma espera MCP nunca cancela a tarefa nem autoriza
+reenvio automático. Cancelamento explícito, ao contrário, propaga ao `task_id` remoto conhecido;
+cancelamento do usuário não penaliza o circuit breaker como falha do provedor.
+Quando o cliente MCP omite `request_id`, o bridge deriva uma chave estável do pedido numa janela
+deslizante padrão de 60 segundos e somente na sessão daquele processo MCP. Uma repetição imediata
+do host reutiliza a tarefa, mas processos e clientes independentes não colidem. Para repetir de
+propósito durante a janela, informe outro `request_id`; para deduplicar após reinício, forneça um
+`request_id` explícito.
+
+Reservas idempotentes sem tarefa nunca são devolvidas como tarefas fantasmas: antes do TTL o
+cliente recebe erro retriável e, depois dele, outro coordenador pode assumir. Chaves ligadas a
+tarefas terminais são podadas após 30 dias por padrão.
+
 O instalador mescla o MCP em `~/.cursor/mcp.json` sem apagar outras entradas. Uma configuração
 `a2a-mesh` divergente é preservada, salvo uso explícito de `--replace-mcp`.
 

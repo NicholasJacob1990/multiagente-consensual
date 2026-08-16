@@ -12,6 +12,7 @@ import { TERMINAL_STATES } from './task-states.js';
 import { createSandboxManager } from './sandbox-manager.js';
 import { mergeRequestTaskMetadata } from './provider-session.js';
 import { DEFAULT_PORTS, publicAgentCatalog } from './agent-catalog.js';
+import { recoverPartialArtifacts } from './partial-output.js';
 
 // --- Shared helpers ---
 
@@ -493,11 +494,15 @@ async function handleTaskSendSubscribe(req, res, ctx) {
     else clearInterval(heartbeat);
   }, 30000);
 
-  const cleanup = () => {
-    clearTimeout(timeoutId);
+  const cleanupStream = () => {
     clearInterval(heartbeat);
     tm.taskEmitter.off(`task:${task.id}:chunk`, chunkHandler);
     if (meshBusRef && dialogueHandler) meshBusRef.off('event', dialogueHandler);
+  };
+
+  const cleanupExecution = () => {
+    clearTimeout(timeoutId);
+    cleanupStream();
   };
 
   const controller = ensureTaskAbortController(task);
@@ -505,12 +510,14 @@ async function handleTaskSendSubscribe(req, res, ctx) {
   ctx.executeTask(task, (event) => {
     if (TERMINAL_STATES.has(event.type) || event.type === 'input_required' || event.type === 'auth_required') {
       clearTimeout(timeoutId);
-      sendSSE(res, 'task-status', { id: task.id, status: task.status });
-      if (task.artifacts.length > 0) {
-        sendSSE(res, 'task-artifacts', { id: task.id, artifacts: task.artifacts });
+      if (!res.writableEnded && !res.destroyed) {
+        sendSSE(res, 'task-status', { id: task.id, status: task.status });
+        if (task.artifacts.length > 0) {
+          sendSSE(res, 'task-artifacts', { id: task.id, artifacts: task.artifacts });
+        }
+        res.end();
       }
-      cleanup();
-      res.end();
+      cleanupExecution();
     }
   }, { signal: controller.signal });
 
@@ -527,12 +534,15 @@ async function handleTaskSendSubscribe(req, res, ctx) {
         id: task.id,
         status: { state: 'failed', message: { role: 'agent', parts: [{ type: 'text', text: `Timeout: tarefa excedeu ${ctx.taskTimeoutMs / 60000} minutos` }] } },
       });
-      cleanup();
+      cleanupExecution();
       res.end();
     }
   }, ctx.taskTimeoutMs);
 
-  req.on('close', cleanup);
+  // A dropped SSE client must not cancel the model process or its timeout.
+  // Detach only transport listeners; the durable task continues and can be
+  // recovered through GET /tasks/:id or the dashboard timeline.
+  res.on('close', cleanupStream);
 }
 
 // --- Batch handler ---
@@ -837,8 +847,18 @@ export function createA2AServer(config) {
         if (TERMINAL_STATES.has(task.status.state)) {
           return sendError(res, 400, `Cannot cancel task in '${task.status.state}' state`);
         }
+        const partial = recoverPartialArtifacts(meshStore, task.id);
         abortTaskExecution(task, 'Task cancelled by user');
-        tm.updateTask(task, { status: { state: 'canceled' } });
+        tm.updateTask(task, {
+          status: {
+            state: 'canceled',
+            message: { role: 'agent', parts: [{
+              type: 'text',
+              text: `Task canceled by user.${partial.length ? ' Saída parcial preservada em partial-output.md.' : ''}`,
+            }] },
+          },
+          artifacts: [...task.artifacts, ...partial],
+        });
         return sendJSON(res, { jsonrpc: '2.0', result: tm.taskToJSON(task) });
       }
 
@@ -889,7 +909,12 @@ export function createA2AServer(config) {
         const svr = url.searchParams.get('server');
         const taskId = url.searchParams.get('taskId');
         const eventType = url.searchParams.get('eventType');
-        return sendJSON(res, meshStore.getTimeline({ limit, since, server: svr, taskId, eventType }));
+        const afterId = url.searchParams.get('afterId');
+        const order = url.searchParams.get('order') === 'asc' ? 'asc' : undefined;
+        return sendJSON(res, meshStore.getTimeline({
+          limit: Math.min(2000, Math.max(1, limit || 100)),
+          since, server: svr, taskId, eventType, afterId, order,
+        }));
       }
 
       if (url.pathname === '/mesh/stats' && method === 'GET') {
@@ -903,6 +928,14 @@ export function createA2AServer(config) {
         const origin = url.searchParams.get('origin');
         const limit = parseInt(url.searchParams.get('limit') || '50');
         return sendJSON(res, meshStore.listTasks({ state, originServer: origin, limit }));
+      }
+
+      const meshTaskMatch = url.pathname.match(/^\/mesh\/tasks\/([a-zA-Z0-9_-]+)$/);
+      if (meshTaskMatch && method === 'GET') {
+        if (!meshStore) return sendError(res, 503, 'Mesh not available');
+        const task = meshStore.getTask(meshTaskMatch[1]);
+        if (!task) return sendError(res, 404, `Task ${meshTaskMatch[1]} not found in mesh`);
+        return sendJSON(res, task);
       }
 
       if (url.pathname === '/mesh/peers' && method === 'GET') {

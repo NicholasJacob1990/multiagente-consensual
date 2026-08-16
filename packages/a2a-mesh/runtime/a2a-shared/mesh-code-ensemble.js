@@ -59,14 +59,6 @@ function normalizeMeshChain(meshChain) {
   return normalized;
 }
 
-function appendSelfToMeshChain(meshChain, selfId) {
-  const normalized = normalizeMeshChain(meshChain);
-  if (normalized[normalized.length - 1] !== selfId) {
-    normalized.push(selfId);
-  }
-  return normalized;
-}
-
 /**
  * Create a code ensemble executor.
  *
@@ -88,7 +80,7 @@ function appendSelfToMeshChain(meshChain, selfId) {
  */
 export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '', peerDiscovery = null }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
-  const DEFAULT_ENSEMBLE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_ENSEMBLE_MS, 2400000); // 40 min
+  const DEFAULT_ENSEMBLE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_ENSEMBLE_MS, 1800000); // 30 min per model call
   const MAX_SELF_CALL_DEPTH = normalizePositiveInt(process.env.A2A_MAX_SELF_CALL_DEPTH, 3);
 
   /**
@@ -134,9 +126,10 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     const context = {
       depth: parentDepth - 1,
       meshChain: [...parentChain],
-      taskId: `ensemble-${ensembleId}`,
+      taskId: callContext.taskId || `ensemble-${ensembleId}`,
       selfCallDepth: parentSelfCallDepth,
       timeoutMs,
+      signal: callContext.signal,
     };
 
     const startTime = Date.now();
@@ -230,6 +223,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     // ---- Phases 2+3: REVIEW + REVISE (repeated for rounds) ----
     let allReviews = {};  // reviewer -> review text (persists across rounds for synthesize phase)
     for (let round = 1; round <= rounds; round++) {
+      context.signal?.throwIfAborted();
       // Phase 2: CROSS-REVIEW (each reviews all OTHERS)
       emitDialogue(`review-${round}`, '*', 'system', `Fase REVIEW round ${round} — cross-review NxN`, { round, agents: activeAgents });
       const reviewStart = Date.now();
@@ -238,6 +232,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       for (const a of activeAgents) reviewsByAuthor[a] = [];
 
       for (const reviewer of activeAgents) {
+        context.signal?.throwIfAborted();
         const otherBlocks = activeAgents
           .filter(a => a !== reviewer)
           .map(a => codeBlockForPrompt(a, submissions[a]))
@@ -262,6 +257,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
               meshChain: [...context.meshChain],
               taskId: context.taskId,
               selfCallDepth: context.selfCallDepth,
+              signal: context.signal,
             },
           );
         }
@@ -284,6 +280,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       emitDialogue(`revise-${round}`, '*', 'system', `Fase REVISE round ${round} — incorporando feedback`, { round, agents: activeAgents });
       const reviseStart = Date.now();
       for (const agent of activeAgents) {
+        context.signal?.throwIfAborted();
         const reviews = reviewsByAuthor[agent].join('\n\n');
         if (!reviews) continue;
 
@@ -303,6 +300,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
               meshChain: [...context.meshChain],
               taskId: context.taskId,
               selfCallDepth: context.selfCallDepth,
+              signal: context.signal,
             },
           );
         }
@@ -323,6 +321,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
     }
 
     // ---- Phase 4: SYNTHESIZE ----
+    context.signal?.throwIfAborted();
     const judgeCandidates = [
       judge,
       ...activeAgents,
@@ -357,6 +356,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
           meshChain: [...context.meshChain],
           taskId: context.taskId,
           selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
       ) || '');
     } else {
@@ -406,34 +406,20 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
       if (context.selfCallDepth >= MAX_SELF_CALL_DEPTH) {
         return { agent: selfId, response: null, durationMs: Date.now() - start, error: `max self-call depth exceeded (${MAX_SELF_CALL_DEPTH})` };
       }
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const resp = await fetch(`${resolvedSelfUrl}/tasks/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      const response = await meshCaller.executeA2ACall(
+        { agent: selfId, prompt, timeout_ms: timeoutMs },
+        {
+          depth: 1,
+          meshChain: [...context.meshChain],
+          taskId: context.taskId,
+          selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
-        body: JSON.stringify({
-          message: { role: 'user', parts: [{ type: 'text', text: prompt }] },
-          metadata: {
-            maxDepth: 0,
-            calledBy: selfId,
-            meshChain: appendSelfToMeshChain(context.meshChain, selfId),
-            skipSelfCall: true,
-            selfCallDepth: context.selfCallDepth + 1,
-          },
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      const data = await resp.json();
-      const msg = data.result?.status?.message;
-      const text = msg?.parts?.map(p => p.text).join('\n');
-      if (text) return { agent: selfId, response: text, durationMs: Date.now() - start, error: null };
-      return { agent: selfId, response: JSON.stringify(data.result ?? data), durationMs: Date.now() - start, error: null };
+      );
+      if (isMeshErrorText(response)) {
+        return { agent: selfId, response: null, durationMs: Date.now() - start, error: String(response) };
+      }
+      return { agent: selfId, response: String(response), durationMs: Date.now() - start, error: null };
     } catch (err) {
       return { agent: selfId, response: null, durationMs: Date.now() - start, error: err.message };
     }
@@ -452,6 +438,7 @@ export function createCodeEnsembleExecutor({ meshCaller, peers, selfId, maxDepth
           meshChain: [...context.meshChain],
           taskId: context.taskId,
           selfCallDepth: context.selfCallDepth,
+          signal: context.signal,
         },
       );
       // If the entire broadcast failed at the mesh layer, raw is a bare error

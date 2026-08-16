@@ -21,7 +21,17 @@ import { loadPeerRegistry } from './peer-registry.js';
 import { checkAgentHealth, ensureAgentOnline } from './agent-supervisor.js';
 import { loadA2AAuthToken } from './auth-token.js';
 import { AGENT_IDS } from './agent-catalog.js';
-import { consensusBridgeParams, ensembleBridgeParams } from './bridge-params.js';
+import {
+  broadcastBridgeParams,
+  callBridgeParams,
+  consensusBridgeParams,
+  debateBridgeParams,
+  ensembleBridgeParams,
+  planBridgeParams,
+  teamBridgeParams,
+} from './bridge-params.js';
+import { createStableRequestIdFactory } from './request-id.js';
+import { clampMcpWaitMs, MAX_MCP_WAIT_MS } from './mcp-policy.js';
 
 // ============================================
 // CONFIG
@@ -54,16 +64,16 @@ function bridgeContext() {
 // HTTP CLIENT
 // ============================================
 
-function peerRequest(baseUrl, path, body) {
+function peerRequest(baseUrl, path, body, { method = 'POST', timeout = 30_000 } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, baseUrl);
     const headers = { 'Content-Type': 'application/json' };
     if (A2A_AUTH_TOKEN) headers.Authorization = `Bearer ${A2A_AUTH_TOKEN}`;
     const req = http.request({
-      hostname: url.hostname, port: url.port, path: url.pathname,
-      method: 'POST',
+      hostname: url.hostname, port: url.port, path: url.pathname + url.search,
+      method,
       headers,
-      timeout: 2700000, // 45 min — debates e ensembles longos
+      timeout,
     }, (res) => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
@@ -82,35 +92,9 @@ function peerRequest(baseUrl, path, body) {
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    req.write(JSON.stringify(body));
+    if (body !== undefined) req.write(JSON.stringify(body));
     req.end();
   });
-}
-
-async function sendToAgent(agentId, prompt) {
-  const context = bridgeContext();
-  if (context.depth <= 0) return `Error: max mesh depth exceeded (chain: ${context.meshChain.join(' → ')})`;
-  if (context.meshChain.includes(agentId)) {
-    return `Error: mesh cycle refused (${[...context.meshChain, agentId].join(' → ')})`;
-  }
-  const ALL_PEERS = getAllPeers();
-  const url = ALL_PEERS[agentId];
-  if (!url) return `Unknown agent: ${agentId}. Available: ${Object.keys(ALL_PEERS).join(', ')}`;
-  try {
-    await ensureAgentOnline(agentId, url);
-    const r = await peerRequest(url, '/tasks/send', {
-      message: { role: 'user', parts: [{ type: 'text', text: prompt }] },
-      metadata: {
-        maxDepth: context.depth,
-        meshChain: context.meshChain,
-        calledBy: context.calledBy,
-      },
-    });
-    const task = r.result || r;
-    return task.status?.message?.parts?.map(p => p.text).join('\n') || 'No response';
-  } catch (error) {
-    return `Error (${agentId}): ${error.message}`;
-  }
 }
 
 async function checkPeer(agentId, autoStart = false) {
@@ -127,15 +111,28 @@ async function checkPeer(agentId, autoStart = false) {
   }
 }
 
-async function getCoordinator() {
+function withDeadline(promise, deadline, label) {
+  const remaining = Math.max(1, deadline - Date.now());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} deadline exhausted`)), remaining);
+    timer.unref?.();
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+async function getCoordinatorInfo({ deadline = Date.now() + 60_000 } = {}) {
   const peers = getAllPeers();
   const errors = [];
   for (const agentId of AGENT_IDS) {
     const url = peers[agentId];
     if (!url) continue;
+    if (Date.now() >= deadline) break;
     try {
-      await ensureAgentOnline(agentId, url);
-      return url;
+      await withDeadline(ensureAgentOnline(agentId, url), deadline, 'Coordinator discovery');
+      return { agentId, url };
     } catch (error) {
       errors.push(`${agentId}: ${error.message}`);
     }
@@ -143,12 +140,212 @@ async function getCoordinator() {
   throw new Error(`No A2A coordinator is available (${errors.join('; ')})`);
 }
 
+const taskCoordinators = new Map();
+const TERMINAL_TASK_STATES = new Set(['completed', 'failed', 'canceled', 'rejected']);
+const MAX_COORDINATOR_CACHE = 1000;
+const parsedRetryWindow = Number.parseInt(process.env.A2A_MESH_REQUEST_RETRY_WINDOW_MS || '60000', 10);
+const REQUEST_ID_RETRY_WINDOW_MS = Math.min(
+  10 * 60 * 1000,
+  Math.max(1_000, Number.isFinite(parsedRetryWindow) ? parsedRetryWindow : 60_000),
+);
+const defaultRequestId = createStableRequestIdFactory({
+  scope: process.env.A2A_MESH_BRIDGE_SESSION_ID || undefined,
+  retryWindowMs: REQUEST_ID_RETRY_WINDOW_MS,
+});
+
+function rememberCoordinator(taskId, coordinator) {
+  if (!taskId || !coordinator?.agentId || !coordinator?.url) return;
+  if (taskCoordinators.has(taskId)) taskCoordinators.delete(taskId);
+  taskCoordinators.set(taskId, coordinator);
+  while (taskCoordinators.size > MAX_COORDINATOR_CACHE) {
+    taskCoordinators.delete(taskCoordinators.keys().next().value);
+  }
+}
+
+function remainingTimeout(deadline, cap = 5_000) {
+  return Math.max(1, Math.min(cap, deadline - Date.now()));
+}
+
+async function rpcRequest(baseUrl, method, params = {}, timeout = 30_000) {
+  const response = await peerRequest(baseUrl, '/rpc', {
+    jsonrpc: '2.0',
+    id: `${method}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    method,
+    params,
+  }, { timeout });
+  if (response?.error) throw new Error(response.error.message || JSON.stringify(response.error));
+  return response?.result;
+}
+
+async function submitAsyncMeshTask(method, params, { deadline = Date.now() + MAX_MCP_WAIT_MS } = {}) {
+  const coordinator = await getCoordinatorInfo({ deadline });
+  const result = await rpcRequest(
+    coordinator.url,
+    `${method}Async`,
+    params,
+    remainingTimeout(deadline, 30_000),
+  );
+  if (!result?.id) throw new Error(`Coordinator did not return a task id for ${method}`);
+  const effectiveAgent = result.coordinator || coordinator.agentId;
+  const effective = {
+    agentId: effectiveAgent,
+    url: getAllPeers()[effectiveAgent] || coordinator.url,
+  };
+  rememberCoordinator(result.id, effective);
+  return { ...result, coordinator: effectiveAgent, method };
+}
+
+async function taskFromCoordinator(taskId, coordinator, timeout = 5_000) {
+  const task = await rpcRequest(coordinator.url, 'tasks/get', { id: taskId }, timeout);
+  rememberCoordinator(taskId, coordinator);
+  return { task, coordinator: coordinator.agentId };
+}
+
+async function findTask(taskId, preferredAgent, { deadline = Date.now() + 30_000 } = {}) {
+  const peers = getAllPeers();
+  const candidates = [];
+  const cached = taskCoordinators.get(taskId);
+  if (cached) candidates.push(cached);
+  if (preferredAgent && peers[preferredAgent]) candidates.push({ agentId: preferredAgent, url: peers[preferredAgent] });
+  for (const agentId of AGENT_IDS) {
+    if (peers[agentId]) candidates.push({ agentId, url: peers[agentId] });
+  }
+
+  const unique = [...new Map(candidates.map((item) => [item.agentId, item])).values()];
+  const errors = [];
+  if (Date.now() >= deadline) throw new Error(`Task ${taskId} lookup deadline exhausted`);
+  try {
+    return await Promise.any(unique.map((coordinator) =>
+      taskFromCoordinator(taskId, coordinator, remainingTimeout(deadline))
+        .catch((error) => {
+          errors.push(`${coordinator.agentId}: ${error.message}`);
+          throw error;
+        }),
+    ));
+  } catch {
+    // Fall through to the shared ledger when no coordinator owns the task.
+  }
+
+  // Every peer shares the SQLite ledger. If the original coordinator is
+  // offline after a restart/crash, recover the last durable state from any
+  // surviving peer instead of reporting a false "not found".
+  const ledgerCandidates = AGENT_IDS.filter((agentId) => peers[agentId]);
+  if (Date.now() < deadline) try {
+    return await Promise.any(ledgerCandidates.map(async (agentId) => {
+      const url = peers[agentId];
+      try {
+        const stored = await peerRequest(
+        url,
+        `/mesh/tasks/${encodeURIComponent(taskId)}`,
+        undefined,
+          { method: 'GET', timeout: remainingTimeout(deadline) },
+        );
+        const message = stored.outputText
+          ? { role: 'agent', parts: [{ type: 'text', text: stored.outputText }] }
+          : undefined;
+        const origin = stored.originServer || agentId;
+        const originUrl = peers[origin] || url;
+        rememberCoordinator(taskId, { agentId: origin, url: originUrl });
+        return {
+          task: {
+            ...stored,
+            status: { state: stored.state, ...(message ? { message } : {}) },
+          },
+          coordinator: origin,
+        };
+      } catch (error) {
+        errors.push(`${agentId}/ledger: ${error.message}`);
+        throw error;
+      }
+    }));
+  } catch {
+    // A complete miss is reported below with all collected diagnostics.
+  }
+  throw new Error(`Task ${taskId} not found (${errors.join('; ')})`);
+}
+
+async function waitForTask(taskId, { waitMs = 60_000, coordinator } = {}) {
+  const boundedWaitMs = clampMcpWaitMs(waitMs);
+  const deadline = Date.now() + boundedWaitMs;
+  let current = await findTask(taskId, coordinator, { deadline });
+  while (!TERMINAL_TASK_STATES.has(current.task?.status?.state) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(2_000, Math.max(0, deadline - Date.now()))));
+    if (Date.now() >= deadline) break;
+    current = await findTask(taskId, current.coordinator, { deadline });
+  }
+  return current;
+}
+
+function taskOutputText(task) {
+  return task?.status?.message?.parts?.map((part) => part.text).filter(Boolean).join('\n') || '';
+}
+
+function taskReceiptText({ task, coordinator, method, reused = false }) {
+  const state = task?.status?.state || 'submitted';
+  const lines = [
+    `**A2A task ${task.id}**`,
+    `**Operation**: ${method || task.metadata?.type || 'mesh'}`,
+    `**Coordinator**: ${coordinator || task.originServer || 'unknown'}`,
+    `**Status**: ${state}${reused ? ' (idempotent reuse)' : ''}`,
+  ];
+  const output = taskOutputText(task);
+  if (output) lines.push('', output);
+  if (!TERMINAL_TASK_STATES.has(state)) {
+    lines.push('', 'The run continues independently. Use `a2a_task_wait` or `a2a_task_status`; live dialogue is visible in the A2A panel.');
+  }
+  if (Array.isArray(task.artifacts) && task.artifacts.length > 0) {
+    lines.push('', `**Artifacts**: ${task.artifacts.map((artifact) => artifact.name || 'artifact').join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+async function submitTool(method, params, args = {}) {
+  const deadline = Date.now() + MAX_MCP_WAIT_MS;
+  const requestId = String(args.request_id || defaultRequestId(method, params));
+  const submitted = await submitAsyncMeshTask(method, {
+    ...params,
+    request_id: requestId,
+    timeout_ms: args.timeout_ms,
+    operation_timeout_ms: args.operation_timeout_ms,
+  }, { deadline });
+  let located = {
+    task: {
+      id: submitted.id,
+      status: submitted.status,
+      metadata: { type: method },
+      artifacts: [],
+    },
+    coordinator: submitted.coordinator,
+  };
+  if (args.wait_for_completion === true) {
+    try {
+      located = await waitForTask(submitted.id, {
+        waitMs: Math.min(args.wait_ms || 60_000, Math.max(0, deadline - Date.now())),
+        coordinator: submitted.coordinator,
+      });
+    } catch (error) {
+      located.warning = `A espera falhou, mas a tarefa continua durável: ${error.message}`;
+    }
+  }
+  const receipt = taskReceiptText({
+    ...located,
+    method,
+    reused: submitted.reused === true,
+  });
+  return {
+    content: [{
+      type: 'text',
+      text: located.warning ? `${receipt}\n\n**Aviso**: ${located.warning}` : receipt,
+    }],
+  };
+}
+
 // ============================================
 // MCP SERVER
 // ============================================
 
 const mcpServer = new Server(
-  { name: 'a2a-mesh', version: '1.1.0' },
+  { name: 'a2a-mesh', version: '1.2.0' },
   { capabilities: { tools: {} } }
 );
 
@@ -157,36 +354,60 @@ const mcpServer = new Server(
 // ============================================
 
 const peerNames = Object.keys(INITIAL_PEERS).join(', ');
+const asyncControlProperties = {
+  timeout_ms: {
+    type: 'number',
+    description: 'Maximum time for each individual model call in milliseconds (default and cap: 30 minutes unless explicitly configured).',
+  },
+  operation_timeout_ms: {
+    type: 'number',
+    description: 'Maximum time for the complete orchestration in milliseconds (default: 24 hours; maximum: 5 days).',
+  },
+  request_id: {
+    type: 'string',
+    description: 'Optional idempotency key. Reusing it returns the existing run instead of duplicating work.',
+  },
+  wait_for_completion: {
+    type: 'boolean',
+    description: 'Wait briefly for completion. Default false: returns a durable task receipt immediately.',
+  },
+  wait_ms: {
+    type: 'number',
+    description: 'Maximum time to wait in this MCP call (max 240000 ms). The task continues after this wait.',
+  },
+};
 
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'a2a_call',
-      description: `Call one AI agent directly using its configured model. Available: ${peerNames}. Offline local agents are started automatically.`,
+      description: `Submit a durable call to one AI agent. Returns a task receipt immediately by default; use a2a_task_wait/status for long runs. Available: ${peerNames}.`,
       inputSchema: {
         type: 'object',
         properties: {
           agent: { type: 'string', description: `Agent to call: ${peerNames}`, enum: Object.keys(INITIAL_PEERS) },
           prompt: { type: 'string', description: 'Task or question for the agent' },
+          ...asyncControlProperties,
         },
         required: ['agent', 'prompt'],
       },
     },
     {
       name: 'a2a_broadcast',
-      description: `Send the same prompt to multiple agents in parallel. Default: all (${peerNames}). Returns all responses.`,
+      description: `Submit a durable parallel broadcast. Default: all (${peerNames}). Progress streams to the A2A panel.`,
       inputSchema: {
         type: 'object',
         properties: {
           prompt: { type: 'string', description: 'Task or question for the agents' },
           agents: { type: 'array', items: { type: 'string' }, description: `Agent IDs (default: all). Options: ${peerNames}` },
+          ...asyncControlProperties,
         },
         required: ['prompt'],
       },
     },
     {
       name: 'a2a_team',
-      description: `Orchestrate a multi-step workflow. Steps run sequentially; agents within each step run in parallel or sequential mode. Use {{previous}} to reference prior step outputs.`,
+      description: `Submit a durable multi-step workflow. Steps run sequentially; agents within each step can run in parallel or sequence. Use {{previous}} to reference prior outputs.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -205,13 +426,14 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
             },
           },
           context: { type: 'string', description: 'Initial shared context (optional)' },
+          ...asyncControlProperties,
         },
         required: ['steps'],
       },
     },
     {
       name: 'a2a_consensus',
-      description: `Ask multiple agents the same question, then have a judge synthesize a consensus answer with confidence score. Available: ${peerNames}.`,
+      description: `Submit durable multi-agent consensus with an independent judge. Returns a task receipt; live responses stream to the panel. Available: ${peerNames}.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -219,13 +441,14 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           agents: { type: 'array', items: { type: 'string' }, description: `Agent IDs to consult (default: all). Options: ${peerNames}` },
           judge: { type: 'string', description: `Agent to act as judge/synthesizer (default: claude). Options: ${peerNames}` },
           quorum: { type: 'number', description: 'Minimum valid independent responses. Default: strict majority of participants.' },
+          ...asyncControlProperties,
         },
         required: ['prompt'],
       },
     },
     {
       name: 'a2a_debate',
-      description: `Start an adversarial multi-agent debate. All agents (${peerNames}) argue and a judge synthesizes a verdict with scores. Great for exploring trade-offs.`,
+      description: `Submit a durable adversarial debate. Agents argue and a judge synthesizes a verdict. Returns immediately with a task id so long debates survive MCP host timeouts.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -233,13 +456,14 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           rounds: { type: 'number', description: 'Number of debate rounds (default: 4, recommended max: 18, exceptional max: 36)' },
           agents: { type: 'array', items: { type: 'string' }, description: `Debaters (default: all). Options: ${peerNames}` },
           judge: { type: 'string', description: `Judge agent (default: claude). Options: ${peerNames}` },
+          ...asyncControlProperties,
         },
         required: ['topic'],
       },
     },
     {
       name: 'a2a_ensemble',
-      description: `NxN code ensemble: all agents write code, cross-review each other, revise, then a judge synthesizes the best solution. Use for high-quality code generation.`,
+      description: `Submit a durable NxN code ensemble: write, cross-review, revise and synthesize. Progress and model output stream to the panel.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -248,8 +472,62 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           rounds: { type: 'number', description: 'Review+revise cycles (default: 1, recommended max: 6, exceptional max: 12)' },
           agents: { type: 'array', items: { type: 'string' }, description: `Exact participant set (default: all). Options: ${peerNames}` },
           judge: { type: 'string', description: `Judge agent (default: claude). Options: ${peerNames}` },
+          ...asyncControlProperties,
         },
         required: ['task'],
+      },
+    },
+    {
+      name: 'a2a_plan',
+      description: 'Submit a durable author-review planning loop with persisted versions and live review streaming.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          description: { type: 'string', description: 'Plan objective or specification.' },
+          author: { type: 'string', description: `Author agent (default: claude). Options: ${peerNames}` },
+          reviewer: { type: 'string', description: `Reviewer agent (default: codex). Options: ${peerNames}` },
+          rounds: { type: 'number', description: 'Maximum author-review rounds (default: 3; max: 36).' },
+          lenses: { type: 'array', items: { type: 'string' }, description: 'Optional review lenses such as engineer, security, ops, product or performance.' },
+          ...asyncControlProperties,
+        },
+        required: ['description'],
+      },
+    },
+    {
+      name: 'a2a_task_status',
+      description: 'Get the durable status, full final output and preserved partial artifacts of an A2A task.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string', description: 'Task id returned by any A2A orchestration tool.' },
+          coordinator: { type: 'string', enum: Object.keys(INITIAL_PEERS), description: 'Optional coordinator hint.' },
+        },
+        required: ['task_id'],
+      },
+    },
+    {
+      name: 'a2a_task_wait',
+      description: 'Wait up to 240 seconds for an A2A task, then return its current or terminal state. Safe to call repeatedly.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string', description: 'Task id returned by any A2A orchestration tool.' },
+          wait_ms: { type: 'number', description: 'This wait only, maximum 240000 ms (default 60000).' },
+          coordinator: { type: 'string', enum: Object.keys(INITIAL_PEERS), description: 'Optional coordinator hint.' },
+        },
+        required: ['task_id'],
+      },
+    },
+    {
+      name: 'a2a_task_cancel',
+      description: 'Cancel an active A2A task and its current model call. Preserved partial output remains auditable.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string', description: 'Task id returned by any A2A orchestration tool.' },
+          coordinator: { type: 'string', enum: Object.keys(INITIAL_PEERS), description: 'Optional coordinator hint.' },
+        },
+        required: ['task_id'],
       },
     },
     {
@@ -286,6 +564,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         return await handleDebate(args);
       case 'a2a_ensemble':
         return await handleEnsemble(args);
+      case 'a2a_plan':
+        return await handlePlan(args);
+      case 'a2a_task_status':
+        return await handleTaskStatus(args);
+      case 'a2a_task_wait':
+        return await handleTaskWait(args);
+      case 'a2a_task_cancel':
+        return await handleTaskCancel(args);
       case 'a2a_status':
         return await handleStatus(args);
       default:
@@ -300,167 +586,59 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function handleCall(args) {
-  const result = await sendToAgent(args.agent, args.prompt);
-  return { content: [{ type: 'text', text: `**${args.agent}:**\n\n${result}` }] };
+  return submitTool('mesh/call', callBridgeParams(args, bridgeContext()), args);
 }
 
 async function handleBroadcast(args) {
-  const agents = args.agents || Object.keys(getAllPeers());
-  const results = await Promise.allSettled(agents.map(id => sendToAgent(id, args.prompt)));
-  const output = agents.map((id, i) => {
-    const r = results[i];
-    const text = r.status === 'fulfilled' ? r.value : `Error: ${r.reason?.message}`;
-    return `### ${id}\n${text}`;
-  }).join('\n\n---\n\n');
-  return { content: [{ type: 'text', text: `**a2a_broadcast (${agents.length} agents):**\n\n${output}` }] };
+  return submitTool('mesh/broadcast', broadcastBridgeParams(args, bridgeContext()), args);
 }
 
 async function handleTeam(args) {
-  const steps = args.steps || [];
-  const workflowName = args.name || 'workflow';
-  const startTime = Date.now();
-  const stepOutputs = [];
-  let accumulated = args.context || '';
-
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    let prompt = step.prompt
-      .replace(/\{\{previous\}\}/g, accumulated)
-      .replace(/\{\{step_(\d+)\}\}/g, (_, n) => stepOutputs[parseInt(n)] || '');
-
-    let stepResult;
-    if (step.mode === 'parallel') {
-      const results = await Promise.allSettled(step.agents.map(id => sendToAgent(id, prompt)));
-      stepResult = step.agents.map((id, j) => {
-        const r = results[j];
-        return `**${id}**: ${r.status === 'fulfilled' ? r.value : `Error: ${r.reason?.message}`}`;
-      }).join('\n\n');
-    } else {
-      const parts = [];
-      for (const id of step.agents) {
-        const agentPrompt = parts.length > 0
-          ? `${prompt}\n\n[Prior responses in this step]\n${parts.join('\n\n')}`
-          : prompt;
-        const result = await sendToAgent(id, agentPrompt);
-        parts.push(`**${id}**: ${result}`);
-      }
-      stepResult = parts.join('\n\n');
-    }
-
-    stepOutputs.push(stepResult);
-    accumulated = stepOutputs.join('\n\n---\n\n');
-  }
-
-  const duration = Date.now() - startTime;
-  const output = stepOutputs.map((s, i) => `## Step ${i + 1} (${steps[i].mode}: ${steps[i].agents.join(', ')})\n${s}`).join('\n\n---\n\n');
-  return { content: [{ type: 'text', text: `**a2a_team "${workflowName}" (${steps.length} steps, ${duration}ms):**\n\n${output}` }] };
+  return submitTool('mesh/team', teamBridgeParams(args, bridgeContext()), args);
 }
 
 async function handleConsensus(args) {
   const context = bridgeContext();
-  const serverUrl = await getCoordinator();
-  const result = await peerRequest(serverUrl, '/mesh/consensus', consensusBridgeParams(args, context));
-
-  // Format the result
-  const r = result.result || result;
-  const lines = [
-    `**Consensus Result**`,
-    `**Prompt**: ${r.prompt || args.prompt}`,
-    `**Agents**: ${(r.agents || []).join(', ')}`,
-    `**Judge**: ${r.judge || 'claude'}`,
-    `**Confidence**: ${r.synthesis ? (r.synthesis.confidence * 100).toFixed(0) + '%' : 'N/A'}`,
-    '',
-  ];
-
-  if (r.synthesis?.answer) {
-    lines.push(`### Synthesized Answer`, r.synthesis.answer);
-  }
-  if (r.synthesis?.dissent) {
-    lines.push('', `### Dissent`, r.synthesis.dissent);
-  }
-  if (r.synthesis?.agentAgreement && Object.keys(r.synthesis.agentAgreement).length > 0) {
-    lines.push('', `### Agent Agreement`);
-    for (const [agent, status] of Object.entries(r.synthesis.agentAgreement)) {
-      lines.push(`- **${agent}**: ${status}`);
-    }
-  }
-  if (r.timing) {
-    lines.push('', `_Timing: ${r.timing.totalMs}ms_`);
-  }
-
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+  return submitTool('mesh/consensus', consensusBridgeParams(args, context), args);
 }
 
 async function handleDebate(args) {
-  const context = bridgeContext();
-  const serverUrl = await getCoordinator();
-  const result = await peerRequest(serverUrl, '/rpc', {
-    jsonrpc: '2.0', id: `debate-${Date.now()}`,
-    method: 'mesh/debate',
-    params: {
-      topic: args.topic,
-      rounds: Math.min(args.rounds || 4, 36),
-      agents: args.agents,
-      judge: args.judge,
-      depth: context.depth,
-      meshChain: context.meshChain,
-    },
-  });
-
-  if (result.error) {
-    return { content: [{ type: 'text', text: `**Debate Error:** ${result.error.message || JSON.stringify(result.error)}` }], isError: true };
-  }
-
-  const r = result.result || result;
-  const lines = [
-    `**Debate: ${r.topic}**`,
-    `**Agents**: ${(r.agents || []).join(' vs ')} | **Judge**: ${r.judge} | **Rounds**: ${r.rounds}`,
-    r.timing ? `_Timing: ${(r.timing.totalMs / 1000).toFixed(1)}s_` : '',
-    '',
-  ];
-
-  for (const h of (r.history || [])) {
-    lines.push(`### Round ${h.round} — ${h.agent.toUpperCase()}`, h.argument, '');
-  }
-
-  if (r.synthesis) {
-    lines.push(`---`, `### Verdict (${r.judge})`);
-    if (r.synthesis.winner) lines.push(`**Winner:** ${r.synthesis.winner}`);
-    if (r.synthesis.scores) {
-      lines.push(`**Scores:** ${Object.entries(r.synthesis.scores).map(([a, s]) => `${a}: ${s}/10`).join(', ')}`);
-    }
-    if (r.synthesis.verdict) lines.push('', r.synthesis.verdict);
-    if (r.synthesis.confidence) lines.push('', `_Confidence: ${(r.synthesis.confidence * 100).toFixed(0)}%_`);
-  }
-
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+  return submitTool('mesh/debate', debateBridgeParams(args, bridgeContext()), args);
 }
 
 async function handleEnsemble(args) {
   const context = bridgeContext();
-  const serverUrl = await getCoordinator();
-  const result = await peerRequest(serverUrl, '/rpc', {
-    jsonrpc: '2.0', id: `ensemble-${Date.now()}`,
-    method: 'mesh/ensemble',
-    params: ensembleBridgeParams(args, context),
+  return submitTool('mesh/ensemble', ensembleBridgeParams(args, context), args);
+}
+
+async function handlePlan(args) {
+  return submitTool('mesh/plan', planBridgeParams(args, bridgeContext()), args);
+}
+
+async function handleTaskStatus(args) {
+  const located = await findTask(args.task_id, args.coordinator);
+  return { content: [{ type: 'text', text: taskReceiptText({ ...located }) }] };
+}
+
+async function handleTaskWait(args) {
+  const located = await waitForTask(args.task_id, {
+    waitMs: args.wait_ms || 60_000,
+    coordinator: args.coordinator,
   });
+  return { content: [{ type: 'text', text: taskReceiptText({ ...located }) }] };
+}
 
-  if (result.error) {
-    return { content: [{ type: 'text', text: `**Ensemble Error:** ${result.error.message || JSON.stringify(result.error)}` }], isError: true };
+async function handleTaskCancel(args) {
+  const located = await findTask(args.task_id, args.coordinator);
+  const coordinator = taskCoordinators.get(args.task_id) || {
+    agentId: located.coordinator,
+    url: getAllPeers()[located.coordinator],
+  };
+  if (!coordinator.url) {
+    throw new Error(`Task ${args.task_id} is durable, but coordinator ${coordinator.agentId || 'unknown'} is offline; cancellation could not be delivered.`);
   }
-
-  const r = result.result || result;
-  const lines = [
-    `**Code Ensemble**`,
-    `**Task**: ${r.task}`,
-    `**Agents**: ${(r.agents || []).join(', ')} | **Judge**: ${r.judge} | **Rounds**: ${r.rounds}`,
-    r.timing ? `_Timing: ${(r.timing.totalMs / 1000).toFixed(1)}s_` : '',
-    '',
-    `### Final Code`,
-    r.finalCode || '(no code produced)',
-  ];
-
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+  const task = await rpcRequest(coordinator.url, 'tasks/cancel', { id: args.task_id }, 30_000);
+  return { content: [{ type: 'text', text: taskReceiptText({ task, coordinator: coordinator.agentId }) }] };
 }
 
 async function handleStatus(args = {}) {

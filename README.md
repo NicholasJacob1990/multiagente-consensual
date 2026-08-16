@@ -8,9 +8,11 @@ O manual completo atualizado acompanha o pacote em `assets/Manual-completo-coman
 
 ## Escolha rápida
 
-![Painel local do A2A Mesh com Claude, Codex, Gemini e Grok online](docs/images/a2a-mesh-panel.png)
+![Painel local do A2A Mesh com Claude, Codex, Gemini e Grok online](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel.png)
 
-Você não precisa decorar os 30 comandos. Comece pelo resultado desejado:
+Você não precisa decorar os 29 comandos públicos. O manifesto também registra a skill interna
+`bridge-agentes`, usada como transporte do Cowork, totalizando 30 entradas governadas. Comece pelo
+resultado desejado:
 
 | Se você quer... | Use... | Resultado |
 |---|---|---|
@@ -74,6 +76,25 @@ somente a `127.0.0.1`:
 O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
 `http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
 chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento.
+
+As operações longas são duráveis: painel e MCP recebem um `task_id` imediatamente, enquanto o
+servidor continua a execução. O streaming mostra deltas textuais fornecidos pelas CLIs, agente,
+fase e estado — nunca raciocínio interno oculto. Os deltas são transitórios no canal ao vivo e um
+checkpoint substituível por agente preserva a saída corrente sem consumir o ledger de fases. IDs de
+evento persistidos permitem recompor lacunas
+após reconexão; `a2a_task_status`, `a2a_task_wait` e `a2a_task_cancel` consultam, aguardam ou cancelam
+sem reenviar o trabalho. Saídas parciais de falhas ficam em `partial-output.md`, usando o checkpoint
+exato mais novo por agente e, para runs legados, o diálogo cronológico das cadeiras sem snapshot.
+
+O `request_id` é idempotente no ledger compartilhado, não apenas na memória do coordenador. Queda
+de SSE é recuperada pelo ID remoto; cancelamento explícito alcança a tarefa filha; e uma transição
+terminal compare-and-set impede que resultado tardio substitua `canceled` ou `failed`. Lacunas
+extensas do replay são paginadas e sinalizadas ao painel em vez de serem truncadas silenciosamente.
+Ao atingir o teto defensivo de eventos, o ledger grava `mesh_gap`, suprime deltas excedentes e ainda
+aceita a transição terminal. Assim, uma rajada de tokens não impede que argumentos, síntese e estado
+terminal sejam gravados. Se o MCP omitir `request_id`, o bridge usa uma chave estável numa
+janela deslizante curta, limitada à sessão do processo MCP. Isso protege retries imediatos sem
+confundir janelas ou clientes independentes; para repetição após reinício, informe `request_id`.
 
 O peer `grok` usa exclusivamente `cursor-agent --model cursor-grok-4.6-high`. O runtime confirma o
 modelo observado no stream, não usa fallback silencioso e só aceita a resposta após o evento terminal.
@@ -195,6 +216,15 @@ flag ou ambiente requer opt-in adicional explícito.
 `consenso_estrito` no gate colegiado incorpora o veredito completo do mesmo hash. Outros resultados
 colegiados só efetivam gate forte com arquivo real e um recibo HMAC por voto; sem isso permanecem
 `formation_only`.
+
+A formação colegiada separa modalidade de publicação (`seriatim`, `per_curiam` ou
+`opinion_of_court`) e método de apuração. `global` (*case-by-case*) continua no
+`decisao_colegiada_v1` e é o padrão. `analitico` (*issue-by-issue*) e `hibrido` usam
+`decisao_colegiada_v2`, congelam questões e derivação, detectam maiorias cruzadas e, no híbrido,
+exigem confirmação bloqueante em segundo ato. Esses modos só são ativados explicitamente; maioria
+ou dispositivo derivado nunca equivalem a consenso.
+O recibo desse segundo ato assina o hash canônico da cadeira, do booleano `confirma`, do eventual
+fundamento divergente, do derivado e da política: inverter a confirmação sem novo recibo falha fechado.
 
 As CLIs continuam com ferramentas completas e autoaprovadas sob a identidade do usuário. O projeto
 e diretórios extras são declarados por chamada e a HOME só é adicionada por opção explícita. Isso é

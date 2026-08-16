@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import copy
+import hashlib
 import json
 import os
 import stat
@@ -66,6 +67,108 @@ class AdapterAndGateTests(unittest.TestCase):
             "orcamento_diario": {"max_chamadas": 100, "max_custo": None},
             "orcamento_total": {"max_chamadas": 500, "max_custo": None},
         }
+
+    @staticmethod
+    def analytic_fixture(method: str = "analitico") -> dict[str, object]:
+        def digest_text(value: str) -> str:
+            return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+        questions = [
+            {
+                "id": "P",
+                "texto": "A premissa P está presente?",
+                "texto_sha256": digest_text("A premissa P está presente?"),
+                "dominio": ["sim", "nao"],
+                "depende_de": None,
+            },
+            {
+                "id": "Q",
+                "texto": "A premissa Q está presente?",
+                "texto_sha256": digest_text("A premissa Q está presente?"),
+                "dominio": ["sim", "nao"],
+                "depende_de": None,
+            },
+        ]
+        rules = [
+            {"se": {"P": "sim", "Q": "sim"}, "opcao": "A"},
+            {"se": {"P": "sim", "Q": "nao"}, "opcao": "B"},
+            {"se": {"P": "nao", "Q": "sim"}, "opcao": "B"},
+            {"se": {"P": "nao", "Q": "nao"}, "opcao": "B"},
+        ]
+        table = [
+            {"respostas": {"P": "sim", "Q": "sim"}, "opcao": "A"},
+            {"respostas": {"P": "sim", "Q": "nao"}, "opcao": "B"},
+            {"respostas": {"P": "nao", "Q": "sim"}, "opcao": "B"},
+            {"respostas": {"P": "nao", "Q": "nao"}, "opcao": "B"},
+        ]
+        questions_hash = hashlib.sha256(provenance.canonical_json(questions)).hexdigest()
+        derivation_hash = hashlib.sha256(provenance.canonical_json(table)).hexdigest()
+        ballots = {
+            "a": [{"questao": "P", "resposta": "sim"}, {"questao": "Q", "resposta": "nao"}],
+            "b": [{"questao": "P", "resposta": "nao"}, {"questao": "Q", "resposta": "sim"}],
+            "c": [{"questao": "P", "resposta": "sim"}, {"questao": "Q", "resposta": "sim"}],
+        }
+        votes = []
+        for index, (seat, answers) in enumerate(ballots.items(), start=1):
+            votes.append({
+                "cadeira": seat,
+                "tipo": "voto",
+                "respostas": answers,
+                "respostas_sha256": hashlib.sha256(
+                    provenance.canonical_json(answers)
+                ).hexdigest(),
+                "voto_sha256": (str(index) * 64)[:64],
+                "adesoes": [],
+            })
+        verdict: dict[str, object] = {
+            "schema": "decisao_colegiada_v2",
+            "metodo_apuracao": method,
+            "modalidade": "seriatim",
+            "regra_resultado": "maioria_simples",
+            "base_calculo": "votos_validos",
+            "adesao_fundamentos": "proposicao",
+            "quorum_declarado": 3,
+            "ratio_exigida": False,
+            "votos_dissidentes": "publicar",
+            "votos_concorrentes": "publicar",
+            "proclamacao_congela_votos": True,
+            "artefato_sha256": "a" * 64,
+            "questoes": questions,
+            "regras_derivacao": rules,
+            "questoes_sha256": questions_hash,
+            "derivacao_sha256": derivation_hash,
+            "votos": votes,
+            "proposicoes": [],
+            "respostas_apuradas": {"P": "sim", "Q": "sim"},
+            "coalizoes_por_questao": {
+                "P": {
+                    "estado": "apurada",
+                    "resposta": "sim",
+                    "cadeiras": ["a", "c"],
+                    "votos_validos": 3,
+                    "apoios_exigidos": 2,
+                },
+                "Q": {
+                    "estado": "apurada",
+                    "resposta": "sim",
+                    "cadeiras": ["b", "c"],
+                    "votos_validos": 3,
+                    "apoios_exigidos": 2,
+                },
+            },
+            "dispositivo_derivado": "A",
+            "dispositivo_por_cadeira": "B",
+            "contagem_dispositivos_por_cadeira": {"A": 1, "B": 2},
+            "coalizao_do_dispositivo": ["c"],
+            "apoio_direto_do_derivado": 1,
+            "paradoxo_doutrinario": True,
+            "ratio_status": "nao_aplicavel",
+            "votos_separados": [],
+            "rotulo_deliberativo": "decisao_por_maioria",
+            "proclamado": True,
+            "gate_colegiado": False,
+        }
+        return verdict
 
     def test_adapter_timeout_policy(self) -> None:
         self.assertEqual(adapter.timeout_value("1800"), 1800)
@@ -1128,6 +1231,571 @@ class AdapterAndGateTests(unittest.TestCase):
         report = collegiate.verdict_report(verdict, contract, manifest=manifest)
         self.assertFalse(report["valid"])
         self.assertTrue(any("veredito_consenso" in item for item in report["errors"]))
+
+    def test_issue_by_issue_detects_discursive_dilemma(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertTrue(report["valid"], report["errors"])
+        self.assertEqual(report["contract"], "decisao_colegiada_v2")
+        self.assertEqual(report["metodo_apuracao"], "analitico")
+        self.assertEqual(report["dispositivo_derivado"], "A")
+        self.assertEqual(report["dispositivo_por_cadeira"], "B")
+        self.assertTrue(report["paradoxo_doutrinario"])
+        self.assertEqual(report["ratio_status_calculado"], "nao_aplicavel")
+
+    def test_issue_by_issue_fails_closed_when_ratio_is_required(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        verdict["ratio_exigida"] = True
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("ratio_exigida" in item for item in report["errors"]))
+
+    def test_issue_by_issue_cannot_invent_ratio_without_propositions(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        verdict["ratio_exigida"] = True
+        verdict["ratio_status"] = "nao_aplicavel"
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertFalse(report["valid"])
+        self.assertEqual(report["ratio_status_calculado"], "nao_aplicavel")
+        self.assertTrue(any("ratio_exigida" in item for item in report["errors"]))
+
+    def test_issue_by_issue_unified_ratio_requires_package_coalition_and_essential_basis(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        answers = [
+            {"questao": "P", "resposta": "sim"},
+            {"questao": "Q", "resposta": "sim"},
+        ]
+        for vote in verdict["votos"]:
+            vote["respostas"] = copy.deepcopy(answers)
+            vote["respostas_sha256"] = hashlib.sha256(
+                provenance.canonical_json(answers)
+            ).hexdigest()
+            vote["adesoes"] = ["ratio-1"]
+        verdict.update({
+            "ratio_exigida": True,
+            "proposicoes": [{
+                "id": "ratio-1",
+                "texto_sha256": "d" * 64,
+                "essencial": True,
+            }],
+            "coalizoes_por_questao": {
+                "P": {
+                    "estado": "apurada", "resposta": "sim", "cadeiras": ["a", "b", "c"],
+                    "votos_validos": 3, "apoios_exigidos": 2,
+                },
+                "Q": {
+                    "estado": "apurada", "resposta": "sim", "cadeiras": ["a", "b", "c"],
+                    "votos_validos": 3, "apoios_exigidos": 2,
+                },
+            },
+            "dispositivo_por_cadeira": "A",
+            "contagem_dispositivos_por_cadeira": {"A": 3},
+            "coalizao_do_dispositivo": ["a", "b", "c"],
+            "apoio_direto_do_derivado": 3,
+            "paradoxo_doutrinario": False,
+            "ratio_status": "unificada",
+        })
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertTrue(report["valid"], report["errors"])
+        self.assertEqual(report["ratio_status_calculado"], "unificada")
+
+    def test_qualified_majority_missing_threshold_fails_closed_without_exception(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        analytic = self.analytic_fixture()
+        analytic["regra_resultado"] = "maioria_qualificada"
+        analytic.pop("limiar_maioria_qualificada", None)
+        analytic_report = collegiate.verdict_report(analytic, contract, manifest=manifest)
+        self.assertFalse(analytic_report["valid"])
+        self.assertTrue(any("limiar" in item for item in analytic_report["errors"]))
+
+        global_verdict = {
+            "schema": "decisao_colegiada_v1",
+            "modalidade": "seriatim",
+            "regra_resultado": "maioria_qualificada",
+            "base_calculo": "votos_validos",
+            "adesao_fundamentos": "proposicao",
+            "quorum_declarado": 2,
+            "ratio_exigida": False,
+            "votos_dissidentes": "publicar",
+            "votos_concorrentes": "publicar",
+            "proclamacao_congela_votos": True,
+            "artefato_sha256": "a" * 64,
+            "votos": [
+                {"cadeira": "a", "tipo": "favoravel", "opcao_dispositivo": "A", "voto_sha256": "b" * 64, "adesoes": []},
+                {"cadeira": "b", "tipo": "favoravel", "opcao_dispositivo": "A", "voto_sha256": "c" * 64, "adesoes": []},
+            ],
+            "proposicoes": [],
+            "opcao_vencedora": "A",
+            "ratio_status": "nao_aplicavel",
+            "votos_separados": [],
+            "rotulo_deliberativo": "unanimidade_no_resultado",
+            "proclamado": True,
+            "gate_colegiado": False,
+        }
+        global_report = collegiate.verdict_report(global_verdict, contract, manifest=manifest)
+        self.assertFalse(global_report["valid"])
+        self.assertTrue(any("limiar" in item for item in global_report["errors"]))
+
+    def test_hybrid_requires_blocking_confirmation(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture("hibrido")
+        config = collegiate.config_report(
+            {
+                "contrato": "decisao_colegiada_v2",
+                "metodo_apuracao": "hibrido",
+                "modalidade": verdict["modalidade"],
+                "regra_resultado": verdict["regra_resultado"],
+                "base_calculo": verdict["base_calculo"],
+                "adesao_fundamentos": verdict["adesao_fundamentos"],
+                "quorum": verdict["quorum_declarado"],
+                "ratio_exigida": verdict["ratio_exigida"],
+                "votos_dissidentes": verdict["votos_dissidentes"],
+                "votos_concorrentes": verdict["votos_concorrentes"],
+                "proclamacao_congela_votos": True,
+                "questoes": verdict["questoes"],
+                "regras_derivacao": verdict["regras_derivacao"],
+                "questoes_sha256": verdict["questoes_sha256"],
+                "derivacao_sha256": verdict["derivacao_sha256"],
+                "politica_confirmacao": "bloqueante",
+                "confirmacao_sha256": "0" * 64,
+            },
+            contract,
+        )
+        confirmation_hash = config["normalized"]["confirmacao_sha256"]
+        verdict["politica_confirmacao"] = "bloqueante"
+        verdict["confirmacao_sha256"] = confirmation_hash
+        derived_hash = hashlib.sha256(provenance.canonical_json({
+            "artefato_sha256": verdict["artefato_sha256"],
+            "questoes_sha256": verdict["questoes_sha256"],
+            "derivacao_sha256": verdict["derivacao_sha256"],
+            "dispositivo": "A",
+        })).hexdigest()
+        def confirmation_vote(seat, confirms, reason=None):
+            payload = {
+                "cadeira": seat,
+                "confirma": confirms,
+                "derivado_sha256": derived_hash,
+                "confirmacao_sha256": confirmation_hash,
+                "fundamento_divergencia": reason,
+            }
+            vote = {
+                "cadeira": seat,
+                "confirma": confirms,
+                "voto_sha256": hashlib.sha256(
+                    provenance.canonical_json(payload)
+                ).hexdigest(),
+            }
+            if reason is not None:
+                vote["fundamento_divergencia"] = reason
+            return vote
+        divergence = {
+            "tipo": "tabela_inadequada",
+            "fundamento": "a consequência jurídica precisa ser revista",
+        }
+        verdict["confirmacao"] = {
+            "resultado": "rejeitada",
+            "votos": [
+                confirmation_vote("a", False),
+                confirmation_vote("b", True),
+                confirmation_vote("c", False, divergence),
+            ],
+        }
+        verdict["proclamado"] = False
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertTrue(report["valid"], report["errors"])
+        self.assertEqual(report["confirmacao"], "rejeitada")
+        self.assertFalse(report["gate_colegiado"])
+
+        forged = copy.deepcopy(verdict)
+        forged["gate_colegiado"] = True
+        forged_report = collegiate.verdict_report(forged, contract, manifest=manifest)
+        self.assertFalse(forged_report["valid"])
+        self.assertTrue(any("confirmação" in item for item in forged_report["errors"]))
+
+    def test_hybrid_strong_gate_attests_ballots_and_confirmation_as_separate_acts(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        secret = b"h" * 32
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            artifact = root / "decisao-hibrida.md"
+            artifact.write_text("decisão híbrida\n", encoding="utf-8")
+            verdict = self.analytic_fixture("hibrido")
+            verdict["artefato_sha256"] = provenance.hash_file(artifact)["sha256"]
+            config = collegiate.config_report(
+                {
+                    "contrato": "decisao_colegiada_v2",
+                    "metodo_apuracao": "hibrido",
+                    "modalidade": verdict["modalidade"],
+                    "regra_resultado": verdict["regra_resultado"],
+                    "base_calculo": verdict["base_calculo"],
+                    "adesao_fundamentos": verdict["adesao_fundamentos"],
+                    "quorum": verdict["quorum_declarado"],
+                    "ratio_exigida": False,
+                    "votos_dissidentes": verdict["votos_dissidentes"],
+                    "votos_concorrentes": verdict["votos_concorrentes"],
+                    "proclamacao_congela_votos": True,
+                    "questoes": verdict["questoes"],
+                    "regras_derivacao": verdict["regras_derivacao"],
+                    "questoes_sha256": verdict["questoes_sha256"],
+                    "derivacao_sha256": verdict["derivacao_sha256"],
+                    "politica_confirmacao": "bloqueante",
+                    "confirmacao_sha256": "0" * 64,
+                },
+                contract,
+            )
+            confirmation_hash = config["normalized"]["confirmacao_sha256"]
+            mapping = {"a": "codex", "b": "grok", "c": "claude"}
+            for vote in verdict["votos"]:
+                vote["cadeira"] = mapping[vote["cadeira"]]
+            for question in verdict["coalizoes_por_questao"].values():
+                question["cadeiras"] = sorted(mapping[seat] for seat in question["cadeiras"])
+            verdict["coalizao_do_dispositivo"] = ["claude"]
+            verdict.update({
+                "run_id": "run-hibrido-atestado",
+                "tentativa": 1,
+                "artefato_caminho": str(artifact),
+                "raiz_artefatos": str(root),
+                "politica_confirmacao": "bloqueante",
+                "confirmacao_sha256": confirmation_hash,
+                "proclamado": True,
+                "gate_colegiado": True,
+            })
+            confirmations = []
+            for index, seat in enumerate(["codex", "grok", "claude"], start=1):
+                confirmations.append({
+                    "cadeira": seat,
+                    "confirma": True,
+                    "recibo_nonce": f"nonce-confirmacao-{index:02d}-0001",
+                })
+            verdict["confirmacao"] = {"resultado": "confirmada", "votos": confirmations}
+
+            ballot_package_hash = hashlib.sha256(provenance.canonical_json({
+                "artefato_sha256": verdict["artefato_sha256"],
+                "questoes_sha256": verdict["questoes_sha256"],
+                "derivacao_sha256": verdict["derivacao_sha256"],
+            })).hexdigest()
+            derived_hash = hashlib.sha256(provenance.canonical_json({
+                "artefato_sha256": verdict["artefato_sha256"],
+                "questoes_sha256": verdict["questoes_sha256"],
+                "derivacao_sha256": verdict["derivacao_sha256"],
+                "dispositivo": "A",
+            })).hexdigest()
+            for item in confirmations:
+                item["voto_sha256"] = hashlib.sha256(provenance.canonical_json({
+                    "cadeira": item["cadeira"],
+                    "confirma": item["confirma"],
+                    "derivado_sha256": derived_hash,
+                    "confirmacao_sha256": confirmation_hash,
+                    "fundamento_divergencia": None,
+                })).hexdigest()
+            identities = {
+                "codex": ("codex", "openai", "gpt-5.6-sol"),
+                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
+                "claude": ("claude", "anthropic", "claude-opus-5"),
+            }
+            receipts = []
+            for index, vote in enumerate(verdict["votos"], start=1):
+                seat = vote["cadeira"]
+                route, provider, model = identities[seat]
+                nonce = f"nonce-cedula-hibrida-{index:02d}-0001"
+                vote["recibo_nonce"] = nonce
+                receipts.append(provenance.sign_receipt({
+                    "schema": "multiagent_provenance_v1", "run_id": verdict["run_id"],
+                    "cadeira": seat, "rota": route, "provedor": provider, "nonce": nonce,
+                    "tentativa": 1, "rodada": 1, "argv_sha256": "a" * 64,
+                    "entrada_sha256": ballot_package_hash, "saida_sha256": vote["voto_sha256"],
+                    "artefato_sha256": verdict["artefato_sha256"], "emitido_em": "2026-08-15T12:00:00Z",
+                    "modelo_efetivo": model, "modelo_confirmado": True, "execucao_efetiva": True,
+                    "execucao_id": f"execucao-cedula-{index}", "isolamento_execucao_confirmado": True,
+                    "sessao_id": None, "sessao_confirmada": False,
+                    "posicao_colegiada": vote["respostas_sha256"],
+                    "questoes_sha256": verdict["questoes_sha256"],
+                    "derivacao_sha256": verdict["derivacao_sha256"],
+                }, secret))
+            for index, item in enumerate(confirmations, start=1):
+                seat = item["cadeira"]
+                route, provider, model = identities[seat]
+                receipts.append(provenance.sign_receipt({
+                    "schema": "multiagent_provenance_v1", "run_id": verdict["run_id"],
+                    "cadeira": seat, "rota": route, "provedor": provider,
+                    "nonce": item["recibo_nonce"], "tentativa": 1, "rodada": 2,
+                    "argv_sha256": "b" * 64, "entrada_sha256": derived_hash,
+                    "saida_sha256": item["voto_sha256"], "artefato_sha256": verdict["artefato_sha256"],
+                    "emitido_em": "2026-08-15T12:01:00Z", "modelo_efetivo": model,
+                    "modelo_confirmado": True, "execucao_efetiva": True,
+                    "execucao_id": f"execucao-confirmacao-{index}",
+                    "isolamento_execucao_confirmado": True, "sessao_id": None,
+                    "sessao_confirmada": False, "posicao_colegiada": item["voto_sha256"],
+                    "derivado_sha256": derived_hash, "confirmacao_sha256": confirmation_hash,
+                }, secret))
+            verdict["recibos_proveniencia"] = receipts
+            report = collegiate.verdict_report(
+                verdict,
+                contract,
+                manifest=manifest,
+                secret=secret,
+                nonce_ledger=root / "nonces.json",
+                consume_nonce=True,
+            )
+            self.assertTrue(report["valid"], report["errors"])
+            self.assertTrue(report["gate_colegiado"])
+            self.assertEqual(report["confirmacao"], "confirmada")
+
+            forged = copy.deepcopy(verdict)
+            forged_vote = forged["confirmacao"]["votos"][0]
+            forged_vote["confirma"] = False
+            forged_vote["fundamento_divergencia"] = {
+                "tipo": "tabela_inadequada",
+                "fundamento": "discordância acrescentada sem novo ato assinado",
+            }
+            forged["confirmacao"]["resultado"] = "rejeitada"
+            forged["proclamado"] = False
+            forged["gate_colegiado"] = False
+            forged_report = collegiate.verdict_report(
+                forged,
+                contract,
+                manifest=manifest,
+                secret=secret,
+                nonce_ledger=root / "nonces-forged.json",
+                consume_nonce=False,
+            )
+            self.assertFalse(forged_report["valid"])
+            self.assertTrue(any(
+                "ato de confirmação" in item or "ato congelado" in item
+                for item in forged_report["errors"]
+            ))
+
+    def test_hybrid_confirmation_hash_changes_from_false_to_true(self) -> None:
+        derived_hash = "d" * 64
+        confirmation_hash = "c" * 64
+        rejected = {
+            "cadeira": "codex",
+            "confirma": False,
+            "fundamento_divergencia": {
+                "tipo": "derivacao_incorreta",
+                "fundamento": "A regra congelada não cobre esta combinação.",
+            },
+        }
+        accepted = copy.deepcopy(rejected)
+        accepted["confirma"] = True
+        accepted["fundamento_divergencia"] = None
+        rejected_hash = hashlib.sha256(provenance.canonical_json(
+            collegiate.analytic_tally._confirmation_vote_payload(
+                rejected, derived_hash, confirmation_hash
+            )
+        )).hexdigest()
+        accepted_hash = hashlib.sha256(provenance.canonical_json(
+            collegiate.analytic_tally._confirmation_vote_payload(
+                accepted, derived_hash, confirmation_hash
+            )
+        )).hexdigest()
+        self.assertNotEqual(rejected_hash, accepted_hash)
+
+    def test_analytic_config_accepts_single_parent_forest_and_rejects_future_parent(self) -> None:
+        _, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        base = self.analytic_fixture()
+        questions = copy.deepcopy(base["questoes"])
+        root = questions[0]
+        child = questions[1]
+        child["depende_de"] = {"questao": root["id"], "respostas": ["sim"]}
+        sibling_text = "Outra consequência depende da mesma premissa?"
+        sibling = {
+            "id": "R",
+            "texto": sibling_text,
+            "texto_sha256": hashlib.sha256(sibling_text.encode("utf-8")).hexdigest(),
+            "dominio": ["sim", "nao"],
+            "depende_de": {"questao": root["id"], "respostas": ["sim"]},
+        }
+        questions.append(sibling)
+        normalized, worlds, errors = collegiate.analytic_tally._normalize_questions(
+            questions, 4096
+        )
+        self.assertFalse(errors)
+        self.assertEqual(len(normalized), 3)
+        self.assertEqual(len(worlds), 5)
+
+        invalid = copy.deepcopy(questions)
+        invalid[0]["depende_de"] = {"questao": "R", "respostas": ["sim"]}
+        _, _, invalid_errors = collegiate.analytic_tally._normalize_questions(invalid, 4096)
+        self.assertTrue(any("pai já declarado" in item for item in invalid_errors))
+
+    def test_issue_by_issue_verdict_marks_inactive_child_as_prejudiced(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        child = verdict["questoes"][1]
+        child["depende_de"] = {"questao": "P", "respostas": ["sim"]}
+        verdict["regras_derivacao"] = [
+            {"se": {"P": "nao"}, "opcao": "B"},
+            {"se": {"P": "sim", "Q": "sim"}, "opcao": "A"},
+            {"se": {"P": "sim", "Q": "nao"}, "opcao": "B"},
+        ]
+        table = [
+            {"respostas": {"P": "sim", "Q": "sim"}, "opcao": "A"},
+            {"respostas": {"P": "sim", "Q": "nao"}, "opcao": "B"},
+            {"respostas": {"P": "nao"}, "opcao": "B"},
+        ]
+        verdict["questoes_sha256"] = hashlib.sha256(
+            provenance.canonical_json(verdict["questoes"])
+        ).hexdigest()
+        verdict["derivacao_sha256"] = hashlib.sha256(
+            provenance.canonical_json(table)
+        ).hexdigest()
+        answers_by_seat = {
+            "a": [{"questao": "P", "resposta": "nao"}],
+            "b": [{"questao": "P", "resposta": "nao"}],
+            "c": [{"questao": "P", "resposta": "sim"}, {"questao": "Q", "resposta": "sim"}],
+        }
+        for vote in verdict["votos"]:
+            answers = answers_by_seat[vote["cadeira"]]
+            vote["respostas"] = answers
+            vote["respostas_sha256"] = hashlib.sha256(
+                provenance.canonical_json(answers)
+            ).hexdigest()
+        verdict.update({
+            "respostas_apuradas": {"P": "nao"},
+            "coalizoes_por_questao": {
+                "P": {
+                    "estado": "apurada", "resposta": "nao", "cadeiras": ["a", "b"],
+                    "votos_validos": 3, "apoios_exigidos": 2,
+                },
+                "Q": {
+                    "estado": "prejudicada", "resposta": None, "cadeiras": [],
+                    "votos_validos": 0, "apoios_exigidos": 0,
+                },
+            },
+            "dispositivo_derivado": "B",
+            "dispositivo_por_cadeira": "B",
+            "contagem_dispositivos_por_cadeira": {"A": 1, "B": 2},
+            "coalizao_do_dispositivo": ["a", "b"],
+            "apoio_direto_do_derivado": 2,
+            "paradoxo_doutrinario": False,
+        })
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertTrue(report["valid"], report["errors"])
+        self.assertEqual(report["coalizoes_por_questao"]["Q"]["estado"], "prejudicada")
+        self.assertEqual(report["abstencoes_por_questao"]["Q"]["estado"], "prejudicada")
+
+    def test_analytic_schema_cannot_encode_global_tally(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        verdict = self.analytic_fixture()
+        verdict["metodo_apuracao"] = "global"
+        report = collegiate.verdict_report(verdict, contract, manifest=manifest)
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("metodo_apuracao" in item for item in report["errors"]))
+
+    def test_issue_by_issue_strong_gate_binds_ballot_package_and_replay(self) -> None:
+        manifest, contract = collegiate.load_manifest_and_contract(
+            ROOT / "assets/multiagent-manifest.json"
+        )
+        secret = b"i" * 32
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            artifact = root / "decisao.md"
+            artifact.write_text("decisão por questões\n", encoding="utf-8")
+            verdict = self.analytic_fixture()
+            verdict["artefato_sha256"] = provenance.hash_file(artifact)["sha256"]
+            mapping = {"a": "codex", "b": "grok", "c": "claude"}
+            for vote in verdict["votos"]:
+                vote["cadeira"] = mapping[vote["cadeira"]]
+            for question in verdict["coalizoes_por_questao"].values():
+                question["cadeiras"] = sorted(mapping[seat] for seat in question["cadeiras"])
+            verdict["coalizao_do_dispositivo"] = ["claude"]
+            verdict.update({
+                "run_id": "run-analitico-atestado",
+                "tentativa": 1,
+                "artefato_caminho": str(artifact),
+                "raiz_artefatos": str(root),
+                "gate_colegiado": True,
+            })
+            ballot_package_hash = hashlib.sha256(provenance.canonical_json({
+                "artefato_sha256": verdict["artefato_sha256"],
+                "questoes_sha256": verdict["questoes_sha256"],
+                "derivacao_sha256": verdict["derivacao_sha256"],
+            })).hexdigest()
+            identities = {
+                "codex": ("codex", "openai", "gpt-5.6-sol"),
+                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
+                "claude": ("claude", "anthropic", "claude-opus-5"),
+            }
+            receipts = []
+            for index, vote in enumerate(verdict["votos"], start=1):
+                seat = vote["cadeira"]
+                route, provider, model = identities[seat]
+                nonce = f"nonce-analitico-{index:02d}-0001"
+                vote["recibo_nonce"] = nonce
+                receipts.append(provenance.sign_receipt({
+                    "schema": "multiagent_provenance_v1",
+                    "run_id": verdict["run_id"],
+                    "cadeira": seat,
+                    "rota": route,
+                    "provedor": provider,
+                    "nonce": nonce,
+                    "tentativa": 1,
+                    "rodada": 1,
+                    "argv_sha256": "a" * 64,
+                    "entrada_sha256": ballot_package_hash,
+                    "saida_sha256": vote["voto_sha256"],
+                    "artefato_sha256": verdict["artefato_sha256"],
+                    "emitido_em": "2026-08-15T12:00:00Z",
+                    "modelo_efetivo": model,
+                    "modelo_confirmado": True,
+                    "execucao_efetiva": True,
+                    "execucao_id": f"execucao-analitica-{index}",
+                    "isolamento_execucao_confirmado": True,
+                    "sessao_id": None,
+                    "sessao_confirmada": False,
+                    "posicao_colegiada": vote["respostas_sha256"],
+                    "questoes_sha256": verdict["questoes_sha256"],
+                    "derivacao_sha256": verdict["derivacao_sha256"],
+                }, secret))
+            verdict["recibos_proveniencia"] = receipts
+            ledger = root / "nonces.json"
+            report = collegiate.verdict_report(
+                verdict,
+                contract,
+                manifest=manifest,
+                secret=secret,
+                nonce_ledger=ledger,
+                consume_nonce=True,
+            )
+            self.assertTrue(report["valid"], report["errors"])
+            self.assertTrue(report["gate_colegiado"])
+            self.assertEqual(report["cedula_sha256"], ballot_package_hash)
+
+            replay = collegiate.verdict_report(
+                verdict,
+                contract,
+                manifest=manifest,
+                secret=secret,
+                nonce_ledger=ledger,
+                consume_nonce=True,
+            )
+            self.assertFalse(replay["valid"])
+            self.assertTrue(any("replay" in item for item in replay["errors"]))
 
     def test_majority_collegiate_gate_requires_attested_votes_and_real_artifact(self) -> None:
         manifest, contract = collegiate.load_manifest_and_contract(

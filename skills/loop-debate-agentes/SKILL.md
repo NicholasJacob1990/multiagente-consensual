@@ -1,6 +1,6 @@
 ---
 name: loop-debate-agentes
-description: "Criar ou melhorar um ou vários artefatos relacionados num ciclo iterativo em linguagem natural, com até 20 versões completas por artefato: um agente redige, outros debatem e avaliam, revisores autorizados podem publicar candidatas ou novas versões canônicas controladas, ou N produtores geram candidatos que passam por revisão cruzada N×N. Permite escolher modelos para qualquer papel, publicação compartilhada, prototipação paralela, perfis de domínio, ensemble profundo, decisor, auditoria cega e formação colegiada seriatim, per curiam ou opinion of the court. Usar com /loop-debate-agentes, $loop-debate-agentes, /consenso, ensemble_nxn, protótipo multiagente, decisão colegiada, redação multi-LLM, pacote multi-artefato ou melhoria até nota-alvo."
+description: "Criar ou melhorar um ou vários artefatos relacionados num ciclo iterativo em linguagem natural, com até 20 versões completas por artefato: um agente redige, outros debatem e avaliam, revisores autorizados podem publicar candidatas ou novas versões canônicas controladas, ou N produtores geram candidatos que passam por revisão cruzada N×N. Permite escolher modelos para qualquer papel, publicação compartilhada, prototipação paralela, perfis de domínio, ensemble profundo, decisor, auditoria cega e formação colegiada seriatim, per curiam ou opinion of the court, por votação global, analítica ou híbrida. Usar com /loop-debate-agentes, $loop-debate-agentes, /consenso, ensemble_nxn, protótipo multiagente, decisão colegiada, case-by-case, issue-by-issue, redação multi-LLM, pacote multi-artefato ou melhoria até nota-alvo."
 ---
 
 # Loop Debate de Agentes
@@ -40,9 +40,9 @@ O nome `/loop-debate-agentes` não torna o debate obrigatório. A configuração
 
 ## Separar a formação da decisão colegiada
 
-Quando o pedido envolver acórdão, votos, decisão colegiada, `seriatim`, `per curiam` ou `opinion of the court`, resolver também `formacao_decisao_colegiada` como terceiro eixo. Ele define como os votos e fundamentos formam e publicam a decisão; não substitui estratégia, loop, consenso nem métodos de preferência. Maioria, unanimidade apenas no dispositivo e decisão de terceiro nunca equivalem a consenso.
+Quando o pedido envolver acórdão, votos, decisão colegiada, `seriatim`, `per curiam` ou `opinion of the court`, resolver também `formacao_decisao_colegiada` como terceiro eixo. Dentro dele, separar `modalidade` de `metodo_apuracao`: a primeira controla a voz pública; o segundo escolhe entre voto global no dispositivo, voto analítico por questões e analítico seguido de confirmação híbrida. Ele não substitui estratégia, loop, consenso nem métodos de preferência. Maioria, unanimidade apenas no dispositivo e decisão de terceiro nunca equivalem a consenso.
 
-Usar `opinion_of_court` como proposta padrão somente quando a camada colegiada estiver ativa. Permitir `seriatim` e `per_curiam` por pedido. Colher adesões por proposição, separar placar do dispositivo e apoio aos fundamentos, preservar votos concorrentes e dissidentes e bloquear `ratio_exigida` quando houver apenas maioria no resultado. Ler [references/decisao-colegiada.md](references/decisao-colegiada.md) integralmente antes da confirmação e validar configuração e recibo com `collegiate_gate.py`.
+Usar `opinion_of_court` como proposta padrão somente quando a camada colegiada estiver ativa e `global` como método universal padrão. Permitir `seriatim` e `per_curiam` por pedido. Ativar `analitico` ou `hibrido` somente quando o usuário pedir voto por questões ou confirmação do resultado derivado. Colher adesões por proposição, separar placar ou derivação do dispositivo e apoio aos fundamentos, preservar votos concorrentes e dissidentes e bloquear `ratio_exigida` quando houver apenas maioria no resultado ou maioria cruzada sem coalizão do pacote. Ler [references/decisao-colegiada.md](references/decisao-colegiada.md) integralmente antes da confirmação e validar configuração e recibo com `collegiate_gate.py`.
 
 ## Ser a fonte única das regras operacionais
 
@@ -79,6 +79,8 @@ Exemplos:
 /loop-debate-agentes use o perfil ensemble N×N profundo com Claude, Codex e Gemini; todos geram, todos revisam todos, faça 2 ciclos e use Grok como juiz
 /loop-debate-agentes produza um pacote com relatório e apresentação; aprove cada item separadamente e audite a consistência conjunta
 /loop-debate-agentes forme uma decisão colegiada por opinion of the court; apure a maioria por fundamento, publique votos concorrentes e dissidentes e não chame maioria de consenso
+/loop-debate-agentes vote cada questão separadamente, derive o dispositivo e repita o loop se surgir maioria cruzada sem ratio comum
+/loop-debate-agentes use decisão híbrida: questões primeiro e confirmação bloqueante do dispositivo derivado antes da avaliação externa
 /loop-debate-agentes revise esta minuta por até 20 versões completas; pare antes se os gates fecharem e não crie v21
 ```
 
@@ -135,7 +137,7 @@ Runs existentes mantêm os valores congelados em `meta.json`. Não reduzir paine
 
 Antes de criar o run ou chamar qualquer modelo externo:
 
-1. Extrair do pedido `perfil_base`, eventual `perfil_dominio`, `modo_artefatos`, itens e dependências, `estrategia_da_equipe`, `ciclo_de_melhoria`, eventual `formacao_decisao_colegiada` com modalidade, regra de resultado, quórum, adesão aos fundamentos, ratio e votos separados, participantes, papéis, redator inicial, política de consolidação iterativa, eventual consolidador designado, eventual matriz ensemble, decisor, rodadas por tentativa, tentativas de melhoria, alvo, piso, painel, política de independência, saída permitida ao revisor, modo de consolidação final, política de escolha, gate conjunto e auditoria.
+1. Extrair do pedido `perfil_base`, eventual `perfil_dominio`, `modo_artefatos`, itens e dependências, `estrategia_da_equipe`, `ciclo_de_melhoria`, eventual `formacao_decisao_colegiada` com modalidade, método de apuração, regra de resultado, quórum, questões e derivação, confirmação híbrida, adesão aos fundamentos, ratio e votos separados, participantes, papéis, redator inicial, política de consolidação iterativa, eventual consolidador designado, eventual matriz ensemble, decisor, rodadas por tentativa, tentativas de melhoria, alvo, piso, painel, política de independência, saída permitida ao revisor, modo de consolidação final, política de escolha, gate conjunto e auditoria.
 2. Interpretar menções como `@Estrategista`, `@Oponente`, `@Revisor` e `@Supervisor` como identificadores de agentes configurados no ambiente, não como nomes de CLI. Resolver separadamente agente, papel, CLI, modelo e provedor. Se a associação ainda não estiver configurada, marcar `modelo não fixado` e pedir apenas o dado indispensável.
 3. Mostrar este resumo, adaptado ao caso:
 
@@ -147,6 +149,9 @@ Modo: artefato único
 Artefatos e dependências: artefato principal; nenhuma
 Estratégia: Consenso com decisão final
 Formação colegiada: não ativa | seriatim | per curiam | opinion of the court
+Método de apuração: não aplicável | global | analítico | híbrido
+Questões e derivação: não aplicável | pacote congelado e regra em prosa
+Confirmação do derivado: não aplicável | bloqueante
 Regra do resultado e quórum: não aplicável | regra confirmada
 Adesão aos fundamentos e ratio: não aplicável | configuração confirmada
 Votos concorrentes e dissidentes: não aplicável | política confirmada
@@ -219,7 +224,7 @@ Em runs novos, `tentativa_atual` e `versao_atual` avançam juntos: a primeira mi
 
 Pareceres, patches, redlines e candidatos alternativos ou finais não consomem esse contador enquanto permanecerem não canônicos. Quando uma candidata selecionada, síntese ou edição manual entra no fluxo canônico, seu hash conta como uma versão: será `v1` se a cadeia ainda não existir ou a próxima versão se substituir um hash canônico corrente. No ensemble N×N, as revisões internas das famílias candidatas pertencem aos ciclos do ensemble; o contador de até 20 rege a cadeia canônica do `artefato_id`, e a prévia deve estimar separadamente o total de candidatos e chamadas.
 
-Quando a formação colegiada estiver ativa, inserir entre deliberação e avaliação a coleta dos votos finais, a adesão por proposição, a proclamação e a validação determinística do mesmo hash. `DECISAO_COLEGIADA_FORMADA` é apenas um gate intermediário; não equivale a consenso nem a `canonico_aprovado`.
+Quando a formação colegiada estiver ativa, inserir entre deliberação e avaliação a coleta dos votos finais ou cédulas por questão, a adesão por proposição, eventual derivação e confirmação, a proclamação e a validação determinística do mesmo hash. `DECISAO_COLEGIADA_FORMADA` é apenas um gate intermediário; não equivale a consenso nem a `canonico_aprovado`.
 
 Preservar separadamente a identidade do redator inicial, do consolidador iterativo e a composição do painel durante todo o run. Cada cadeira mantém CLI, modelo, provedor, lente e critérios congelados. Quando o CLI permite, reutilizar somente a sessão daquela cadeira; quando não permite, fornecer à nova sessão o próprio veredito anterior, a resposta do responsável pela consolidação e a versão corrente. Nenhum avaliador edita o documento por força do papel de avaliador; toda alteração canônica pertence ao responsável configurado pela consolidação.
 

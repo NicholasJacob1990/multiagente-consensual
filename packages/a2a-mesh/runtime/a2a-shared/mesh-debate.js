@@ -63,7 +63,7 @@ function normalizeMeshChain(meshChain) {
  */
 export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '' }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
-  const DEFAULT_DEBATE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_DEBATE_MS, 2400000); // 40 min
+  const DEFAULT_DEBATE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_DEBATE_MS, 1800000); // 30 min per model call
 
   /**
    * Execute a multi-agent debate.
@@ -97,9 +97,12 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
     const context = {
       depth: parentDepth - 1,
       meshChain: [...parentChain],
-      taskId: `debate-${debateId}`,
+      // Async RPC creates a durable parent task. Reuse its id so dialogue,
+      // status, result and dashboard streaming all refer to the same run.
+      taskId: callContext.taskId || `debate-${debateId}`,
       timeoutMs,
       selfCallDepth: parentSelfCallDepth,
+      signal: callContext.signal,
     };
 
     const emitDialogue = (phase, agent, role, text, extra = {}) => {
@@ -118,6 +121,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
 
     // Debate rounds
     for (let round = 1; round <= rounds; round++) {
+      context.signal?.throwIfAborted();
       // Rotate order each round to avoid first-mover advantage
       const agentOrder = order === 'rotate'
         ? [...agents.slice((round - 1) % agents.length), ...agents.slice(0, (round - 1) % agents.length)]
@@ -126,6 +130,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
       emitDialogue(`round-${round}`, '*', 'system', `Rodada ${round}/${rounds} — Ordem: ${agentOrder.join(' → ')}`);
 
       for (const agent of agentOrder) {
+        context.signal?.throwIfAborted();
         const prompt = buildDebaterPrompt(topicForPrompt, history, agent, round, rounds, agents);
         let response;
 
@@ -141,6 +146,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
                 meshChain: [...context.meshChain],
                 taskId: context.taskId,
                 selfCallDepth: context.selfCallDepth,
+                signal: context.signal,
               },
             );
           } else if (peers[agent]) {
@@ -151,6 +157,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
                 meshChain: [...context.meshChain],
                 taskId: context.taskId,
                 selfCallDepth: context.selfCallDepth,
+                signal: context.signal,
               },
             );
           } else {
@@ -180,6 +187,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
     emitDialogue('debate-end', '*', 'system', `Debate concluído em ${debateDurationMs}ms. Enviando para juiz: ${judge}`);
 
     // Judge phase
+    context.signal?.throwIfAborted();
     const judgeStartTime = Date.now();
 
     const judgeCandidates = [
@@ -208,6 +216,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
             meshChain: [...context.meshChain],
             taskId: context.taskId,
             selfCallDepth: context.selfCallDepth,
+            signal: context.signal,
           },
         );
       } else if (peers[actualJudge]) {
@@ -218,6 +227,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
             meshChain: [...context.meshChain],
             taskId: context.taskId,
             selfCallDepth: context.selfCallDepth,
+            signal: context.signal,
           },
         );
       } else {

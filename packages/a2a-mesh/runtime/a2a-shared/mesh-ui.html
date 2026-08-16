@@ -683,6 +683,12 @@ const ARENA_OPERATIONS = new Set(['consensus', 'ensemble', 'debate']);
 
 // Sequential stream aggregation
 let _stream = { agent: null, role: null, bubble: null, text: '', wrapper: null };
+const renderedCompletedTasks = new Set();
+const loadingCompletedTasks = new Set();
+const renderedMeshEventKeys = new Set();
+const renderedMeshEventOrder = [];
+const MAX_RENDERED_MESH_EVENT_KEYS = 10000;
+const taskOperations = new Map();
 
 // Terminal command history
 let cmdHistory = JSON.parse(localStorage.getItem('meshCmdHistory') || '[]');
@@ -1017,12 +1023,9 @@ async function handleTerminalSubmit() {
       addSystemMessage('--continue: sem sessão anterior salva.', 'gray');
     }
   }
-  // Generate task ID for modes that don't naturally surface one (call, broadcast)
-  // so we can chain --continue. Server accepts body.taskId.
-  const opToPrefix = { call: 'call', broadcast: 'broadcast' };
-  if (opToPrefix[parsed.op] && !parsed.params.taskId) {
-    parsed.params.taskId = genTaskId(opToPrefix[parsed.op]);
-  }
+  // Idempotency protects against a browser/network retry submitting the same
+  // expensive orchestration twice.
+  parsed.params.request_id = parsed.params.request_id || genTaskId(`ui-${parsed.op}`);
 
   addSystemMessage(`Executing ${parsed.display || parsed.op}...`);
 
@@ -1032,49 +1035,32 @@ async function handleTerminalSubmit() {
   btn.disabled = true;
 
   try {
+    const asyncMethod = parsed.method.endsWith('Async') ? parsed.method : `${parsed.method}Async`;
     const resp = await fetch(`${BASE}/rpc`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now().toString(), method: parsed.method, params: parsed.params }),
-      signal: AbortSignal.timeout(1800000),
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now().toString(), method: asyncMethod, params: parsed.params }),
+      signal: AbortSignal.timeout(30000),
     });
     const json = await resp.json();
     if (json.error) {
       addSystemMessage(`Error: ${json.error.message || JSON.stringify(json.error)}`, 'error');
     } else {
-      let resultText;
-      if (typeof json.result === 'string') {
-        resultText = json.result;
-      } else if (json.result?.synthesis?.verdict) {
-        const s = json.result.synthesis;
-        const scores = s.scores ? Object.entries(s.scores).map(([a,v]) => `${a}: ${v}/10`).join(', ') : '';
-        resultText = `**Winner:** ${s.winner || '?'}\n**Scores:** ${scores}\n**Confidence:** ${((s.confidence||0)*100).toFixed(0)}%\n\n${s.verdict}`;
+      const taskId = json.result?.id;
+      if (!taskId) {
+        addSystemMessage('O coordenador não devolveu um ID de tarefa.', 'error');
       } else {
-        // Gemini /mesh/call returns `{session_id, response, stats, tools}` —
-        // .response is the actual text. Check that BEFORE falling back to
-        // JSON.stringify, otherwise the user sees the raw envelope.
-        resultText = json.result?.response || json.result?.text || json.result?.result || json.result?.finalCode ||
-          JSON.stringify(json.result, null, 2);
+        taskOperations.set(taskId, parsed.op);
+        localStorage.setItem('meshLastTaskId', taskId);
+        addSystemMessage(`Tarefa ${taskId.slice(0, 8)} enviada — execução durável e streaming ao vivo ativos.`);
+        if (['completed', 'failed', 'canceled'].includes(json.result?.status?.state)) {
+          await loadCompletedTaskResult(taskId, json.result.status.state);
+        }
       }
-      if (resultText && resultText !== '{}' && resultText !== 'null') {
-        addResultBubble(parsed.op, resultText);
-      }
-      // Persist taskId for --continue chain
-      let taskIdToSave = null;
-      const r = json.result;
-      if (r && typeof r === 'object') {
-        if (r.consensusId) taskIdToSave = `consensus-${r.consensusId}`;
-        else if (r.debateId) taskIdToSave = `debate-${r.debateId}`;
-        else if (r.ensembleId) taskIdToSave = `ensemble-${r.ensembleId}`;
-        else if (r.planId) taskIdToSave = `plan-${r.planId}`;
-        else if (r.taskId) taskIdToSave = r.taskId;
-      }
-      if (!taskIdToSave && parsed.params.taskId) taskIdToSave = parsed.params.taskId;
-      if (taskIdToSave) localStorage.setItem('meshLastTaskId', taskIdToSave);
     }
   } catch (e) {
     if (e.name === 'TimeoutError') {
-      addSystemMessage('Request timed out', 'error');
+      addSystemMessage('O envio excedeu 30 s; consulte a lista de tarefas antes de reenviar para evitar duplicidade.', 'error');
     } else {
       addSystemMessage(`Network error: ${e.message}`, 'error');
     }
@@ -1364,7 +1350,19 @@ function updateLayoutToggleUI() {
 // ============================================
 function connectSSE() {
   if (eventSource) { eventSource.close(); }
-  eventSource = new EventSource(`${BASE}/mesh/events`);
+  const lastEventId = localStorage.getItem('meshLastEventId') || '';
+  const streamUrl = lastEventId
+    ? `${BASE}/mesh/events?after=${encodeURIComponent(lastEventId)}`
+    : `${BASE}/mesh/events`;
+  eventSource = new EventSource(streamUrl);
+
+  const rememberEvent = (event, data) => {
+    const id = Number.parseInt(String(event?.lastEventId || data?.eventId || ''), 10);
+    if (Number.isFinite(id) && id > 0) {
+      const prior = Number.parseInt(localStorage.getItem('meshLastEventId') || '0', 10) || 0;
+      if (id > prior) localStorage.setItem('meshLastEventId', String(id));
+    }
+  };
 
   eventSource.onopen = () => {
     const badge = document.getElementById('sse-badge');
@@ -1382,28 +1380,37 @@ function connectSSE() {
   };
 
   eventSource.addEventListener('task-dialogue', (e) => {
-    try { renderDialogueEvent(JSON.parse(e.data)); eventCount++; }
+    try { const data = JSON.parse(e.data); rememberEvent(e, data); renderDialogueEvent(data); eventCount++; }
     catch (err) { console.warn('[ui] parse task-dialogue', err); }
   });
 
   eventSource.addEventListener('task-status', (e) => {
-    try { renderStatusEvent(JSON.parse(e.data)); eventCount++; }
+    try { const data = JSON.parse(e.data); rememberEvent(e, data); renderStatusEvent(data); eventCount++; }
     catch (err) { console.warn('[ui] parse task-status', err); }
   });
 
   eventSource.addEventListener('mesh-event', (e) => {
-    try { handleMeshEvent(JSON.parse(e.data)); }
+    try { const data = JSON.parse(e.data); rememberEvent(e, data); handleMeshEvent(data); }
     catch (err) { console.warn('[ui] parse mesh-event', err); }
   });
 
   eventSource.addEventListener('peer-event', (e) => {
-    try { handleMeshEvent(JSON.parse(e.data)); }
+    try { const data = JSON.parse(e.data); handleMeshEvent(data); }
     catch (err) { console.warn('[ui] parse peer-event', err); }
+  });
+
+  eventSource.addEventListener('mesh-gap', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      addSystemMessage('Reconectando ao histórico durável após uma lacuna extensa…', 'gray');
+      replayTimelineAfter(data.nextAfterId || data.fromEventId || 0);
+    } catch (err) { console.warn('[ui] parse mesh-gap', err); }
   });
 
   eventSource.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
+      rememberEvent(e, data);
       if (data.type === 'task-dialogue') renderDialogueEvent(data);
       else if (data.type === 'task-status') renderStatusEvent(data);
       else if (data.type === 'heartbeat') { /* ignore */ }
@@ -1413,7 +1420,91 @@ function connectSSE() {
   };
 }
 
+function formatCompletedTaskText(task) {
+  const raw = task?.status?.message?.parts?.map(part => part.text).filter(Boolean).join('\n')
+    || task?.outputText
+    || '';
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch { /* plain text result */ }
+  if (!parsed) return raw || '(sem saída textual)';
+
+  if (parsed.synthesis?.verdict) {
+    const scores = parsed.synthesis.scores
+      ? Object.entries(parsed.synthesis.scores).map(([agent, score]) => `${agent}: ${score}/10`).join(', ')
+      : '';
+    return `**Vencedor:** ${parsed.synthesis.winner || 'não definido'}\n**Notas:** ${scores || 'não informadas'}\n**Confiança:** ${Math.round((parsed.synthesis.confidence || 0) * 100)}%\n\n${parsed.synthesis.verdict}`;
+  }
+  if (parsed.synthesis?.answer) {
+    const dissent = parsed.synthesis.dissent ? `\n\n**Dissenso:** ${parsed.synthesis.dissent}` : '';
+    return `${parsed.synthesis.answer}${dissent}`;
+  }
+  if (parsed.finalCode) return parsed.finalCode;
+  if (parsed.response || parsed.text || parsed.result) return parsed.response || parsed.text || parsed.result;
+  return JSON.stringify(parsed, null, 2);
+}
+
+async function loadCompletedTaskResult(taskId, state = '') {
+  if (!taskId || renderedCompletedTasks.has(taskId) || loadingCompletedTasks.has(taskId)) return;
+  loadingCompletedTasks.add(taskId);
+  try {
+    let response = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      response = await fetch(`${BASE}/mesh/tasks/${encodeURIComponent(taskId)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+    }
+    if (!response.ok) return;
+    const envelope = await response.json();
+    const task = envelope.result || envelope;
+    const finalState = task.status?.state || task.state || state;
+    if (!['completed', 'failed', 'canceled'].includes(finalState)) return;
+    renderedCompletedTasks.add(taskId);
+    const op = taskOperations.get(taskId) || String(task.metadata?.type || 'mesh').replace(/^mesh\//, '');
+    const output = formatCompletedTaskText(task);
+    if (finalState === 'completed') addResultBubble(op, output);
+    else addSystemMessage(`${finalState.toUpperCase()} · ${taskId.slice(0, 8)}\n${output}`, 'error');
+
+    const partial = (task.artifacts || []).find(artifact => artifact.name === 'partial-output.md');
+    const partialText = partial?.parts?.map(part => part.text).filter(Boolean).join('\n');
+    if (partialText) addResultBubble(`${op} / saída parcial preservada`, partialText);
+  } catch (error) {
+    console.warn('[ui] failed to load completed task', taskId, error);
+  } finally {
+    loadingCompletedTasks.delete(taskId);
+  }
+}
+
+function eventTimeMs(value) {
+  const raw = String(value || '');
+  if (!raw) return 0;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
+    ? `${raw.replace(' ', 'T')}Z`
+    : raw;
+  return new Date(normalized).getTime();
+}
+
+function isDuplicateMeshEvent(data) {
+  const id = Number.parseInt(String(data?.eventId || ''), 10);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const origin = String(data?.server || data?.peerId || 'mesh');
+  const key = `${origin}:${id}`;
+  if (renderedMeshEventKeys.has(key)) return true;
+  renderedMeshEventKeys.add(key);
+  renderedMeshEventOrder.push(key);
+  while (renderedMeshEventOrder.length > MAX_RENDERED_MESH_EVENT_KEYS) {
+    renderedMeshEventKeys.delete(renderedMeshEventOrder.shift());
+  }
+  return false;
+}
+
 function handleMeshEvent(data) {
+  if (isDuplicateMeshEvent(data)) return;
+  const clearedAt = localStorage.getItem('meshChatClearedAt');
+  const cutoff = clearedAt ? new Date(clearedAt).getTime() : 0;
+  const eventTime = eventTimeMs(data.timestamp || data.created_at);
+  if (cutoff && eventTime && eventTime < cutoff) return;
   const type = data.type;
   const p = data.payload || {};
   eventCount++;
@@ -1455,8 +1546,22 @@ function handleMeshEvent(data) {
       break;
     case 'submitted':
     case 'working':
+      pollTasks();
+      break;
     case 'completed':
     case 'failed':
+    case 'canceled':
+      pollTasks();
+      loadCompletedTaskResult(data.taskId, type);
+      break;
+    case 'partial_output':
+      addSystemMessage(`Saída parcial preservada para ${p.agent || 'agente'}${p.remoteTaskId ? ` (tarefa remota ${String(p.remoteTaskId).slice(0, 8)})` : ''}.`, 'gray');
+      break;
+    case 'mesh_gap':
+      addSystemMessage(
+        `O limite defensivo de eventos foi atingido para ${data.taskId || 'esta tarefa'}; deltas excedentes foram suprimidos, mas o estado terminal e os artefatos continuam sendo preservados.`,
+        'gray',
+      );
       pollTasks();
       break;
   }
@@ -2231,6 +2336,9 @@ async function replayRecentTimeline(limit = 200) {
 
     // API devolve DESC (mais novo primeiro); chat precisa ASC (cronológico)
     const sorted = events.slice().reverse();
+    const newestEventId = Math.max(0, ...events.map(event => Number.parseInt(String(event.id || 0), 10) || 0));
+    const priorEventId = Number.parseInt(localStorage.getItem('meshLastEventId') || '0', 10) || 0;
+    if (newestEventId > priorEventId) localStorage.setItem('meshLastEventId', String(newestEventId));
     // Belt-and-suspenders: filtra client-side caso o servidor ignore `since`
     const cutoff = clearedAt ? new Date(clearedAt).getTime() : 0;
     if (cutoff) {
@@ -2256,6 +2364,8 @@ async function replayRecentTimeline(limit = 200) {
         payload: ev.payload || {},
         server: ev.server,
         timestamp: ev.created_at || ev.timestamp,
+        eventId: ev.id,
+        replayed: true,
       };
       if (!normalized.type) continue;
       try { handleMeshEvent(normalized); rendered++; }
@@ -2274,6 +2384,42 @@ async function replayRecentTimeline(limit = 200) {
     _arenaHint = null;
   } catch (err) {
     console.warn('[ui] timeline replay failed', err);
+  }
+}
+
+async function replayTimelineAfter(afterId, maximum = 50000) {
+  let cursor = Number.parseInt(String(afterId || 0), 10) || 0;
+  let replayed = 0;
+  try {
+    while (replayed < maximum) {
+      const limit = Math.min(1000, maximum - replayed);
+      const r = await fetch(
+        `${BASE}/mesh/timeline?afterId=${cursor}&order=asc&limit=${limit}`,
+        { signal: AbortSignal.timeout(10000) },
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const events = await r.json();
+      if (!Array.isArray(events) || events.length === 0) break;
+      for (const ev of events) {
+        cursor = Math.max(cursor, Number.parseInt(String(ev.id || 0), 10) || 0);
+        handleMeshEvent({
+          taskId: ev.task_id || ev.taskId,
+          type: ev.event_type || ev.type,
+          payload: ev.payload || {},
+          server: ev.server,
+          timestamp: ev.created_at || ev.timestamp,
+          eventId: ev.id,
+          replayed: true,
+        });
+        replayed += 1;
+      }
+      const prior = Number.parseInt(localStorage.getItem('meshLastEventId') || '0', 10) || 0;
+      if (cursor > prior) localStorage.setItem('meshLastEventId', String(cursor));
+      if (events.length < limit) break;
+    }
+  } catch (error) {
+    console.warn('[ui] durable gap recovery failed', error);
+    addSystemMessage(`Falha ao recuperar a lacuna do streaming: ${error.message}`, 'error');
   }
 }
 

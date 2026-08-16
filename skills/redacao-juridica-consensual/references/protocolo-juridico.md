@@ -111,13 +111,13 @@ No ensemble jurídico, seleção, vitória ou síntese não são aprovação. O 
 
 ## Formação de decisão colegiada
 
-Quando o pedido envolver acórdão, julgamento simulado, votos, tese colegiada ou opinião institucional, ativar o contrato `decisao_colegiada_v1` herdado do motor e aplicar integralmente `../loop-debate-agentes/references/decisao-colegiada.md`. Esse é um eixo separado do debate, do loop, do consenso e dos métodos de escolha entre candidatos.
+Quando o pedido envolver acórdão, julgamento simulado, votos, tese colegiada ou opinião institucional, ativar a formação colegiada herdada do motor e aplicar integralmente `../loop-debate-agentes/references/decisao-colegiada.md`. Usar `global`/`decisao_colegiada_v1` por padrão. Usar `analitico` ou `hibrido`/`decisao_colegiada_v2` somente por escolha explícita para votar premissas ou questões separadamente. Esse é um eixo separado do debate, do loop, do consenso e dos métodos de escolha entre candidatos.
 
 - `seriatim`: cada cadeira entrega voto completo e assinado; a certidão agrega resultado e fundamentos comuns sem inventar voz única.
 - `per_curiam`: o colegiado publica opinião principal impessoal; votos separados continuam preservados e são publicados quando exigidos pela política confirmada.
 - `opinion_of_court`: uma opinião da maioria explicita a ratio comum, acompanhada de votos concorrentes e dissidentes.
 
-Em decisão destinada a orientar precedente, usar `ratio_exigida = true`. Cada julgador deve aderir ou não aderir a cada proposição essencial; concordância apenas no dispositivo produz `ratio_status = somente_resultado`. Em simulação brasileira, publicar voto vencido no pacote, mesmo quando houver opinião principal única. Maioria não é consenso, e nenhuma decisão colegiada formada substitui painel, fontes, auditoria ou revisão profissional.
+Em decisão destinada a orientar precedente, usar `ratio_exigida = true`. Cada julgador deve aderir ou não aderir a cada proposição essencial; concordância apenas no dispositivo produz `ratio_status = somente_resultado`. No modo analítico, publicar também as coalizões por questão, a coalizão do pacote, o dispositivo por cadeira e eventual `paradoxo_doutrinario`; sem maioria aderente ao pacote, não alegar ratio comum. No híbrido, rejeição na confirmação impede proclamação e devolve a questão ao loop. Em simulação brasileira, publicar voto vencido no pacote, mesmo quando houver opinião principal única. Maioria não é consenso, e nenhuma decisão colegiada formada substitui painel, fontes, auditoria ou revisão profissional.
 
 Overrides podem ser feitos por run ou `artefato_id`. O motor valida `rodadas >= 3 × ciclos`, deriva somente o limite omitido e pausa diante de dois valores explícitos incompatíveis.
 

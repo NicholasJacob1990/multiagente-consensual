@@ -70,13 +70,18 @@ Controle especialmente imparcialidade, fundamentação adequada, vedação a dec
 
 ### Pacote de decisão colegiada
 
-Quando `decisao_colegiada_v1` estiver ativo, acrescente ao pacote, sem fundir silenciosamente textos distintos:
+Quando a formação colegiada estiver ativa, acrescente ao pacote, sem fundir silenciosamente textos distintos:
 
 1. certidão de julgamento com quórum, regra de resultado, placar e dispositivo;
 2. mapa de adesão por proposição essencial, distinguindo resultado, ratio e obiter;
 3. opinião principal, quando a modalidade a exigir;
 4. votos individuais no `seriatim` ou votos concorrentes/dissidentes nas demais modalidades;
 5. proclamação com hashes do artefato julgado, votos e opiniões publicadas.
+
+Em `decisao_colegiada_v2`, acrescente também `decisao/questoes.json`,
+`decisao/derivacao.json`, mapa das coalizões por questão, dispositivo derivado,
+dispositivo por cadeira e certidão de eventual maioria cruzada. No híbrido,
+preserve os atos de confirmação e não publique dispositivo rejeitado.
 
 No `seriatim`, preserve cada voto completo e apresente a convergência real, sem redigir falsa opinião institucional. No `per_curiam`, use autoria institucional impessoal. Na `opinion_of_court`, a opinião principal deve conter somente proposições que atingiram o apoio exigido; fundamentos exclusivos ficam nos votos concorrentes ou dissidentes. Mudança em qualquer texto depois da proclamação exige novo hash e nova apuração.
 

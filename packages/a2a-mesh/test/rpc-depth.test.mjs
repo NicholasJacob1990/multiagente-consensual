@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { createRPCAdapter } from '../runtime/a2a-shared/a2a-rpc-adapter.js';
 import { createTaskManager } from '../runtime/a2a-shared/task-manager.js';
+import { bridgeEnvironmentForTask } from '../runtime/a2a-shared/bridge-context.js';
 
 test('RPC limita profundidade recebida ao teto local', async () => {
   let observedContext = null;
@@ -48,4 +49,12 @@ test('task manager limita metadata.maxDepth antes de qualquer provider', () => {
   } finally {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+});
+
+test('ambiente do bridge não desconta profundidade duas vezes', () => {
+  const env = bridgeEnvironmentForTask({
+    metadata: { maxDepth: 4, meshChain: ['codex'] },
+  }, 'claude', {});
+  assert.equal(env.A2A_MESH_BRIDGE_REMAINING_DEPTH, '4');
+  assert.equal(env.A2A_MESH_BRIDGE_CHAIN, JSON.stringify(['codex', 'claude']));
 });

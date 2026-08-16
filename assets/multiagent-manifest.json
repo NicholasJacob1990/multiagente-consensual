@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "plugin_version": "1.8.0+codex.20260815195643",
+  "plugin_version": "1.9.0+codex.20260816011508",
   "contract": "multiagent_local_v1",
   "policy": "strict",
   "fallback": "pause_and_report",
@@ -146,6 +146,12 @@
   },
   "collegiate_decision": {
     "contract": "decisao_colegiada_v1",
+    "analytic_schema": "decisao_colegiada_v2",
+    "tally_methods": ["global", "analitico", "hibrido"],
+    "default_tally_method": "global",
+    "analytic_dependency_graph": "single_parent_forest",
+    "analytic_max_reachable_worlds": 4096,
+    "hybrid_confirmation_policy": "bloqueante",
     "modalities": ["seriatim", "per_curiam", "opinion_of_court"],
     "default_modality": "opinion_of_court",
     "result_rules": ["unanimidade", "maioria_simples", "maioria_qualificada", "consenso_estrito", "com_decisor"],

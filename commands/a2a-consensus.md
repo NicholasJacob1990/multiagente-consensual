@@ -12,6 +12,8 @@ $ARGUMENTS
 
 Retorne as posições, o consenso alcançado ou os dissensos remanescentes.
 
+A tool devolve um recibo durável por padrão. Guarde o `task_id` e use `a2a_task_wait` em esperas de até 240 segundos, repetindo enquanto o estado for ativo, salvo se o usuário pedir apenas o disparo. Use `a2a_task_status` para retomar acompanhamento; nunca reenvie o pedido só porque uma espera terminou. Se falhar, informe o estado e apresente `partial-output.md` quando existir. O diálogo ao vivo fica no painel A2A.
+
 
 <!-- adaptive-output-contract:start -->
 Política de saída: adaptive_up_to_native_max. Use somente a extensão necessária, permita até o teto nativo efetivo da rota, não imponha teto global artificial e não obrigue preenchimento. Em integração externa sem controle explícito, repasse a diretiva no prompt e registre o limite como nativo ou desconhecido, sem prometer um número.

@@ -10,6 +10,7 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
+import { recoverPartialArtifacts } from './partial-output.js';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -33,13 +34,15 @@ export class MeshStore {
     this._eventCounts = new Map();
     this._loopReported = new Set();
     this.MAX_EVENTS_PER_TASK = parseInt(process.env.MESH_MAX_EVENTS_PER_TASK || '2000', 10);
+    this.pruneIdempotency();
+    this.prunePartialSnapshots();
   }
 
   // Schema version pinned in SQLite's PRAGMA user_version. Bump when adding
   // a column/index that older databases lack — write a migration step that
   // upgrades the schema in-place. Without this gating, `CREATE TABLE IF NOT
   // EXISTS` silently no-ops on stale schemas and queries fail at runtime.
-  static SCHEMA_VERSION = 2;
+  static SCHEMA_VERSION = 4;
 
   _runMigrationStep(version, sql) {
     // BEGIN IMMEDIATE acquires the write lock up-front so a parallel server
@@ -152,6 +155,34 @@ export class MeshStore {
       CREATE INDEX IF NOT EXISTS idx_tasks_provider_session_key ON tasks(provider_session_key);
       CREATE INDEX IF NOT EXISTS idx_tasks_runtime ON tasks(runtime);
     `);
+
+    // v2 → v3: durable, cross-process idempotency claims for orchestration.
+    if (current < 3) this._runMigrationStep(3, `
+      CREATE TABLE IF NOT EXISTS mesh_idempotency_keys (
+        operation_type TEXT NOT NULL,
+        request_id     TEXT NOT NULL,
+        task_id        TEXT NOT NULL,
+        created_at     TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (operation_type, request_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_mesh_idempotency_task
+        ON mesh_idempotency_keys(task_id);
+    `);
+
+    // v3 → v4: replaceable per-agent streaming checkpoints. Token deltas stay
+    // live over SSE but no longer consume the append-only task event budget.
+    if (current < 4) this._runMigrationStep(4, `
+      CREATE TABLE IF NOT EXISTS mesh_partial_snapshots (
+        task_id     TEXT NOT NULL,
+        agent       TEXT NOT NULL,
+        text        TEXT NOT NULL,
+        metadata    TEXT DEFAULT '{}',
+        updated_at  TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (task_id, agent)
+      );
+      CREATE INDEX IF NOT EXISTS idx_mesh_partial_task
+        ON mesh_partial_snapshots(task_id);
+    `);
   }
 
   // ---- Task CRUD ----
@@ -193,6 +224,127 @@ export class MeshStore {
     return this.getTask(id);
   }
 
+  claimIdempotency(operationType, requestId, taskId) {
+    if (!operationType || !requestId || !taskId) {
+      throw new Error('operationType, requestId and taskId are required');
+    }
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO mesh_idempotency_keys (operation_type, request_id, task_id)
+      VALUES (?, ?, ?)
+    `).run(operationType, requestId, taskId);
+    let claimed = result.changes === 1;
+    if (!claimed) {
+      const rawTtl = Number.parseInt(process.env.A2A_IDEMPOTENCY_RESERVATION_TTL_SECONDS || '60', 10);
+      const ttlSeconds = Math.max(10, Number.isFinite(rawTtl) ? rawTtl : 60);
+      const takeover = this.db.prepare(`
+        UPDATE mesh_idempotency_keys
+        SET task_id = ?, created_at = datetime('now')
+        WHERE operation_type = ? AND request_id = ?
+          AND created_at <= datetime('now', ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks WHERE tasks.id = mesh_idempotency_keys.task_id
+          )
+      `).run(taskId, operationType, requestId, `-${ttlSeconds} seconds`);
+      claimed = takeover.changes === 1;
+    }
+    const row = this.db.prepare(`
+      SELECT task_id FROM mesh_idempotency_keys
+      WHERE operation_type = ? AND request_id = ?
+    `).get(operationType, requestId);
+    return { claimed, taskId: row?.task_id || null };
+  }
+
+  releaseIdempotency(operationType, requestId, taskId) {
+    return this.db.prepare(`
+      DELETE FROM mesh_idempotency_keys
+      WHERE operation_type = ? AND request_id = ? AND task_id = ?
+    `).run(operationType, requestId, taskId).changes === 1;
+  }
+
+  pruneIdempotency(retentionDays = null) {
+    const rawDays = retentionDays ?? Number.parseInt(
+      process.env.A2A_IDEMPOTENCY_RETENTION_DAYS || '30',
+      10,
+    );
+    const days = Math.max(1, Number.isFinite(rawDays) ? rawDays : 30);
+    return this.db.prepare(`
+      DELETE FROM mesh_idempotency_keys
+      WHERE EXISTS (
+        SELECT 1 FROM tasks
+        WHERE tasks.id = mesh_idempotency_keys.task_id
+          AND tasks.state IN ('completed', 'failed', 'canceled', 'rejected')
+          AND tasks.updated_at <= datetime('now', ?)
+      )
+    `).run(`-${days} days`).changes;
+  }
+
+  upsertPartialSnapshot(taskId, agent, text, metadata = {}) {
+    if (!taskId || !agent || typeof text !== 'string' || !text) return false;
+    this.db.prepare(`
+      INSERT INTO mesh_partial_snapshots (task_id, agent, text, metadata, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(task_id, agent) DO UPDATE SET
+        text = excluded.text,
+        metadata = excluded.metadata,
+        updated_at = datetime('now')
+    `).run(taskId, agent, text, JSON.stringify(metadata || {}));
+    return true;
+  }
+
+  getPartialSnapshots(taskId) {
+    if (!taskId) return [];
+    return this.db.prepare(`
+      SELECT task_id, agent, text, metadata, updated_at
+      FROM mesh_partial_snapshots
+      WHERE task_id = ?
+      ORDER BY agent ASC
+    `).all(taskId).map((row) => {
+      let metadata = {};
+      try { metadata = JSON.parse(row.metadata || '{}'); } catch { metadata = {}; }
+      return { ...row, metadata };
+    });
+  }
+
+  prunePartialSnapshots(retentionDays = null) {
+    const rawDays = retentionDays ?? Number.parseInt(
+      process.env.A2A_PARTIAL_RETENTION_DAYS || '30',
+      10,
+    );
+    const days = Math.max(1, Number.isFinite(rawDays) ? rawDays : 30);
+    return this.db.prepare(`
+      DELETE FROM mesh_partial_snapshots
+      WHERE (
+        EXISTS (
+          SELECT 1 FROM tasks
+          WHERE tasks.id = mesh_partial_snapshots.task_id
+            AND tasks.state IN ('completed', 'failed', 'canceled', 'rejected')
+            AND tasks.updated_at <= datetime('now', ?)
+        )
+      ) OR (
+        NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.id = mesh_partial_snapshots.task_id)
+        AND mesh_partial_snapshots.updated_at <= datetime('now', ?)
+      )
+    `).run(`-${days} days`, `-${days} days`).changes;
+  }
+
+  getIdempotentTask(operationType, requestId) {
+    if (!operationType || !requestId) return null;
+    const row = this.db.prepare(`
+      SELECT t.*
+      FROM mesh_idempotency_keys i
+      LEFT JOIN tasks t ON t.id = i.task_id
+      WHERE i.operation_type = ? AND i.request_id = ?
+    `).get(operationType, requestId);
+    if (!row?.id) {
+      const claim = this.db.prepare(`
+        SELECT task_id FROM mesh_idempotency_keys
+        WHERE operation_type = ? AND request_id = ?
+      `).get(operationType, requestId);
+      return claim?.task_id ? { id: claim.task_id, state: 'submitted', reservationOnly: true } : null;
+    }
+    return this._deserializeTask(row);
+  }
+
   updateTask(id, updates) {
     const sets = ["updated_at = datetime('now')"];
     const params = [];
@@ -206,11 +358,12 @@ export class MeshStore {
     if (updates.providerSessionKey !== undefined) { sets.push('provider_session_key = ?'); params.push(updates.providerSessionKey); }
     if (updates.runtime !== undefined) { sets.push('runtime = ?'); params.push(updates.runtime); }
 
-    if (sets.length <= 1) return this.getTask(id); // nothing to update
+    if (sets.length <= 1) return { ...this.getTask(id), updateAccepted: false }; // nothing to update
 
     params.push(id);
-    this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).run(...params);
-    return this.getTask(id);
+    const guard = " AND state NOT IN ('completed', 'failed', 'canceled', 'rejected')";
+    const result = this.db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?${guard}`).run(...params);
+    return { ...this.getTask(id), updateAccepted: result.changes === 1 };
   }
 
   getTask(id) {
@@ -299,9 +452,19 @@ export class MeshStore {
   // ---- Events ----
 
   createEvent(taskId, eventType, server, payload = {}) {
+    return this.createEventDetailed(taskId, eventType, server, payload).id;
+  }
+
+  createEventDetailed(taskId, eventType, server, payload = {}) {
     // Loop guard: drop writes when a task crosses MAX_EVENTS_PER_TASK.
     // Always allow terminal-state events through so completion is recorded.
-    const current = (this._eventCounts.get(taskId) || 0) + 1;
+    if (!this._eventCounts.has(taskId)) {
+      const persisted = this.db.prepare(
+        'SELECT COUNT(*) AS count FROM task_events WHERE task_id = ?'
+      ).get(taskId)?.count || 0;
+      this._eventCounts.set(taskId, persisted);
+    }
+    const current = this._eventCounts.get(taskId) + 1;
     this._eventCounts.set(taskId, current);
 
     const isTerminal = eventType === 'completed' || eventType === 'failed' || eventType === 'canceled';
@@ -311,11 +474,21 @@ export class MeshStore {
         console.warn('[mesh-store] LOOP GUARD: task exceeded event limit, dropping further non-terminal events', {
           taskId, server, eventType, count: current, limit: this.MAX_EVENTS_PER_TASK,
         });
+        const gapPayload = {
+          reason: 'event_limit_reached',
+          droppedEventType: eventType,
+          limit: this.MAX_EVENTS_PER_TASK,
+          message: 'Eventos intermediários excedentes foram suprimidos; o estado terminal continuará registrado.',
+        };
+        const gap = this.db.prepare(
+          'INSERT INTO task_events (task_id, event_type, server, payload) VALUES (?, ?, ?, ?)'
+        ).run(taskId, 'mesh_gap', server, JSON.stringify(gapPayload));
+        return { id: Number(gap.lastInsertRowid), dropped: true, gapPayload };
       }
-      return;
+      return { id: null, dropped: true, gapPayload: null };
     }
 
-    this.db.prepare(
+    const result = this.db.prepare(
       'INSERT INTO task_events (task_id, event_type, server, payload) VALUES (?, ?, ?, ?)'
     ).run(taskId, eventType, server, JSON.stringify(payload));
 
@@ -324,6 +497,7 @@ export class MeshStore {
       this._eventCounts.delete(taskId);
       this._loopReported.delete(taskId);
     }
+    return { id: Number(result.lastInsertRowid), dropped: false, gapPayload: null };
   }
 
   getEvents(taskId) {
@@ -341,10 +515,15 @@ export class MeshStore {
     if (options.server) { conditions.push('server = ?'); params.push(options.server); }
     if (options.eventType) { conditions.push('event_type = ?'); params.push(options.eventType); }
     if (options.since) { conditions.push('created_at >= ?'); params.push(options.since); }
+    if (options.afterId) { conditions.push('id > ?'); params.push(Number.parseInt(String(options.afterId), 10) || 0); }
 
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
-    sql += ' ORDER BY created_at DESC, id DESC';
-    sql += ` LIMIT ${parseInt(options.limit) || 100}`;
+    sql += options.order === 'asc'
+      ? ' ORDER BY id ASC'
+      : ' ORDER BY created_at DESC, id DESC';
+    const requestedLimit = Number.parseInt(String(options.limit || 100), 10);
+    const safeLimit = Math.min(50_000, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 100));
+    sql += ` LIMIT ${safeLimit}`;
 
     return this.db.prepare(sql).all(...params).map(r => ({ ...r, payload: JSON.parse(r.payload || '{}') }));
   }
@@ -383,27 +562,40 @@ export class MeshStore {
       params.push(Math.ceil(olderThanMs / 1000));
     }
 
-    const rows = this.db.prepare(`
-      SELECT id, origin_server
+    const select = this.db.prepare(`
+      SELECT id, origin_server, artifacts
       FROM tasks
       WHERE ${conditions.join(' AND ')}
-    `).all(...params);
-    if (rows.length === 0) return 0;
-
+    `);
     const update = this.db.prepare(`
       UPDATE tasks
       SET state = 'failed',
           error = ?,
           output_text = COALESCE(output_text, ?),
+          artifacts = ?,
           updated_at = datetime('now')
-      WHERE id = ?
+      WHERE id = ? AND state IN ('submitted', 'working')
     `);
-    const tx = this.db.transaction((staleRows) => {
-      for (const row of staleRows) {
-        update.run(reason, reason, row.id);
-      }
+    // Recover while holding no write transaction. The following UPDATE still
+    // uses a state predicate, so a task that completes during recovery wins.
+    const prepared = select.all(...params).map((row) => {
+      let existingArtifacts = [];
+      try { existingArtifacts = JSON.parse(row.artifacts || '[]'); } catch { existingArtifacts = []; }
+      const recoveredArtifacts = recoverPartialArtifacts(this, row.id);
+      const artifacts = recoveredArtifacts.length > 0
+        ? [...existingArtifacts.filter((item) => item?.name !== 'partial-output.md'), ...recoveredArtifacts]
+        : existingArtifacts;
+      return { ...row, artifacts };
     });
-    tx(rows);
+    const tx = this.db.transaction(() => {
+      const changed = [];
+      for (const row of prepared) {
+        const result = update.run(reason, reason, JSON.stringify(row.artifacts), row.id);
+        if (result.changes === 1) changed.push(row);
+      }
+      return changed;
+    });
+    const rows = tx();
 
     for (const row of rows) {
       this.createEvent(row.id, 'failed', row.origin_server || originServer || 'unknown', { outputPreview: reason });
