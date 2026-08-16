@@ -161,7 +161,7 @@ Decisão não é consenso: se as cadeiras divergirem, informar o dissenso mesmo 
 
 ## Participantes
 
-Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code, Grok por Cursor com `cursor-grok-4.6-high` fixo, Kimi K3 pelo Kimi Code CLI oficial e Gemini 3.7 pelo Antigravity. Rejeitar outro modelo Claude ou Grok em runs novos; preservar somente runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; não usar defaults internos nem outra rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
+Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa Cursor com `cursor-grok-4.6-high` por padrão ou a CLI oficial da xAI com `grok-4.6` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial e Gemini 3.7 usa o Antigravity. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
 
 Usar `scripts/cli_adapter.py` para participantes externos:
 
@@ -171,7 +171,7 @@ Usar `scripts/cli_adapter.py` para participantes externos:
 | Codex | `codex` | Aceitar modelo informado |
 | Gemini | `gemini` | Rota `agy`, padrão `gemini-3.7-flash-high`; aceitar override explícito disponível na conta |
 | Antigravity | `antigravity` | Comando `agy`, padrão `gemini-3.7-flash-high`, acesso integral com aprovação automática |
-| Grok | `grok` | Cursor CLI com modelo fixo `cursor-grok-4.6-high` |
+| Grok | `grok` | Cursor CLI com `cursor-grok-4.6-high` (padrão) ou CLI oficial xAI com `grok-4.6` (seleção explícita) |
 | Kimi | `kimi` | Kimi Code CLI oficial, padrão `kimi-code/k3`, 1.048.576 tokens, esforço `max` obrigatório e provedor efetivo OpenCode Go |
 | OpenCode | `opencode` | Provedor/modelo no formato do CLI; Kimi, GLM, DeepSeek e Qwen usam esforço `max` obrigatório |
 

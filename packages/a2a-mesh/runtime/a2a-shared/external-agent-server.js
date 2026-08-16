@@ -4,7 +4,7 @@ import { createA2AServer } from './base-server.js';
 import { createSharedRuntime } from './server-runtime.js';
 import { loadA2AAuthToken } from './auth-token.js';
 import { AGENT_CATALOG } from './agent-catalog.js';
-import { createExternalCliExecutor, verifyOpenCodeModelAvailable } from './external-cli-adapter.js';
+import { createExternalCliExecutor, verifyKimiSecureCredential, verifyOpenCodeModelAvailable } from './external-cli-adapter.js';
 
 export async function startExternalAgentServer(agentId) {
   const definition = AGENT_CATALOG[agentId];
@@ -13,14 +13,22 @@ export async function startExternalAgentServer(agentId) {
   const port = Number.parseInt(process.env.A2A_PORT || String(definition.port), 10);
   const binary = process.env[`A2A_${upper}_CLI_BINARY`] || definition.cliBinary;
   const configuredModel = process.env[`A2A_${upper}_MODEL`] || definition.model;
-  if (configuredModel !== definition.model) {
-    throw new Error(`${definition.displayName} model policy is fixed: expected ${definition.model}, got ${configuredModel}`);
-  }
 
   let bootModelVerified = false;
+  let bootCredentialVerified = false;
+  let bootCredentialError = null;
+  let availableModels = [configuredModel];
   if (definition.route === 'opencode') {
-    verifyOpenCodeModelAvailable(binary, configuredModel);
+    const probe = verifyOpenCodeModelAvailable(binary, configuredModel);
+    availableModels = probe.availableModels;
     bootModelVerified = true;
+  } else if (definition.route === 'kimi-code') {
+    try {
+      const probe = verifyKimiSecureCredential(binary);
+      bootCredentialVerified = probe.verified;
+    } catch (error) {
+      bootCredentialError = error.message;
+    }
   }
 
   const authToken = loadA2AAuthToken();
@@ -35,9 +43,19 @@ export async function startExternalAgentServer(agentId) {
   });
 
   const routeLabel = definition.route === 'opencode' ? 'OpenCode Go' : 'Kimi Code';
-  const systemPrompt = `Você é ${definition.displayName}, executado exclusivamente pelo ${routeLabel}, como peer nativo da mesh A2A.
+  const effectiveProvider = (model) => {
+    const value = String(model || '').toLowerCase();
+    if (value.includes('deepseek')) return 'deepseek';
+    if (value.includes('/glm-')) return 'zai';
+    if (value.includes('/qwen')) return 'alibaba';
+    if (value.includes('/kimi')) return 'moonshot';
+    if (value.includes('/grok')) return 'xai';
+    if (value.includes('/gpt-')) return 'openai';
+    return definition.route === 'opencode' ? 'opencode-go' : definition.provider;
+  };
+  const systemPrompt = (activeModel) => `Você é ${definition.displayName}, executado exclusivamente pelo ${routeLabel}, como peer nativo da mesh A2A.
 
-MODELO E ROTA: ${configuredModel} pela rota ${routeLabel}. O modelo é fixo e não admite fallback silencioso. Use esforço máximo disponível para análise, crítica e revisão.
+MODELO E ROTA: ${activeModel} pela rota ${routeLabel}. Este é o modelo explicitamente configurado e não admite fallback silencioso. Use esforço máximo disponível para análise, crítica e revisão.
 
 PEERS DISPONÍVEIS: ${Object.keys(runtime.peers).join(', ')}. Use as ferramentas A2A injetadas quando a tarefa se beneficiar de colaboração, respeitando profundidade, cadeia e escopo.
 
@@ -59,14 +77,18 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
     maxProcesses: Number.parseInt(process.env[`A2A_${upper}_MAX_PROCESSES`] || String(definition.maxCliProcesses || 1), 10),
     cliTimeoutMs: Number.parseInt(process.env[`A2A_${upper}_CLI_TIMEOUT_MS`] || '1800000', 10),
     bootModelVerified,
+    bootCredentialVerified,
+    bootCredentialError,
   });
 
   const agentCard = {
     name: `${definition.displayName} Agent`,
-    description: `${definition.displayName} via ${routeLabel}, com modelo fixo e participação nativa na mesh A2A.`,
+    description: `${definition.displayName} via ${routeLabel}, com modelo validado no catálogo e participação nativa na mesh A2A.`,
     url: `http://localhost:${port}`,
-    version: '1.3.0',
+    version: '1.4.0',
     provider: definition.provider,
+    modelVendor: definition.modelVendor || definition.provider,
+    credentialProvider: definition.credentialProvider || definition.provider,
     route: definition.route,
     capabilities: { streaming: true, pushNotifications: true, stateTransitionHistory: true },
     skills: [
@@ -78,6 +100,32 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
     defaultInputModes: ['text'],
     defaultOutputModes: ['text'],
   };
+
+  function runtimeConfiguration() {
+    return {
+      route: definition.route,
+      cliBinary: binary,
+      configuredModel: executor.configuredModel,
+      availableModels,
+      configurableModels: definition.route === 'opencode',
+      reasoningEffort: definition.reasoningEffort,
+      provider: effectiveProvider(executor.configuredModel),
+      modelVendor: definition.modelVendor || effectiveProvider(executor.configuredModel),
+      credentialProvider: definition.credentialProvider || (definition.route === 'opencode' ? 'opencode-go' : effectiveProvider(executor.configuredModel)),
+    };
+  }
+
+  function updateRuntimeConfiguration(update = {}) {
+    if (definition.route !== 'opencode') {
+      throw new Error(`${definition.displayName} não usa um catálogo OpenCode configurável.`);
+    }
+    const requestedModel = String(update.model || '').trim();
+    if (!requestedModel) throw new Error('Informe o modelo OpenCode desejado.');
+    const probe = verifyOpenCodeModelAvailable(binary, requestedModel);
+    availableModels = probe.availableModels;
+    executor.updateModel(requestedModel, { verified: probe.verified });
+    return runtimeConfiguration();
+  }
 
   return createA2AServer({
     port,
@@ -100,11 +148,23 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
     debateExecutor: runtime.debateExecutor,
     planExecutor: runtime.planExecutor,
     executeTask: executor.executeTask,
+    runtimeConfigDetails: runtimeConfiguration,
+    updateRuntimeConfig: definition.route === 'opencode' ? updateRuntimeConfiguration : null,
     healthDetails: () => ({
+      model: executor.configuredModel,
       route: definition.route,
-      provider: definition.provider,
-      configuredModel,
-      modelPolicy: 'fixed',
+      cliBinary: binary,
+      provider: effectiveProvider(executor.configuredModel),
+      modelVendor: definition.modelVendor || effectiveProvider(executor.configuredModel),
+      credentialProvider: executor.healthState.credentialProvider || definition.credentialProvider || (definition.route === 'opencode' ? 'opencode-go' : effectiveProvider(executor.configuredModel)),
+      credentialSource: executor.healthState.credentialSource,
+      credentialAvailable: executor.healthState.credentialAvailable,
+      credentialError: executor.healthState.credentialError,
+      configuredModel: executor.configuredModel,
+      availableModels,
+      configurableModels: definition.route === 'opencode',
+      reasoningEffort: definition.reasoningEffort,
+      modelPolicy: definition.route === 'opencode' ? 'selectable-catalog' : 'fixed',
       modelVerified: executor.healthState.modelVerified,
       lastObservedModel: executor.healthState.lastObservedModel,
       lastObservedAt: executor.healthState.lastObservedAt,

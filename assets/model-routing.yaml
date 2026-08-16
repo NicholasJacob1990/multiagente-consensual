@@ -32,8 +32,12 @@ routes:
     binary: cursor-agent
     provider: xai
     default_model: cursor-grok-4.6-high
-    model_policy: fixed_default
-    notes: Grok deve ser invocado pelo Cursor CLI, nunca pelo Grok CLI nativo.
+    model_policy: fixed_per_route
+    notes: Grok usa Cursor por padrão; a rota grok_official pode ser selecionada explicitamente. Cada rota preserva seu modelo fixo e nunca há fallback silencioso.
+    allowed_routes: [cursor, grok_official]
+    models_by_route: {cursor: cursor-grok-4.6-high, grok_official: grok-4.6}
+    effort_by_route: {cursor: high, grok_official: xhigh}
+    silent_fallback: false
 
   kimi:
     cli: kimi

@@ -1,9 +1,28 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR" class="dark" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>A2A Mesh</title>
+<script>
+  // O painel depende das APIs locais autenticadas nas portas 3142–3148.
+  // Abrir este HTML diretamente por file:// produz uma tela aparentemente
+  // funcional, mas sem catálogos nem execução. Corrija a origem imediatamente.
+  if (window.location.protocol === 'file:') {
+    window.location.replace('http://127.0.0.1:3142/ui');
+  }
+  // Apply the saved theme before paint to avoid a light/dark flash.
+  try {
+    const requestedTheme = new URLSearchParams(window.location.search).get('theme');
+    const savedTheme = localStorage.getItem('meshTheme');
+    const initialTheme = requestedTheme === 'light' || requestedTheme === 'dark'
+      ? requestedTheme
+      : (savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'dark');
+    document.documentElement.dataset.theme = initialTheme;
+    document.documentElement.classList.toggle('dark', initialTheme === 'dark');
+    document.documentElement.style.colorScheme = initialTheme;
+  } catch { /* storage can be unavailable in hardened browser profiles */ }
+</script>
 <style>
   * { box-sizing: border-box; }
   body { background: #030712; color: #e5e7eb; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace; margin: 0; height: 100vh; overflow: hidden; }
@@ -51,6 +70,7 @@
   /* Status dots */
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; transition: all 0.3s; }
   .dot-green { background: #22c55e; box-shadow: 0 0 8px #22c55e60; }
+  .dot-yellow { background: #fbbf24; box-shadow: 0 0 7px #fbbf2460; }
   .dot-red { background: #ef4444; box-shadow: 0 0 6px #ef444460; }
   .dot-gray { background: #374151; }
 
@@ -708,6 +728,22 @@
     --font-reading: -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, sans-serif;
     --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
     --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --surface-base: #f4f7fb;
+    --surface-raised: #ffffff;
+    --surface-panel: #eaf0f7;
+    --border-muted: #c4cfdd;
+    --text-primary: #182235;
+    --text-secondary: #3f5068;
+    --text-muted: #64758b;
+    --accent: #344fc4;
+    --focus: #203ca9;
+    --error: #b42318;
+    --success: #067647;
+    --warning: #8a5b00;
+    color-scheme: light;
   }
   body { background: var(--surface-base); color: var(--text-primary); font-family: var(--font-reading); }
   code, pre, textarea, .terminal-prefix, .terminal-hint, .task-strip, .config-strip,
@@ -735,6 +771,64 @@
   .header-agents { overflow-x: auto; min-width: 0; scrollbar-width: none; }
   .header-agents > span { white-space: nowrap; flex: 0 0 auto; }
   .header-agents::-webkit-scrollbar { display: none; }
+  .model-config-dialog {
+    width: min(1040px, calc(100vw - 32px));
+    max-height: min(760px, calc(100vh - 32px));
+    padding: 0;
+    color: var(--text-primary);
+    background: #0b1020;
+    border: 1px solid #303b55;
+    border-radius: 14px;
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.62);
+  }
+  .model-config-dialog::backdrop { background: rgba(1, 4, 12, 0.78); backdrop-filter: blur(4px); }
+  .model-config-head, .model-config-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+  }
+  .model-config-head { border-bottom: 1px solid var(--border-muted); }
+  .model-config-foot { border-top: 1px solid var(--border-muted); }
+  .model-config-title { margin: 0; font-size: 1rem; color: #e5e7eb; }
+  .model-config-subtitle { margin: 4px 0 0; max-width: 72ch; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
+  .model-config-table-wrap { overflow: auto; max-height: min(590px, calc(100vh - 180px)); }
+  .model-config-table { width: 100%; min-width: 920px; border-collapse: collapse; font-size: 0.8125rem; line-height: 1.4; }
+  .model-config-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 10px 12px;
+    color: #9ca3af;
+    background: #111827;
+    border-bottom: 1px solid #34415f;
+    text-align: left;
+    font-weight: 700;
+  }
+  .model-config-table td { padding: 11px 12px; border-bottom: 1px solid #1f2937; vertical-align: top; }
+  .model-config-table tr:last-child td { border-bottom: 0; }
+  .model-config-table tr:hover td { background: rgba(99, 102, 241, 0.055); }
+  .model-agent-cell { display: flex; align-items: center; gap: 8px; font-weight: 700; white-space: nowrap; }
+  .model-agent-rail { width: 3px; height: 30px; border-radius: 999px; background: var(--agent-color, #6366f1); }
+  .model-config-value { color: #d1d5db; font-family: var(--font-mono); overflow-wrap: anywhere; }
+  .model-config-observed { color: #9ca3af; }
+  .model-route-select {
+    width: 100%; min-width: 190px; padding: 7px 9px;
+    color: #e5e7eb; background: #111827; border: 1px solid #3c4a68; border-radius: 7px;
+    font: 0.8125rem var(--font-reading);
+  }
+  .model-route-fixed { color: #9ca3af; }
+  .model-catalog-count { margin-top: 4px; color: var(--text-muted); font: 0.6875rem var(--font-mono); }
+  .model-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .model-status-dot { width: 8px; height: 8px; border-radius: 999px; background: #6b7280; }
+  .model-status[data-state="ok"] .model-status-dot { background: var(--success); box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.09); }
+  .model-status[data-state="warn"] .model-status-dot { background: var(--warning); }
+  .model-status[data-state="down"] .model-status-dot { background: var(--error); }
+  .model-config-message { min-height: 1.25rem; color: #9ca3af; font-size: 0.8125rem; }
+  .model-config-message[data-state="error"] { color: #fca5a5; }
+  .model-config-message[data-state="warn"] { color: #fbbf24; }
+  .model-config-actions { display: flex; gap: 8px; }
   .app-header { background: var(--surface-raised); border-color: var(--border-muted); }
   .header-actions :where(button, a) { min-height: 30px; }
   .bubble { color: var(--text-primary); }
@@ -800,6 +894,87 @@
   #scroll-btn { z-index: 2; }
   .live-cancel { border: 1px solid #74383d; background: #241317; color: var(--error); border-radius: 4px; padding: 4px 7px; cursor: pointer; font: 0.6875rem var(--font-reading); }
   .arena-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .artifact-shelf { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-muted); }
+  .artifact-shelf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .artifact-shelf-title { color: var(--text-primary); font-size: 0.8125rem; font-weight: 700; }
+  .artifact-shelf-note { color: var(--text-muted); font: 0.6875rem var(--font-mono); }
+  .artifact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+  .artifact-card { min-width: 0; border: 1px solid var(--border-muted); border-radius: 7px; background: var(--surface-raised); overflow: hidden; }
+  .artifact-card-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 9px 10px; }
+  .artifact-card-name { color: var(--text-primary); font: 700 0.75rem/1.35 var(--font-mono); overflow-wrap: anywhere; }
+  .artifact-card-meta { margin-top: 3px; color: var(--text-muted); font-size: 0.6875rem; line-height: 1.4; }
+  .artifact-download { flex: 0 0 auto; border: 1px solid var(--border-muted); border-radius: 4px; background: var(--surface-panel); color: var(--accent); padding: 4px 7px; cursor: pointer; font: 700 0.6875rem var(--font-reading); }
+  .artifact-download:hover { color: var(--text-primary); }
+  .artifact-preview { border-top: 1px solid var(--border-muted); }
+  .artifact-preview summary { padding: 7px 10px; cursor: pointer; color: var(--accent); font-size: 0.6875rem; }
+  .artifact-preview pre { max-height: 340px; margin: 0; padding: 10px; overflow: auto; border: 0; border-radius: 0; background: var(--surface-panel); color: var(--text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .artifact-library-body { max-height: min(650px, calc(100vh - 150px)); overflow: auto; padding: 14px 18px 18px; }
+  .artifact-library-empty { padding: 42px 18px; text-align: center; color: var(--text-muted); line-height: 1.6; }
+  .artifact-task-group { padding: 12px; border: 1px solid var(--border-muted); border-radius: 9px; background: var(--surface-raised); }
+  .artifact-task-group + .artifact-task-group { margin-top: 10px; }
+  .artifact-task-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: start; }
+  .artifact-task-title { color: var(--text-primary); font-size: 0.8125rem; font-weight: 750; }
+  .artifact-task-id { color: var(--text-muted); font: 0.6875rem var(--font-mono); }
+  .artifact-task-prompt { grid-column: 1 / -1; color: var(--text-secondary); font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; }
+  .artifact-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 3px; border-radius: 999px; background: var(--surface-panel); color: var(--accent); font: 700 0.625rem var(--font-mono); }
+  .theme-toggle { min-width: 104px; justify-content: center; }
+
+  :root[data-theme="light"] body,
+  :root[data-theme="light"] #main-content { background: var(--surface-base) !important; }
+  :root[data-theme="light"] .app-header,
+  :root[data-theme="light"] .team-picker,
+  :root[data-theme="light"] .config-strip,
+  :root[data-theme="light"] .composer-summary,
+  :root[data-theme="light"] .composer-error,
+  :root[data-theme="light"] .bottom-panel,
+  :root[data-theme="light"] .terminal-bar,
+  :root[data-theme="light"] .task-strip { background: var(--surface-raised); border-color: var(--border-muted); }
+  :root[data-theme="light"] .btn-ghost,
+  :root[data-theme="light"] .layout-toggle-btn,
+  :root[data-theme="light"] .team-agent-toggle,
+  :root[data-theme="light"] .team-picker-all,
+  :root[data-theme="light"] .history-loader { background: var(--surface-raised); border-color: var(--border-muted); color: var(--text-secondary); }
+  :root[data-theme="light"] .btn-ghost:hover,
+  :root[data-theme="light"] .layout-toggle-btn:hover,
+  :root[data-theme="light"] .team-agent-toggle:hover,
+  :root[data-theme="light"] .team-picker-all:hover { background: var(--surface-panel); color: var(--text-primary); }
+  :root[data-theme="light"] .team-agent-toggle[aria-pressed="true"] { color: var(--text-primary); background: color-mix(in srgb, var(--agent-color, #344fc4) 10%, white); }
+  :root[data-theme="light"] .team-picker-all[aria-pressed="true"] { color: #263eaa; background: #e7ebff; border-color: #6b7ed8; }
+  :root[data-theme="light"] .terminal-input,
+  :root[data-theme="light"] .user-msg-text,
+  :root[data-theme="light"] .bubble { color: var(--text-primary); }
+  :root[data-theme="light"] .terminal-input::placeholder { color: var(--text-muted); }
+  :root[data-theme="light"] .terminal-prefix .op-tag,
+  :root[data-theme="light"] .task-pill,
+  :root[data-theme="light"] .config-chip,
+  :root[data-theme="light"] .autocomplete,
+  :root[data-theme="light"] .arena-column,
+  :root[data-theme="light"] .arena-col-header,
+  :root[data-theme="light"] .live-activity { background: var(--surface-raised); border-color: var(--border-muted); }
+  :root[data-theme="light"] .autocomplete-item:hover,
+  :root[data-theme="light"] .autocomplete-item.active,
+  :root[data-theme="light"] .task-pill:hover { background: var(--surface-panel); }
+  :root[data-theme="light"] .msg-content pre,
+  :root[data-theme="light"] .result-details pre { background: #eef3f8; border-color: #cbd5e1; color: #172033; }
+  :root[data-theme="light"] .msg-content code:not(pre code) { background: #e5ebf3; color: #26344b; }
+  :root[data-theme="light"] .model-config-dialog { background: #ffffff; border-color: var(--border-muted); box-shadow: 0 28px 80px rgba(29, 44, 68, 0.24); }
+  :root[data-theme="light"] .model-config-dialog::backdrop { background: rgba(31, 41, 55, 0.38); }
+  :root[data-theme="light"] .model-config-title,
+  :root[data-theme="light"] .model-config-value,
+  :root[data-theme="light"] .model-route-select { color: var(--text-primary); }
+  :root[data-theme="light"] .model-config-table th,
+  :root[data-theme="light"] .model-route-select { background: var(--surface-panel); border-color: var(--border-muted); }
+  :root[data-theme="light"] .model-config-table td { border-color: #dce3ec; }
+  :root[data-theme="light"] .model-config-table tr:hover td { background: #f2f5ff; }
+  :root[data-theme="light"] .model-config-observed,
+  :root[data-theme="light"] .model-route-fixed,
+  :root[data-theme="light"] .model-config-message { color: var(--text-muted); }
+  :root[data-theme="light"] #sse-badge { background: var(--surface-panel) !important; color: var(--text-muted) !important; }
+  :root[data-theme="light"] .header-agents > span > span:last-child { color: var(--text-secondary) !important; }
+  :root[data-theme="light"] #chat { scrollbar-color: #94a3b8 #e8edf4; }
+  :root[data-theme="light"] #chat::-webkit-scrollbar-track { background: #e8edf4; }
+  :root[data-theme="light"] #chat::-webkit-scrollbar-thumb { background: #94a3b8; border-color: #e8edf4; }
+  :root[data-theme="light"] #scroll-btn { background: rgba(255, 255, 255, 0.94) !important; }
   @media (min-width: 1400px) { .arena-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   @media (max-width: 900px) {
     .app-header { height: auto; min-height: 48px; gap: 8px; padding: 6px 10px; }
@@ -860,6 +1035,9 @@
     </div>
   </div>
   <div class="header-actions">
+    <button id="theme-toggle" class="btn-sm btn-ghost theme-toggle" type="button" aria-pressed="false" title="Ativar tema claro">☀ Claro</button>
+    <button id="artifact-library-open" class="btn-sm btn-ghost" type="button" title="Ver artefatos preservados por tarefa">Artefatos <span id="artifact-count" class="artifact-count">0</span></button>
+    <button id="model-config-open" class="btn-sm btn-ghost" type="button" title="Ver modelos, CLIs, rotas e estado de autenticação">Modelos e CLIs</button>
     <button id="layout-toggle" class="layout-toggle-btn" type="button" aria-pressed="true" title="Altera apenas a visualização entre Arena automática e fluxo linear">
       <span id="layout-icon">&#x229E;</span> <span id="layout-label">Auto</span>
     </button>
@@ -868,6 +1046,47 @@
     <button id="clear-chat-btn" type="button" class="btn-sm btn-ghost" title="Limpa somente o feed visual; não cancela tarefas">Limpar feed</button>
   </div>
 </header>
+
+<dialog id="model-config-dialog" class="model-config-dialog" aria-labelledby="model-config-title">
+  <div class="model-config-head">
+    <div>
+      <h2 id="model-config-title" class="model-config-title">Modelos, CLIs e rotas efetivas</h2>
+      <p class="model-config-subtitle">Este quadro mostra a proveniência real de cada cadeira. Escolha modelos dos catálogos OpenCode, Cursor e Antigravity; nenhuma indisponibilidade provoca fallback silencioso.</p>
+    </div>
+    <button id="model-config-close-top" class="btn-sm btn-ghost" type="button" aria-label="Fechar configurações">Fechar</button>
+  </div>
+  <div class="model-config-table-wrap">
+    <table class="model-config-table">
+      <thead><tr><th>Agente</th><th>CLI e rota</th><th>Modelo configurado</th><th>Modelo observado</th><th>Provedor</th><th>Esforço</th><th>Estado</th></tr></thead>
+      <tbody id="model-config-body"><tr><td colspan="7">Carregando configurações…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="model-config-foot">
+    <div id="model-config-message" class="model-config-message" role="status" aria-live="polite"></div>
+    <div class="model-config-actions">
+      <button id="model-config-refresh" class="btn-sm btn-ghost" type="button">Atualizar estado</button>
+      <button id="model-config-close" class="btn-sm btn-ghost" type="button">Concluir</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="artifact-library-dialog" class="model-config-dialog" aria-labelledby="artifact-library-title">
+  <div class="model-config-head">
+    <div>
+      <h2 id="artifact-library-title" class="model-config-title">Artefatos preservados</h2>
+      <p class="model-config-subtitle">Cada item permanece vinculado à tarefa e à versão que o produziu. Visualize o conteúdo ou baixe uma cópia sem alterar o artefato registrado.</p>
+    </div>
+    <button id="artifact-library-close-top" class="btn-sm btn-ghost" type="button" aria-label="Fechar artefatos">Fechar</button>
+  </div>
+  <div id="artifact-library-body" class="artifact-library-body"><div class="artifact-library-empty">Carregando artefatos…</div></div>
+  <div class="model-config-foot">
+    <div id="artifact-library-message" class="model-config-message" role="status" aria-live="polite"></div>
+    <div class="model-config-actions">
+      <button id="artifact-library-refresh" class="btn-sm btn-ghost" type="button">Atualizar lista</button>
+      <button id="artifact-library-close" class="btn-sm btn-ghost" type="button">Concluir</button>
+    </div>
+  </div>
+</dialog>
 
 <!-- APP LAYOUT -->
 <div class="app-layout">
@@ -963,6 +1182,34 @@
 // State
 // ============================================
 const BASE = window.location.origin;
+const SHOWCASE_MODE = new URLSearchParams(window.location.search).get('showcase') === '1';
+const THEME_STORAGE_KEY = 'meshTheme';
+
+function activeTheme() {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+function updateThemeToggle() {
+  const button = document.getElementById('theme-toggle');
+  if (!button) return;
+  const isLight = activeTheme() === 'light';
+  button.setAttribute('aria-pressed', String(isLight));
+  button.setAttribute('aria-label', isLight ? 'Ativar tema escuro' : 'Ativar tema claro');
+  button.title = isLight ? 'Ativar tema escuro' : 'Ativar tema claro';
+  button.textContent = isLight ? '☾ Escuro' : '☀ Claro';
+}
+
+function setTheme(theme, { persist = true } = {}) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  document.documentElement.classList.toggle('dark', next === 'dark');
+  document.documentElement.style.colorScheme = next;
+  if (persist) {
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch { /* keep the current session theme */ }
+  }
+  updateThemeToggle();
+}
+
 const clearRequested = new URLSearchParams(window.location.search).get('clear') === '1';
 if (clearRequested) {
   localStorage.setItem('meshChatClearedAt', new Date().toISOString());
@@ -994,6 +1241,68 @@ const AGENT_DOT_COLORS = {
   claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa', grok: '#34d399',
   glm: '#fb7185', deepseek: '#22d3ee', kimi: '#c084fc', qwen: '#f97316',
 };
+const FALLBACK_AGENT_CATALOG = Object.freeze({
+  claude: { displayName: 'Claude', cliBinary: 'claude', route: 'claude', provider: 'anthropic', model: 'claude-opus-5' },
+  codex: { displayName: 'Codex', cliBinary: 'codex', route: 'codex', provider: 'openai', model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
+  gemini: { displayName: 'Gemini', cliBinary: 'agy', route: 'antigravity', provider: 'google', model: 'gemini-3.7-flash-high' },
+  grok: { displayName: 'Grok', cliBinary: 'cursor-agent', route: 'cursor', provider: 'xai', model: 'cursor-grok-4.6-high' },
+  glm: { displayName: 'GLM 5.3', cliBinary: 'opencode', route: 'opencode', provider: 'zai', modelVendor: 'zai', credentialProvider: 'opencode-go', model: 'opencode-go/glm-5.3', reasoningEffort: 'max' },
+  deepseek: { displayName: 'DeepSeek V4 Pro', cliBinary: 'opencode', route: 'opencode', provider: 'deepseek', modelVendor: 'deepseek', credentialProvider: 'opencode-go', model: 'opencode-go/deepseek-v4-pro', reasoningEffort: 'max' },
+  kimi: { displayName: 'Kimi K3', cliBinary: 'kimi-secure', route: 'kimi-code', provider: 'opencode-go', modelVendor: 'moonshot', credentialProvider: 'opencode-go', model: 'kimi-code/k3', reasoningEffort: 'max' },
+  qwen: { displayName: 'Qwen 3.8 Max', cliBinary: 'opencode', route: 'opencode', provider: 'alibaba', modelVendor: 'alibaba', credentialProvider: 'opencode-go', model: 'opencode-go/qwen3.8-max', reasoningEffort: 'max' },
+});
+let agentCatalog = { ...FALLBACK_AGENT_CATALOG };
+const latestAgentHealth = new Map();
+const latestAgentConfig = new Map();
+const latestAgentConfigErrors = new Map();
+const MODEL_CATALOG_CACHE_PREFIX = 'meshModelCatalog:';
+
+function cachedModelConfiguration(agent) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`${MODEL_CATALOG_CACHE_PREFIX}${agent}`) || 'null');
+    if (!parsed || !Array.isArray(parsed.availableModels) || parsed.availableModels.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function cacheModelConfiguration(agent, configuration) {
+  if (!configuration || !Array.isArray(configuration.availableModels) || configuration.availableModels.length === 0) return;
+  try {
+    localStorage.setItem(`${MODEL_CATALOG_CACHE_PREFIX}${agent}`, JSON.stringify({
+      configurableModels: Boolean(configuration.configurableModels),
+      configuredModel: configuration.configuredModel || configuration.model || '',
+      availableModels: configuration.availableModels,
+      cachedAt: new Date().toISOString(),
+    }));
+  } catch { /* the live catalog remains usable when storage is unavailable */ }
+}
+
+function mergedModelConfiguration(agent, health) {
+  const live = latestAgentConfig.get(agent);
+  const cached = cachedModelConfiguration(agent);
+  const sources = [live, health, cached].filter(Boolean);
+  const availableModels = [...new Set(sources.flatMap((source) => (
+    Array.isArray(source.availableModels) ? source.availableModels : []
+  )).map((model) => String(model || '').trim()).filter(Boolean))];
+  return {
+    ...(cached || {}),
+    ...(health || {}),
+    ...(live || {}),
+    configuredModel: live?.configuredModel || health?.configuredModel || health?.model || cached?.configuredModel || '',
+    configurableModels: sources.some((source) => source.configurableModels === true),
+    availableModels,
+  };
+}
+
+function meshHttpError(response, payload = null) {
+  const serverMessage = payload?.error?.message || payload?.error || payload?.message || '';
+  if (response?.status === 401) {
+    return new Error('Sessão do painel não autenticada ou expirada. Reabra com “a2a-mesh open” e atualize esta página.');
+  }
+  return new Error(serverMessage || `HTTP ${response?.status || 'desconhecido'}`);
+}
 
 let autoScroll = true;
 let executing = false;
@@ -1540,10 +1849,14 @@ function effectiveHealthModel(health) {
 function compactHealthModel(agent, health) {
   const model = String(effectiveHealthModel(health));
   if (agent === 'codex') return `${model}${health?.reasoningEffort ? `/${health.reasoningEffort}` : ''}`;
-  if (agent === 'grok') return model
-    .replace(/^Cursor\s+Grok\s+/i, '')
-    .replace(/^cursor-grok-/i, '')
-    .replace(/-/g, ' ');
+  if (agent === 'grok') {
+    const compact = model
+      .replace(/^Cursor\s+Grok\s+/i, '')
+      .replace(/^cursor-grok-/i, '')
+      .replace(/^grok-/i, '')
+      .replace(/-/g, ' ');
+    return `${compact} · ${health?.route === 'official' ? 'xAI CLI' : 'Cursor'}`;
+  }
   if (agent === 'glm') return model.replace(/^opencode-go\/glm-/i, '');
   if (agent === 'deepseek') return model.replace(/^opencode-go\/deepseek-/i, '').replace(/-/g, ' ');
   if (agent === 'kimi') return model.replace(/^kimi-code\//i, '').toUpperCase();
@@ -1552,6 +1865,229 @@ function compactHealthModel(agent, health) {
     .replace(/^cursor-/i, '')
     .replace(/^gemini-/i, '')
     .replace(/^claude-/i, '');
+}
+
+async function fetchAgentCatalog() {
+  try {
+    const response = await fetch(`${BASE}/mesh/catalog`, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return agentCatalog;
+    const payload = await response.json();
+    if (payload?.agents && typeof payload.agents === 'object') {
+      agentCatalog = { ...FALLBACK_AGENT_CATALOG, ...payload.agents };
+    }
+  } catch { /* fallback catalog remains available */ }
+  return agentCatalog;
+}
+
+async function fetchAgentConfiguration(agent, timeoutMs = 35_000) {
+  const port = PORTS[agent];
+  if (!port) return null;
+  try {
+    const response = await fetch(peerEndpoint(port, '/mesh/config'), {
+      credentials: 'include',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw meshHttpError(response, payload);
+    if (payload && typeof payload === 'object') {
+      latestAgentConfigErrors.delete(agent);
+      cacheModelConfiguration(agent, payload);
+      return payload;
+    }
+    throw new Error('O agente devolveu uma configuração inválida.');
+  } catch (error) {
+    latestAgentConfigErrors.set(agent, error?.message || 'Falha ao consultar o catálogo de modelos.');
+    return cachedModelConfiguration(agent);
+  }
+}
+
+function modelConfigState(health) {
+  if (!health?.online) return { state: 'down', label: 'offline' };
+  if (health.credentialAvailable === false) return { state: 'warn', label: 'credencial indisponível' };
+  if (health.route === 'official' && health.authenticated === false) return { state: 'warn', label: 'login necessário' };
+  if (health.modelVerified === false) return { state: 'warn', label: health.lastObservedModel ? 'modelo divergente' : 'verificação pendente' };
+  return { state: 'ok', label: 'operacional' };
+}
+
+function grokRouteControl(health) {
+  const route = health?.route || localStorage.getItem('meshGrokRoute') || 'cursor';
+  return `<select id="model-route-grok" class="model-route-select" aria-label="Rota de execução do Grok">
+    <option value="cursor"${route === 'cursor' ? ' selected' : ''}>Cursor CLI · Grok 4.6 High</option>
+    <option value="official"${route === 'official' ? ' selected' : ''}>xAI CLI oficial · Grok 4.6</option>
+  </select>`;
+}
+
+function modelSelectionControl(agent, configured, configuration) {
+  const available = Array.isArray(configuration?.availableModels)
+    ? [...new Set(configuration.availableModels.map((item) => String(item || '').trim()).filter(Boolean))]
+    : [];
+  if (!configuration?.configurableModels || available.length === 0) {
+    return `<span class="model-config-value">${escapeHtml(configured)}</span>`;
+  }
+  if (!available.includes(configured)) available.unshift(configured);
+  const options = available.map((model) => (
+    `<option value="${escapeAttr(model)}"${model === configured ? ' selected' : ''}>${escapeHtml(model)}</option>`
+  )).join('');
+  return `<select id="model-choice-${escapeAttr(agent)}" class="model-route-select model-choice-select" aria-label="Modelo de execução de ${escapeAttr(agent)}">${options}</select><div class="model-catalog-count">${available.length} modelo(s) disponíveis neste CLI</div>`;
+}
+
+async function renderModelConfiguration({ refresh = true } = {}) {
+  const body = document.getElementById('model-config-body');
+  if (!body) return;
+  if (refresh) {
+    await fetchAgentCatalog();
+    const healthRows = await Promise.all(AGENTS.map((agent) => fetchAgentHealth(agent, 5000)));
+    for (const health of healthRows) latestAgentHealth.set(health.agent, health);
+    // Mostra imediatamente os dados já publicados em /health. Catálogos mais
+    // lentos (especialmente Cursor) completam a mesma tabela em segundo plano.
+    await renderModelConfiguration({ refresh: false });
+    const configurationRows = await Promise.all(AGENTS.map((agent) => fetchAgentConfiguration(agent)));
+    configurationRows.forEach((configuration, index) => {
+      if (configuration) latestAgentConfig.set(AGENTS[index], configuration);
+    });
+  }
+  body.innerHTML = AGENTS.map((agent) => {
+    const catalog = agentCatalog[agent] || FALLBACK_AGENT_CATALOG[agent] || {};
+    const health = latestAgentHealth.get(agent) || { agent, online: false };
+    const state = modelConfigState(health);
+    const cliBinary = health.cliBinary || catalog.cliBinary || 'não informado';
+    const route = health.route || catalog.route || 'não informada';
+    const configured = health.configuredModel || health.model || catalog.model || 'não informado';
+    // A configuração autenticada, o catálogo público de /health e o último
+    // catálogo local são complementares. Nunca deixe um cache antigo de um
+    // único modelo esconder as opções atualmente publicadas pelo CLI.
+    const configuration = mergedModelConfiguration(agent, health);
+    cacheModelConfiguration(agent, configuration);
+    const observed = health.lastObservedModel || 'ainda não observado';
+    const provider = health.provider || catalog.provider || 'não informado';
+    const effort = health.reasoningEffort || catalog.reasoningEffort || 'padrão do modelo';
+    const routeControl = agent === 'grok'
+      ? grokRouteControl(health)
+      : `<span class="model-route-fixed"><span class="model-config-value">${escapeHtml(cliBinary)}</span><br>${escapeHtml(route)}</span>`;
+    return `<tr data-model-agent="${escapeAttr(agent)}">
+      <td><span class="model-agent-cell"><span class="model-agent-rail" style="--agent-color:${AGENT_DOT_COLORS[agent] || '#6366f1'}"></span>${escapeHtml(catalog.displayName || agent)}</span></td>
+      <td>${routeControl}${agent === 'grok' ? `<div class="model-route-fixed" style="margin-top:5px">binário ativo: <span class="model-config-value">${escapeHtml(cliBinary)}</span></div>` : ''}</td>
+      <td>${modelSelectionControl(agent, configured, configuration)}</td>
+      <td><span class="model-config-observed">${escapeHtml(observed)}</span></td>
+      <td>${escapeHtml(provider)}</td>
+      <td>${escapeHtml(effort)}</td>
+      <td><span class="model-status" data-state="${state.state}"><span class="model-status-dot"></span>${escapeHtml(state.label)}</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('model-route-grok')?.addEventListener('change', (event) => changeGrokRoute(event.target.value));
+  for (const select of body.querySelectorAll('.model-choice-select')) {
+    select.addEventListener('change', (event) => changeAgentModel(event.target.dataset.agent || event.target.id.replace('model-choice-', ''), event.target.value));
+  }
+}
+
+function setModelConfigMessage(message = '', state = '') {
+  const target = document.getElementById('model-config-message');
+  if (!target) return;
+  target.textContent = message;
+  target.dataset.state = state;
+}
+
+async function changeGrokRoute(route, { quiet = false } = {}) {
+  const select = document.getElementById('model-route-grok');
+  if (select) select.disabled = true;
+  if (!quiet) setModelConfigMessage('Aplicando a rota do Grok…');
+  try {
+    const response = await fetch(peerEndpoint(PORTS.grok, '/mesh/config'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ route }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.error) throw meshHttpError(response, payload);
+    localStorage.setItem('meshGrokRoute', route);
+    const health = await fetchAgentHealth('grok', 5000);
+    latestAgentHealth.set('grok', health);
+    const configuration = await fetchAgentConfiguration('grok');
+    if (configuration) latestAgentConfig.set('grok', configuration);
+    await renderModelConfiguration({ refresh: false });
+    if (!quiet) setModelConfigMessage(payload.warning || `Rota Grok alterada para ${route === 'official' ? 'xAI CLI oficial' : 'Cursor CLI'}.`, payload.warning ? 'warn' : '');
+    await pollHealth();
+    return true;
+  } catch (error) {
+    if (!quiet) setModelConfigMessage(`Não foi possível alterar a rota: ${error.message}`, 'error');
+    await renderModelConfiguration();
+    return false;
+  } finally {
+    const current = document.getElementById('model-route-grok');
+    if (current) current.disabled = false;
+  }
+}
+
+async function changeAgentModel(agent, model, { quiet = false } = {}) {
+  const select = document.getElementById(`model-choice-${agent}`);
+  if (select) select.disabled = true;
+  if (!quiet) setModelConfigMessage(`Aplicando ${model} em ${agent}…`);
+  try {
+    const response = await fetch(peerEndpoint(PORTS[agent], '/mesh/config'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ model }),
+      signal: AbortSignal.timeout(35_000),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.error) throw meshHttpError(response, payload);
+    localStorage.setItem(`meshModel:${agent}`, model);
+    const [health, configuration] = await Promise.all([
+      fetchAgentHealth(agent, 5000),
+      fetchAgentConfiguration(agent),
+    ]);
+    latestAgentHealth.set(agent, health);
+    if (configuration) latestAgentConfig.set(agent, configuration);
+    await renderModelConfiguration({ refresh: false });
+    if (!quiet) setModelConfigMessage(`Modelo de ${agent} alterado para ${model}.`);
+    await pollHealth();
+    return true;
+  } catch (error) {
+    if (!quiet) setModelConfigMessage(`Não foi possível alterar o modelo de ${agent}: ${error.message}`, 'error');
+    await renderModelConfiguration();
+    return false;
+  } finally {
+    const current = document.getElementById(`model-choice-${agent}`);
+    if (current) current.disabled = false;
+  }
+}
+
+async function syncSavedGrokRoute() {
+  const saved = localStorage.getItem('meshGrokRoute');
+  if (!['cursor', 'official'].includes(saved)) return;
+  const health = await fetchAgentHealth('grok', 5000);
+  latestAgentHealth.set('grok', health);
+  if (health.online && health.route !== saved) await changeGrokRoute(saved, { quiet: true });
+}
+
+async function syncSavedModels() {
+  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'qwen']) {
+    const saved = localStorage.getItem(`meshModel:${agent}`);
+    if (!saved) continue;
+    const configuration = await fetchAgentConfiguration(agent);
+    if (!configuration?.configurableModels || configuration.configuredModel === saved) continue;
+    if (!configuration.availableModels?.includes(saved)) continue;
+    await changeAgentModel(agent, saved, { quiet: true });
+  }
+}
+
+async function openModelConfiguration() {
+  const dialog = document.getElementById('model-config-dialog');
+  if (!dialog) return;
+  setModelConfigMessage('Atualizando estado dos agentes…');
+  if (!dialog.open) dialog.showModal();
+  await renderModelConfiguration();
+  const failures = [...latestAgentConfigErrors.entries()];
+  if (failures.some(([, message]) => /não autenticada|expirada/i.test(message))) {
+    setModelConfigMessage('Os catálogos estão visíveis pelo estado público, mas alterações exigem uma sessão autenticada. Reabra com “a2a-mesh open” e atualize esta página.', 'error');
+  } else if (failures.length > 0) {
+    setModelConfigMessage(`Alguns catálogos não puderam ser atualizados; usando a última lista disponível (${failures.map(([agent]) => agent).join(', ')}).`, 'warn');
+  } else {
+    setModelConfigMessage('Escolha modelos dos catálogos OpenCode, Cursor e Antigravity. Claude, Codex, Kimi e a rota oficial xAI permanecem fixos.');
+  }
 }
 
 async function showStatus() {
@@ -2002,7 +2538,9 @@ async function handleTerminalSubmit() {
       body: JSON.stringify({ jsonrpc: '2.0', id: Date.now().toString(), method: asyncMethod, params: parsed.params }),
       signal: AbortSignal.timeout(30000),
     });
-    const json = await resp.json();
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) throw meshHttpError(resp, json);
+    if (!json) throw new Error('O coordenador devolveu uma resposta inválida.');
     if (json.error) {
       addSystemMessage(`Error: ${json.error.message || JSON.stringify(json.error)}`, 'error');
     } else {
@@ -2026,8 +2564,10 @@ async function handleTerminalSubmit() {
   } catch (e) {
     if (e.name === 'TimeoutError') {
       addSystemMessage('O envio excedeu 30 s; consulte a lista de tarefas antes de reenviar para evitar duplicidade.', 'error');
+    } else if (/não autenticada|expirada/i.test(e.message || '')) {
+      addSystemMessage(e.message, 'error');
     } else {
-      addSystemMessage(`Network error: ${e.message}`, 'error');
+      addSystemMessage(`Não foi possível alcançar o coordenador: ${e.message}. Verifique se o A2A Mesh está online e atualize a página.`, 'error');
     }
   } finally {
     executing = false;
@@ -2627,7 +3167,7 @@ async function loadCompletedTaskResult(taskId, state = '') {
     if (['broadcast', 'call', 'team', 'ensemble', 'plan'].includes(op)) removeLiveTaskOutput(taskId);
     else removeLiveSynthesisOutput(taskId);
     setTaskState(taskId, finalState);
-    if (finalState === 'completed') addResultBubble(op, output, { details: auditDetails, taskId });
+    if (finalState === 'completed') addResultBubble(op, output, { details: auditDetails, taskId, artifacts: task.artifacts || [] });
     else addTaskNotice(taskId, `${finalState.toUpperCase()} · ${taskId.slice(0, 8)}\n${output}`, 'error');
 
     const partial = (task.artifacts || []).find(artifact => artifact.name === 'partial-output.md');
@@ -3751,7 +4291,198 @@ function addSystemMessage(text, type) {
   maybeScroll();
 }
 
-function addResultBubble(op, text, { details = '', taskId = '', markCompleted = true } = {}) {
+function artifactDescriptor(artifact, index = 0, taskId = '') {
+  const parts = Array.isArray(artifact?.parts) ? artifact.parts : [];
+  const rawName = String(artifact?.name || `artefato-${index + 1}`);
+  const name = rawName.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '-').slice(0, 180) || `artefato-${index + 1}`;
+  const description = String(artifact?.description || 'Artefato produzido durante a tarefa.');
+  const binaryPart = parts.find(part => typeof (part?.file?.bytes || part?.bytes) === 'string');
+  if (binaryPart) {
+    const encoded = binaryPart.file?.bytes || binaryPart.bytes;
+    const mime = binaryPart.file?.mimeType || binaryPart.mimeType || 'application/octet-stream';
+    try {
+      const decoded = atob(encoded);
+      const bytes = Uint8Array.from(decoded, char => char.charCodeAt(0));
+      return { name, description, mime, blob: new Blob([bytes], { type: mime }), preview: `Arquivo binário · ${mime}`, size: bytes.length, downloadUrl: null };
+    } catch { /* invalid base64 falls through to an auditable text representation */ }
+  }
+  const hasTextPart = parts.some(part => typeof part?.text === 'string');
+  const text = parts.map(part => {
+    if (typeof part?.text === 'string') return part.text;
+    const uri = part?.file?.uri || part?.uri;
+    if (uri) return hasTextPart ? '' : `Referência: ${uri}`;
+    if (part?.data != null) return typeof part.data === 'string' ? part.data : JSON.stringify(part.data, null, 2);
+    return '';
+  }).filter(Boolean).join('\n\n') || JSON.stringify(artifact || {}, null, 2);
+  const mime = artifact?.metadata?.mimeType || artifact?.mimeType || parts.find(part => part?.mimeType || part?.file?.mimeType)?.mimeType || parts.find(part => part?.file?.mimeType)?.file?.mimeType || 'text/plain;charset=utf-8';
+  const blob = new Blob([text], { type: mime });
+  const isStoredFile = artifact?.metadata?.kind === 'local-file' && taskId;
+  return {
+    name,
+    description,
+    mime,
+    blob,
+    preview: parts.some(part => typeof part?.text === 'string') ? text : `Arquivo ${mime} preservado. Use Baixar para abrir o conteúdo integral.`,
+    size: Number(artifact?.metadata?.size) || blob.size,
+    sha256: artifact?.metadata?.sha256 || '',
+    downloadUrl: isStoredFile ? `${BASE}/mesh/artifacts/${encodeURIComponent(taskId)}/${index}` : null,
+  };
+}
+
+function formatArtifactSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, bytes || 0)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createArtifactShelf(artifacts, taskId = '') {
+  const entries = (Array.isArray(artifacts) ? artifacts : []).map((artifact, index) => artifactDescriptor(artifact, index, taskId));
+  if (entries.length === 0) return null;
+
+  const shelf = document.createElement('section');
+  shelf.className = 'artifact-shelf';
+  shelf.setAttribute('aria-label', `Artefatos da tarefa ${taskId || ''}`.trim());
+  const head = document.createElement('div');
+  head.className = 'artifact-shelf-head';
+  const title = document.createElement('strong');
+  title.className = 'artifact-shelf-title';
+  title.textContent = entries.length === 1 ? '1 artefato preservado' : `${entries.length} artefatos preservados`;
+  const note = document.createElement('span');
+  note.className = 'artifact-shelf-note';
+  note.textContent = 'versão vinculada à tarefa';
+  head.append(title, note);
+
+  const grid = document.createElement('div');
+  grid.className = 'artifact-grid';
+  entries.forEach((entry, index) => {
+    const card = document.createElement('article');
+    card.className = 'artifact-card';
+    const cardHead = document.createElement('div');
+    cardHead.className = 'artifact-card-head';
+    const copy = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'artifact-card-name';
+    name.textContent = entry.name;
+    const meta = document.createElement('div');
+    meta.className = 'artifact-card-meta';
+    meta.textContent = `${entry.description} · ${formatArtifactSize(entry.size)}${entry.sha256 ? ` · sha256 ${entry.sha256.slice(0, 10)}` : ''}`;
+    copy.append(name, meta);
+    const download = document.createElement('button');
+    download.className = 'artifact-download';
+    download.type = 'button';
+    download.textContent = 'Baixar';
+    download.setAttribute('aria-label', `Baixar artefato ${entry.name}`);
+    download.addEventListener('click', async () => {
+      const priorText = download.textContent;
+      download.disabled = true;
+      download.textContent = 'Preparando…';
+      try {
+        let blob = entry.blob;
+        if (entry.downloadUrl) {
+          const response = await fetch(entry.downloadUrl, { signal: AbortSignal.timeout(30000) });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          blob = await response.blob();
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = `${String(index + 1).padStart(2, '0')}-${entry.name}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        announce(`Download de ${entry.name} iniciado.`);
+      } catch (error) {
+        announce(`Não foi possível baixar ${entry.name}: ${error.message}`, true);
+      } finally {
+        download.disabled = false;
+        download.textContent = priorText;
+      }
+    });
+    cardHead.append(copy, download);
+    card.appendChild(cardHead);
+
+    const preview = document.createElement('details');
+    preview.className = 'artifact-preview';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Visualizar conteúdo';
+    const pre = document.createElement('pre');
+    const completePreview = String(entry.preview || '(sem pré-visualização textual)');
+    pre.textContent = completePreview.length > 100000
+      ? `${completePreview.slice(0, 100000)}\n\n[Pré-visualização truncada; o download preserva o conteúdo integral.]`
+      : completePreview;
+    preview.append(summary, pre);
+    card.appendChild(preview);
+    grid.appendChild(card);
+  });
+  shelf.append(head, grid);
+  return shelf;
+}
+
+async function renderArtifactLibrary() {
+  const body = document.getElementById('artifact-library-body');
+  const message = document.getElementById('artifact-library-message');
+  if (!body) return;
+  body.innerHTML = '<div class="artifact-library-empty">Carregando artefatos…</div>';
+  if (message) message.textContent = '';
+  try {
+    const response = await fetch(`${BASE}/mesh/tasks?limit=200`, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const tasks = await response.json();
+    const withArtifacts = (Array.isArray(tasks) ? tasks : [])
+      .filter(task => Array.isArray(task.artifacts) && task.artifacts.length > 0)
+      .sort((left, right) => String(right.updatedAt || right.updated_at || '').localeCompare(String(left.updatedAt || left.updated_at || '')));
+    const totalArtifacts = withArtifacts.reduce((sum, task) => sum + task.artifacts.length, 0);
+    const badge = document.getElementById('artifact-count');
+    if (badge) badge.textContent = String(totalArtifacts);
+    body.replaceChildren();
+    if (withArtifacts.length === 0) {
+      body.innerHTML = '<div class="artifact-library-empty">Nenhum artefato foi preservado nas tarefas recentes.<br>Artefatos aparecem aqui quando um agente produz blocos de código, arquivos A2A ou uma saída parcial recuperável.</div>';
+      if (message) message.textContent = '0 artefatos encontrados.';
+      return;
+    }
+    for (const task of withArtifacts) {
+      const group = document.createElement('section');
+      group.className = 'artifact-task-group';
+      const head = document.createElement('div');
+      head.className = 'artifact-task-head';
+      const title = document.createElement('div');
+      title.className = 'artifact-task-title';
+      const operation = String(task.metadata?.type || task.method || 'tarefa').replace(/^mesh\//, '');
+      title.textContent = `${task.originServer || 'mesh'} · ${operation}`;
+      const id = document.createElement('div');
+      id.className = 'artifact-task-id';
+      const state = task.state || task.status?.state || 'desconhecido';
+      id.textContent = `${String(task.id || '').slice(0, 8)} · ${state}`;
+      const prompt = document.createElement('div');
+      prompt.className = 'artifact-task-prompt';
+      const rawPrompt = String(task.inputText || task.input_text || task.metadata?.prompt || '(pedido não registrado)');
+      const assignedPrompt = rawPrompt.match(/\[(?:USER PROMPT|ASSIGNED TASK)\]\s*\n?([\s\S]*)$/)?.[1] || rawPrompt;
+      prompt.textContent = assignedPrompt
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 320);
+      head.append(title, id, prompt);
+      group.appendChild(head);
+      const shelf = createArtifactShelf(task.artifacts, task.id || '');
+      if (shelf) group.appendChild(shelf);
+      body.appendChild(group);
+    }
+    if (message) message.textContent = `${totalArtifacts} artefato(s) em ${withArtifacts.length} tarefa(s).`;
+  } catch (error) {
+    body.innerHTML = '<div class="artifact-library-empty">Não foi possível carregar os artefatos. Verifique se o coordenador continua online.</div>';
+    if (message) message.textContent = `Falha ao atualizar: ${error.message}`;
+  }
+}
+
+async function openArtifactLibrary() {
+  const dialog = document.getElementById('artifact-library-dialog');
+  if (!dialog) return;
+  if (!dialog.open) dialog.showModal();
+  await renderArtifactLibrary();
+}
+
+function addResultBubble(op, text, { details = '', taskId = '', markCompleted = true, artifacts = [] } = {}) {
   if (currentArena) finalizeArena();
 
   const chat = taskId ? taskTarget(taskId, 'result') : document.getElementById('chat');
@@ -3770,6 +4501,9 @@ function addResultBubble(op, text, { details = '', taskId = '', markCompleted = 
   // Defense-in-depth: if `text` slipped through as an envelope (e.g. caller
   // stringified `json.result` for an unexpected shape), unwrap it here.
   bubble.innerHTML = renderMarkdown(safeRenderText(text));
+
+  const artifactShelf = createArtifactShelf(artifacts, taskId);
+  if (artifactShelf) bubble.appendChild(artifactShelf);
 
   if (details) {
     const audit = document.createElement('details');
@@ -3810,19 +4544,25 @@ function addResultBubble(op, text, { details = '', taskId = '', markCompleted = 
 // Health Polling
 // ============================================
 async function pollHealth() {
-  for (const agent of AGENTS) {
+  const healthRows = await Promise.all(AGENTS.map((agent) => fetchAgentHealth(agent)));
+  for (const health of healthRows) {
+    const agent = health.agent;
+    latestAgentHealth.set(agent, health);
     const dot = document.getElementById(`dot-${agent}`);
     const label = document.getElementById(`label-${agent}`);
-    const health = await fetchAgentHealth(agent);
-    dot.className = health.online ? 'dot dot-green' : 'dot dot-red';
+    if (!dot) continue;
+    const ready = health.online && health.credentialAvailable !== false;
+    dot.className = ready ? 'dot dot-green' : (health.online ? 'dot dot-yellow' : 'dot dot-red');
     if (label) {
       const agentName = agent.charAt(0).toUpperCase() + agent.slice(1);
-      label.textContent = health.online ? `${agentName} · ${compactHealthModel(agent, health)}` : `${agentName} · offline`;
+      label.textContent = health.online
+        ? `${agentName} · ${compactHealthModel(agent, health)}${health.credentialAvailable === false ? ' · sem credencial' : ''}`
+        : `${agentName} · offline`;
       const modelVerification = health.modelVerified === false
         ? (health.lastObservedModel ? ' | divergência entre configurado e observado' : ' | verificação pendente da primeira execução')
         : ' | verificado/configurado';
       label.title = health.online
-        ? `Modelo efetivo: ${effectiveHealthModel(health)}${health.configuredModel ? ` | configurado: ${health.configuredModel}` : ''}${health.lastObservedAt ? ` | observado: ${health.lastObservedAt}` : ''}${modelVerification}`
+        ? `Modelo efetivo: ${effectiveHealthModel(health)}${health.configuredModel ? ` | configurado: ${health.configuredModel}` : ''}${health.lastObservedAt ? ` | observado: ${health.lastObservedAt}` : ''}${modelVerification}${health.credentialAvailable === false ? ` | credencial indisponível${health.credentialError ? `: ${health.credentialError}` : ''}` : ''}`
         : 'Agente indisponível';
     }
   }
@@ -3926,6 +4666,16 @@ async function pollTasks() {
     const r = await fetch(`${BASE}/mesh/tasks?limit=50`, { signal: AbortSignal.timeout(5000) });
     if (r.ok) {
       const tasks = await r.json();
+      const visibleArtifactCount = Array.isArray(tasks)
+        ? tasks.reduce((sum, task) => sum + (Array.isArray(task.artifacts) ? task.artifacts.length : 0), 0)
+        : 0;
+      const artifactBadge = document.getElementById('artifact-count');
+      if (artifactBadge) {
+        artifactBadge.textContent = `${visibleArtifactCount}${Array.isArray(tasks) && tasks.length >= 50 ? '+' : ''}`;
+        artifactBadge.title = Array.isArray(tasks) && tasks.length >= 50
+          ? 'Contagem mínima nas 50 tarefas mais recentes; abra a biblioteca para o total carregado.'
+          : 'Artefatos preservados nas tarefas recentes.';
+      }
       const rootTasks = Array.isArray(tasks)
         ? tasks.filter(t => !(t.parentTaskId || t.parent_task_id || t.metadata?.parentTaskId))
         : [];
@@ -4076,19 +4826,51 @@ async function replayTimelineAfter(afterId, maximum = 50000) {
 // Init
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
-  // Replay PRIMEIRO (carrega histórico), depois SSE (eventos novos no topo).
-  // Pequena janela de race entre fim do replay e início do SSE pode causar
-  // duplicação de 1-2 eventos — aceitável vs perder histórico inteiro.
-  await replayRecentTimeline();
-  connectSSE();
+  updateThemeToggle();
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const next = activeTheme() === 'light' ? 'dark' : 'light';
+    setTheme(next);
+    announce(`Tema ${next === 'light' ? 'claro' : 'escuro'} ativado.`);
+  });
+  document.getElementById('artifact-library-open')?.addEventListener('click', openArtifactLibrary);
+  document.getElementById('artifact-library-refresh')?.addEventListener('click', renderArtifactLibrary);
+  for (const id of ['artifact-library-close', 'artifact-library-close-top']) {
+    document.getElementById(id)?.addEventListener('click', () => document.getElementById('artifact-library-dialog')?.close());
+  }
+  document.getElementById('artifact-library-dialog')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+  document.getElementById('model-config-open')?.addEventListener('click', openModelConfiguration);
+  document.getElementById('model-config-refresh')?.addEventListener('click', async () => {
+    setModelConfigMessage('Atualizando estado dos agentes…');
+    await renderModelConfiguration();
+    setModelConfigMessage('Estado atualizado.');
+  });
+  for (const id of ['model-config-close', 'model-config-close-top']) {
+    document.getElementById(id)?.addEventListener('click', () => document.getElementById('model-config-dialog')?.close());
+  }
+  document.getElementById('model-config-dialog')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+
+  await fetchAgentCatalog();
+  if (!SHOWCASE_MODE) {
+    await syncSavedGrokRoute();
+    await syncSavedModels();
+    // Replay PRIMEIRO (carrega histórico), depois SSE (eventos novos no topo).
+    // Pequena janela de race entre fim do replay e início do SSE pode causar
+    // duplicação de 1-2 eventos — aceitável vs perder histórico inteiro.
+    await replayRecentTimeline();
+    connectSSE();
+  }
   pollHealth();
   pollStats();
-  pollTasks();
+  if (!SHOWCASE_MODE) pollTasks();
   updateLayoutToggleUI();
 
   setInterval(pollHealth, 15000);
   setInterval(pollStats, 10000);
-  setInterval(pollTasks, 2500);
+  if (!SHOWCASE_MODE) setInterval(pollTasks, 2500);
 
   // Focus terminal on load
   setTimeout(() => document.getElementById('terminal-input').focus(), 100);

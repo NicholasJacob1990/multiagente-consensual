@@ -26,7 +26,7 @@ COMMAND_TARGETS = {
     "cursor": HOME / ".cursor" / "commands",
     "opencode": HOME / ".config" / "opencode" / "commands",
     "gemini": HOME / ".gemini" / "commands",
-    # Legado opcional. A rota canônica de Grok permanece Cursor CLI.
+    # Legado opcional. Cursor é a rota padrão; a CLI oficial exige seleção explícita.
     "grok-legacy": HOME / ".grok" / "commands",
 }
 

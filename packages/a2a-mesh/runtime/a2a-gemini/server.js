@@ -28,6 +28,7 @@ import { BASE_TOOLS, getMeshToolDefs } from '../a2a-shared/local-tools.js';
 import { createSharedRuntime } from '../a2a-shared/server-runtime.js';
 import { loadA2AAuthToken } from '../a2a-shared/auth-token.js';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
+import { mergeArtifacts, preserveLocalFileArtifact, stripArtifactDeclarations } from '../a2a-shared/file-artifacts.js';
 import {
   REQUIRED_ANTIGRAVITY_MODEL,
   antigravityModelLabelsMatch,
@@ -94,11 +95,13 @@ const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 const FORCE_CLI = process.env.USE_CLI === 'force';
 const USE_API = !FORCE_CLI;
 const USE_CLI = !FORCE_CLI;
-const EFFECTIVE_GEMINI_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : (FORCE_CLI ? GEMINI_CLI_MODEL : GEMINI_MODEL);
-const CLI_EXECUTION_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : GEMINI_CLI_MODEL;
+let EFFECTIVE_GEMINI_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : (FORCE_CLI ? GEMINI_CLI_MODEL : GEMINI_MODEL);
+let CLI_EXECUTION_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : GEMINI_CLI_MODEL;
 let antigravityBootModelVerified = false;
+let antigravityAvailableModels = [ANTIGRAVITY_MODEL];
 if (USE_ANTIGRAVITY_CLI && process.env.A2A_GEMINI_SKIP_MODEL_CHECK !== 'true') {
-  verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, ANTIGRAVITY_MODEL);
+  const probe = verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, ANTIGRAVITY_MODEL);
+  antigravityAvailableModels = probe.availableModels;
   antigravityBootModelVerified = true;
 }
 let lastObservedGeminiModel = antigravityBootModelVerified ? ANTIGRAVITY_MODEL : null;
@@ -505,9 +508,9 @@ const MESH_SYSTEM_SUFFIX = `
 
 ---
 
-Você é Gemini 3.7 Flash High, executado pela rota Antigravity CLI
-(${ANTIGRAVITY_MODEL}), como agente técnico da mesh A2A. Nunca alegue uma
-versão diferente da rota efetivamente configurada.
+Você é um agente executado pela rota Antigravity CLI com o modelo selecionado
+explicitamente no painel da mesh A2A. Nunca alegue uma versão diferente da
+rota e do modelo efetivamente configurados.
 
 FERRAMENTAS LOCAIS: shell_exec, read_file, search_content, list_directory, directory_probe.
 
@@ -516,7 +519,7 @@ MCPs E SKILLS: você tem acesso a MCPs e skills configuradas no seu ambiente (ge
 AGENTES A2A DISPONÍVEIS:
 - claude: Anthropic Claude (Opus) — forte em síntese, análise complexa, escrita, raciocínio avançado
 - codex: OpenAI Codex (gpt-5.6-sol, esforço xhigh) — especialista em geração e análise de código, debugging, refactoring
-- grok: xAI Grok 4.6 High, exclusivamente via Cursor CLI — forte em revisão adversarial e identificação de pressupostos frágeis
+- grok: xAI Grok 4.6, pela rota Cursor ou CLI oficial xAI selecionada explicitamente — forte em revisão adversarial e identificação de pressupostos frágeis
 
 QUANDO USAR CADA TOOL A2A:
 - a2a_call: Consultar UM agente específico para tarefa direcionada (ex: "codex, refatore esta função")
@@ -669,13 +672,13 @@ async function executeGeminiAPIWithTools(task, onChunk, runContext = {}) {
       throw new Error('EMPTY_RESPONSE_FROM_API');
     }
 
-    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-    const artifacts = extractArtifacts(allText);
+    const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
 
     tm.updateTask(task, {
       status: { state: 'completed', message: agentMessage },
       history: [...task.history, agentMessage],
-      artifacts: [...task.artifacts, ...artifacts],
+      artifacts: mergeArtifacts(task.artifacts || [], artifacts),
     });
 
     if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
@@ -1031,12 +1034,12 @@ function executeGeminiCLI(task, onChunk, modelOverride, runContext = {}) {
 
       allText += (wrapper ? wrapper.removeToolCalls(output) : output);
 
-      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: allText }] };
-      const artifacts = extractArtifacts(allText);
+      const artifacts = extractArtifacts(allText, { taskId: task.id, agentId: SELF_ID });
+      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(allText) }] };
       tm.updateTask(task, {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
-        artifacts: [...task.artifacts, ...artifacts],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
         metadata: {
           ...task.metadata,
           observedModel: observedModel || effectiveCliModel,
@@ -1395,20 +1398,18 @@ async function executeDeepResearch(task, onChunk, runContext = {}) {
         : '';
       const finalText = textOutput + imgRefs;
 
-      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: finalText }] };
-      const artifacts = [
-        ...extractArtifacts(finalText),
-        ...savedImages.map((im, i) => ({
-          name: `chart-${i+1}`,
-          description: `Visualização gerada (${im.mime})`,
-          parts: [{ type: 'text', text: im.path }],
-        })),
-      ];
+      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(finalText) }] };
+      const imageArtifacts = savedImages.flatMap((im, i) => {
+        try {
+          return [preserveLocalFileArtifact(im.path, { taskId: task.id, agentId: SELF_ID, source: 'gemini-image', description: `Visualização gerada (${im.mime})` })];
+        } catch { return []; }
+      });
+      const artifacts = mergeArtifacts(extractArtifacts(finalText, { taskId: task.id, agentId: SELF_ID }), imageArtifacts);
 
       tm.updateTask(task, {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
-        artifacts: [...task.artifacts, ...artifacts],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
       });
       if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
       return;
@@ -1480,20 +1481,18 @@ async function executeDeepResearch(task, onChunk, runContext = {}) {
       : '';
     const finalText = textOutput + imgRefs;
 
-    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: finalText }] };
-    const artifacts = [
-      ...extractArtifacts(finalText),
-      ...savedImages.map((im, i) => ({
-        name: `chart-${i+1}`,
-        description: `Visualização gerada pelo Deep Research (${im.mime})`,
-        parts: [{ type: 'text', text: im.path }],
-      })),
-    ];
+    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(finalText) }] };
+    const imageArtifacts = savedImages.flatMap((im) => {
+      try {
+        return [preserveLocalFileArtifact(im.path, { taskId: task.id, agentId: SELF_ID, source: 'gemini-deep-research-image', description: `Visualização gerada pelo Deep Research (${im.mime})` })];
+      } catch { return []; }
+    });
+    const artifacts = mergeArtifacts(extractArtifacts(finalText, { taskId: task.id, agentId: SELF_ID }), imageArtifacts);
 
     tm.updateTask(task, {
       status: { state: 'completed', message: agentMessage },
       history: [...task.history, agentMessage],
-      artifacts: [...task.artifacts, ...artifacts],
+      artifacts: mergeArtifacts(task.artifacts || [], artifacts),
     });
     if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
   } catch (e) {
@@ -1539,13 +1538,13 @@ async function executeInteractionFollowup(task, onChunk, runContext = {}) {
     const textOutput = outputs.filter(o => o.type === 'text').map(o => o.text).join('\n\n');
     if (!textOutput.trim()) throw new Error('Follow-up retornou output vazio');
 
-    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: textOutput }] };
-    const artifacts = extractArtifacts(textOutput);
+    const artifacts = extractArtifacts(textOutput, { taskId: task.id, agentId: SELF_ID });
+    const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(textOutput) }] };
 
     tm.updateTask(task, {
       status: { state: 'completed', message: agentMessage },
       history: [...task.history, agentMessage],
-      artifacts: [...task.artifacts, ...artifacts],
+      artifacts: mergeArtifacts(task.artifacts || [], artifacts),
     });
     if (onChunk) onChunk({ type: 'completed', task: tm.taskToJSON(task) });
   } catch (e) {
@@ -1598,9 +1597,57 @@ function executeGeminiTask(task, onChunk, runContext = {}) {
 // AGENT CARD
 // ============================================
 
+function antigravityReasoningEffort(model = EFFECTIVE_GEMINI_MODEL) {
+  return String(model).match(/-(low|medium|high|max|xhigh)$/i)?.[1]?.toLowerCase() || 'definido pelo modelo';
+}
+
+function antigravityModelProvider(model = EFFECTIVE_GEMINI_MODEL) {
+  const value = String(model).toLowerCase();
+  if (value.startsWith('claude-')) return 'anthropic';
+  if (value.startsWith('gpt-')) return 'openai';
+  return 'google';
+}
+
+function refreshAntigravityCatalog() {
+  if (!USE_ANTIGRAVITY_CLI) throw new Error('A rota Antigravity não está ativa neste peer.');
+  const probe = verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, EFFECTIVE_GEMINI_MODEL);
+  antigravityAvailableModels = probe.availableModels;
+  return probe;
+}
+
+function geminiRuntimeConfiguration({ refreshCatalog = false } = {}) {
+  if (refreshCatalog && USE_ANTIGRAVITY_CLI) refreshAntigravityCatalog();
+  return {
+    route: USE_ANTIGRAVITY_CLI ? 'antigravity' : (USE_API ? 'google-api' : 'gemini-cli'),
+    cliBinary: USE_ANTIGRAVITY_CLI ? 'agy' : 'gemini',
+    configuredModel: EFFECTIVE_GEMINI_MODEL,
+    availableModels: USE_ANTIGRAVITY_CLI ? antigravityAvailableModels : [EFFECTIVE_GEMINI_MODEL],
+    configurableModels: USE_ANTIGRAVITY_CLI,
+    reasoningEffort: antigravityReasoningEffort(),
+    provider: antigravityModelProvider(),
+  };
+}
+
+function updateGeminiRuntimeConfiguration(update = {}) {
+  if (!USE_ANTIGRAVITY_CLI) throw new Error('A seleção dinâmica requer a rota Antigravity.');
+  if (tm.getActiveTasks().length > 0) {
+    throw new Error('Aguarde as tarefas do Gemini terminarem antes de trocar o modelo.');
+  }
+  const requestedModel = String(update.model || '').trim();
+  if (!requestedModel) throw new Error('Informe o modelo Antigravity desejado.');
+  const probe = verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, requestedModel);
+  antigravityAvailableModels = probe.availableModels;
+  EFFECTIVE_GEMINI_MODEL = requestedModel;
+  CLI_EXECUTION_MODEL = requestedModel;
+  antigravityBootModelVerified = true;
+  lastObservedGeminiModel = null;
+  lastObservedGeminiAt = null;
+  return geminiRuntimeConfiguration();
+}
+
 const AGENT_CARD = {
   name: 'Gemini Agent',
-  description: `Gemini 3.7 Flash High via Antigravity CLI (${ANTIGRAVITY_MODEL}), exposto pelo protocolo A2A.`,
+  description: 'Modelo selecionado do catálogo Antigravity, exposto pelo protocolo A2A.',
   url: `http://localhost:${PORT}`,
   version: '1.0.0',
   capabilities: {
@@ -1648,11 +1695,18 @@ createA2AServer({
   debateExecutor,
   planExecutor,
   executeTask: executeGeminiTask,
+  runtimeConfigDetails: geminiRuntimeConfiguration,
+  updateRuntimeConfig: updateGeminiRuntimeConfiguration,
   healthDetails: () => ({
+    model: EFFECTIVE_GEMINI_MODEL,
     route: USE_ANTIGRAVITY_CLI ? 'antigravity' : (USE_API ? 'google-api' : 'gemini-cli'),
-    provider: 'google',
+    cliBinary: USE_ANTIGRAVITY_CLI ? 'agy' : 'gemini',
+    provider: antigravityModelProvider(),
     configuredModel: EFFECTIVE_GEMINI_MODEL,
-    modelPolicy: ALLOW_ANTIGRAVITY_MODEL_FALLBACK ? 'explicit-fallback-enabled' : 'fixed',
+    availableModels: USE_ANTIGRAVITY_CLI ? antigravityAvailableModels : [EFFECTIVE_GEMINI_MODEL],
+    configurableModels: USE_ANTIGRAVITY_CLI,
+    reasoningEffort: antigravityReasoningEffort(),
+    modelPolicy: ALLOW_ANTIGRAVITY_MODEL_FALLBACK ? 'selectable-catalog-with-explicit-fallback' : 'selectable-catalog',
     modelVerified: USE_ANTIGRAVITY_CLI ? antigravityBootModelVerified : null,
     lastObservedModel: lastObservedGeminiModel,
     lastObservedAt: lastObservedGeminiAt,

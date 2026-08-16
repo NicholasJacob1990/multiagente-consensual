@@ -41,9 +41,9 @@ corpo justificado, entrelinha 1,5 e recuo de primeira linha; listas, tabelas e
 blocos de comando conservam alinhamento próprio para preservar a legibilidade.
 
 Este guia explica os 29 comandos de coordenação instalados para Claude Code,
-Codex CLI, Gemini CLI, Antigravity, Kimi Code, OpenCode e Cursor CLI. O Grok é
-acionado canonicamente pelo Cursor; a instalação no Grok CLI direto é mantida
-apenas como compatibilidade legada. O objetivo é
+Codex CLI, Gemini CLI, Antigravity, Kimi Code, OpenCode, Cursor CLI e a CLI oficial
+do Grok. O Grok usa o Cursor por padrão, mas o painel permite escolher explicitamente
+a rota oficial da xAI, sem fallback silencioso. O objetivo é
 mostrar não apenas a sintaxe, mas **qual comando escolher**, o que acontece em
 cada etapa e o que o resultado realmente significa.
 
@@ -227,12 +227,13 @@ O contrato central fica em `~/.agents/multiagent-manifest.json`. Ele separa:
 - **profile:** a estratégia ativada pelo nome do comando;
 - **approval ceiling:** o maior poder decisório daquela integração.
 
-As rotas obrigatórias são Claude pelo Claude Code, Grok pelo Cursor no modelo
-fixo `cursor-grok-4.6-high`, Kimi K3 pelo Kimi Code e Gemini 3.7 Flash High
-pelo Antigravity.
+As rotas obrigatórias são Claude pelo Claude Code, Kimi K3 pelo Kimi Code e Gemini
+3.7 Flash High pelo Antigravity. O Grok oferece duas rotas fixas e identificadas:
+Cursor com `cursor-grok-4.6-high` ou CLI oficial da xAI com `grok-4.6` e esforço
+`xhigh`.
 
-Para novas chamadas, outro modelo Grok é rejeitado; runs históricos já congelados preservam o modelo
-registrado. `model-routing.yaml` continua existindo apenas como visão de
+Para novas chamadas, modelos Grok fora dessas rotas são rejeitados; runs históricos já congelados
+preservam o modelo registrado. `model-routing.yaml` continua existindo apenas como visão de
 compatibilidade gerada. Manifesto ausente ou divergente causa pausa, nunca
 fallback silencioso.
 
@@ -662,16 +663,36 @@ Exemplos naturais:
 ## 4. Comandos A2A Mesh
 
 O A2A Mesh é o caminho mais direto entre oito peers: Codex, Claude, Gemini,
-Grok 4.6 High, GLM 5.3, DeepSeek V4 Pro, Kimi K3 e Qwen 3.8 Max. O Grok usa
-exclusivamente o Cursor CLI na porta 3144; GLM, DeepSeek e Qwen usam o OpenCode Go
+Grok 4.6, GLM 5.3, DeepSeek V4 Pro, Kimi K3 e Qwen 3.8 Max. Na porta 3144,
+o Grok pode usar Cursor CLI ou a CLI oficial da xAI; GLM, DeepSeek e Qwen usam o OpenCode Go
 nas portas 3145, 3146 e 3148, com variante `max`; Kimi usa exclusivamente o Kimi
-Code na porta 3147.
-Os modelos são fixos e não há fallback silencioso.
+Code na porta 3147. Pelo painel, os modelos podem ser escolhidos nos catálogos reais do
+OpenCode, Cursor e Antigravity. Claude, Codex, Kimi e a rota oficial do Grok permanecem
+fixos. Nenhuma rota usa fallback silencioso.
 
 No painel, a faixa **Equipe** permite ligar e desligar cadeiras antes do envio.
 A seleção fica persistida no navegador e vale para broadcast, consenso, ensemble,
 debate e team. O botão **Todos** restaura as oito cadeiras; a opção textual
 `--agents=claude,codex,qwen` substitui a seleção apenas na execução atual.
+
+O botão **Modelos e CLIs** abre um quadro com agente, CLI, rota, modelo configurado,
+modelo observado, provedor, esforço e estado. Os seletores são preenchidos por
+`opencode models`, `cursor-agent --list-models` e `agy models`. Assim, cada cadeira
+OpenCode, o Gemini/Antigravity e o Grok na rota Cursor podem receber outro modelo
+disponível. Na linha do Grok, também selecione **Cursor CLI** ou **xAI CLI oficial**.
+As preferências ficam no navegador e são reaplicadas após reinício. Modelo ausente
+é recusado e a troca aguarda tarefas ativas terminarem. A rota oficial exige
+`grok login`; se a sessão não estiver autenticada, o painel informa `login necessário`
+e não recorre ao Cursor.
+
+O botão **Artefatos** reúne, fora do feed, os resultados materiais preservados nas tarefas
+recentes. Cada cartão identifica a tarefa e a versão de origem e oferece nome, descrição,
+tamanho, hash SHA-256, pré-visualização e download individual. A lista inclui Markdown,
+Word, PDF, código, arquivos A2A e `partial-output.md`; limpar o feed não a apaga. Arquivos
+criados por `write_file` são registrados automaticamente. Nas CLIs nativas, o agente declara
+os arquivos que efetivamente criou ou modificou; o runtime copia cada versão para o depósito
+imutável do Mesh antes da conclusão. O limite padrão é 100 MB por arquivo. O botão
+**Claro/Escuro** alterna a paleta do painel e persiste a preferência no navegador.
 
 Todos os trabalhos A2A são submetidos de forma durável. A resposta inicial é um recibo com
 `task_id`; o servidor prossegue independentemente da janela MCP ou do navegador. As skills aguardam
@@ -1662,7 +1683,7 @@ silenciosamente:
 | `@claude-opus` | Claude Code · `claude-opus-5` |
 | `@gpt-codex` | Codex CLI · `gpt-5.6-sol`, esforço `xhigh` |
 | `@gemini-pro` | Antigravity CLI · `gemini-3.7-flash-high` |
-| `@grok` | ponte para Cursor CLI · `cursor-grok-4.6-high` |
+| `@grok` | ponte para a rota Grok selecionada: Cursor · `cursor-grok-4.6-high` ou xAI CLI oficial · `grok-4.6` |
 | `@glm` | `opencode-go/glm-5.3` |
 | `@deepseek` | `opencode-go/deepseek-v4-pro` |
 | `@qwen-coder` | `opencode-go/qwen3.8-max` |
@@ -1703,7 +1724,8 @@ identidade base quando o papel for definido caso a caso. Dois nomes funcionais
 do mesmo modelo não contam como modelos independentes.
 
 Os identificadores refletem a configuração local atual. As identidades Grok no
-OpenCode são pontes para `cursor-grok-4.6-high` no Cursor.
+OpenCode são pontes para a rota ativa no Mesh, preservando no recibo se a execução
+usou Cursor ou a CLI oficial da xAI.
 
 Nos comandos
 multiagente, `@codex` resolve para o Codex CLI com `gpt-5.6-sol` e esforço

@@ -10,6 +10,7 @@ import {
   PACKAGE_ROOT,
   agentCliAvailability,
   cursorModelAvailability,
+  officialGrokAvailability,
   openCodeModelAvailability,
   parseArgs,
   pathsFor,
@@ -20,9 +21,14 @@ test("usa somente portas locais fixas e distintas", () => {
   assert.equal(new Set(Object.values(AGENTS).map((agent) => agent.port)).size, 8);
   assert.equal(AGENTS.grok.route, "cursor");
   assert.equal(AGENTS.grok.model, "cursor-grok-4.6-high");
+  assert.equal(AGENTS.grok.routes.official.model, "grok-4.6");
+  assert.equal(AGENTS.gemini.cliBinary, "agy");
+  assert.equal(AGENTS.gemini.route, "antigravity");
+  assert.equal(AGENTS.grok.routes.official.cliBinary, "grok");
   assert.equal(AGENTS.glm.model, "opencode-go/glm-5.3");
   assert.equal(AGENTS.deepseek.model, "opencode-go/deepseek-v4-pro");
   assert.equal(AGENTS.kimi.model, "kimi-code/k3");
+  assert.equal(AGENTS.kimi.cliBinary, "kimi-secure");
   assert.equal(AGENTS.qwen.model, "opencode-go/qwen3.8-max");
 });
 
@@ -65,7 +71,7 @@ test("mantém estado e dados fora do pacote", () => {
 
 test("ausência do Cursor degrada apenas o peer Grok", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-cli-availability-"));
-  for (const binary of ["codex", "claude", "gemini", "opencode", "kimi"]) {
+  for (const binary of ["codex", "claude", "agy", "opencode", "kimi-secure"]) {
     const file = path.join(root, binary);
     fs.writeFileSync(file, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
   }
@@ -103,6 +109,21 @@ test("reconhece o Grok 4.6 High pela lista do Cursor", () => {
   fs.writeFileSync(cursor, "#!/bin/sh\nprintf 'cursor-grok-4.6-high - Grok 4.6 High\\n'\n", { mode: 0o700 });
   try {
     assert.equal(cursorModelAvailability({ PATH: root }).available, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reconhece a CLI oficial do Grok e informa autenticação pendente", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-official-grok-"));
+  const grok = path.join(root, "grok");
+  fs.writeFileSync(grok, "#!/bin/sh\nprintf 'You are not authenticated.\\nDefault model: grok-4.6\\nAvailable models:\\n  * grok-4.6 (default)\\n'\n", { mode: 0o700 });
+  try {
+    const availability = officialGrokAvailability({ PATH: root });
+    assert.equal(availability.available, true);
+    assert.equal(availability.authenticated, false);
+    assert.equal(availability.model, "grok-4.6");
+    assert.match(availability.reason, /autenticação pendente/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

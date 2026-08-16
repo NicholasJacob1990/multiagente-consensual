@@ -7,6 +7,7 @@ import { createToolExecutor } from './local-tools.js';
 import { createMeshCaller } from './mesh-calls.js';
 import { loadPeerRegistry, resolveSelfUrl, PeerDiscovery } from './peer-registry.js';
 import * as cliToolWrapper from './cli-tool-wrapper.js';
+import { mergeArtifacts, preserveLocalFileArtifact } from './file-artifacts.js';
 
 export function normalizeToolOutput(value) {
   if (typeof value === 'string') return value;
@@ -29,6 +30,7 @@ function createDispatchTool({
   consensusExecutor,
   codeEnsembleExecutor,
   debateExecutor,
+  tm,
 }) {
   return async function dispatchTool(name, input, context) {
     switch (name) {
@@ -67,8 +69,26 @@ function createDispatchTool({
           return debateExecutor.formatDebateResult(await debateExecutor.execute(input, context));
         }
         return 'Error: debate executor not available (mesh modules not loaded).';
-      default:
-        return await Promise.resolve(toolExecutor(name, input));
+      default: {
+        const result = await Promise.resolve(toolExecutor(name, input, context));
+        if (name === 'write_file' && context?.taskId) {
+          const task = tm?.tasks?.get(context.taskId);
+          if (task) {
+            try {
+              const artifact = preserveLocalFileArtifact(input?.path, {
+                taskId: task.id,
+                agentId: selfId,
+                source: 'write_file-tool',
+                description: `Arquivo criado ou atualizado por ${selfId}`,
+              });
+              tm.updateTask(task, { artifacts: mergeArtifacts(task.artifacts || [], [artifact]) });
+            } catch (error) {
+              return `${normalizeToolOutput(result)}\nArtifact registration warning: ${error.message}`;
+            }
+          }
+        }
+        return result;
+      }
     }
   };
 }
@@ -212,6 +232,7 @@ export async function createSharedRuntime({
     consensusExecutor,
     codeEnsembleExecutor,
     debateExecutor,
+    tm,
   });
 
   return {

@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "plugin_version": "1.9.2",
+  "plugin_version": "1.10.0",
   "contract": "multiagent_local_v1",
   "policy": "strict",
   "fallback": "pause_and_report",
@@ -63,6 +63,7 @@
       "gemini": {"mode": "explicit_session_id", "discoverable": true},
       "antigravity": {"mode": "native_default", "discoverable": false},
       "cursor": {"mode": "precreated_chat", "discoverable": true},
+      "grok_official": {"mode": "isolated_no_memory", "discoverable": false},
       "opencode": {"mode": "unique_title_lookup", "discoverable": true},
       "kimi": {"mode": "native_default", "discoverable": false}
     }
@@ -99,6 +100,7 @@
     "gemini": {"binary": "gemini", "host": "gemini-cli", "filesystem_control": {"mode": "yolo", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}},
     "antigravity": {"binary": "agy", "host": "antigravity-cli", "filesystem_control": {"mode": "bypass_permissions", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}},
     "cursor": {"binary": "cursor-agent", "host": "cursor-cli", "filesystem_control": {"mode": "force_sandbox_disabled", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}},
+    "grok_official": {"binary": "grok", "host": "xai-grok-cli", "filesystem_control": {"mode": "sandbox_off_bypass_permissions", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}},
     "opencode": {"binary": "opencode", "host": "opencode-cli", "filesystem_control": {"mode": "auto_allow_all", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}},
     "kimi": {"binary": "kimi-secure", "host": "kimi-code-cli", "filesystem_control": {"mode": "config_auto_prompt", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}}
   },
@@ -107,7 +109,7 @@
     "codex": {"route": "codex", "provider": "openai", "default_model": "gpt-5.6-sol", "default_effort": "xhigh", "model_policy": "fixed_default", "aliases": ["gpt-5.6-sol"]},
     "gemini": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.7-flash-high", "model_policy": "preserve_requested", "aliases": ["gemini-3.7", "gemini-3.7-flash-high"]},
     "antigravity": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.7-flash-high", "model_policy": "preserve_requested", "aliases": ["agy", "gemini-3.7-antigravity"]},
-    "grok": {"route": "cursor", "provider": "xai", "default_model": "cursor-grok-4.6-high", "model_policy": "fixed_default", "aliases": ["grok-4.6-high", "cursor-grok-4.6-high"]},
+    "grok": {"route": "cursor", "allowed_routes": ["cursor", "grok_official"], "provider": "xai", "default_model": "cursor-grok-4.6-high", "models_by_route": {"cursor": "cursor-grok-4.6-high", "grok_official": "grok-4.6"}, "effort_by_route": {"cursor": "high", "grok_official": "xhigh"}, "model_policy": "fixed_per_route", "silent_fallback": false, "aliases": ["grok-4.6-high", "cursor-grok-4.6-high", "grok-4.6", "grok-official"]},
     "kimi": {"route": "kimi", "provider": "opencode-go", "upstream_model_family": "moonshot/kimi", "default_model": "kimi-code/k3", "default_effort": "max", "effort_policy": "fixed_max", "context_window_tokens": 1048576, "model_policy": "preserve_requested", "aliases": ["kimi-k3", "k3"]},
     "opencode": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "model_policy": "preserve_requested", "aliases": ["opencode"]},
     "glm": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["glm-5.3", "opencode-go/glm-5.3"]},

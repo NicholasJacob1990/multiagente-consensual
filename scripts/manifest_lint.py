@@ -31,6 +31,7 @@ REQUIRED_SEAT_ROUTES = {
 }
 REQUIRED_CLAUDE_MODEL = "claude-opus-5"
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
+REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
 REQUIRED_KIMI_MODEL = "kimi-code/k3"
 REQUIRED_GEMINI_MODEL = "gemini-3.7-flash-high"
 REQUIRED_OPENCODE_MODEL = "opencode-go/glm-5.3"
@@ -109,11 +110,10 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
             lines.append(f"    default_model: {entry['default_model']}")
         if entry.get("default_effort"):
             lines.append(f"    default_effort: {entry['default_effort']}")
-        policy = (
-            "fixed_default"
-            if entry.get("model_policy") == "fixed_default"
-            else f"preserve_requested_{seat}_model"
-        )
+        policy = {
+            "fixed_default": "fixed_default",
+            "fixed_per_route": "fixed_per_route",
+        }.get(entry.get("model_policy"), f"preserve_requested_{seat}_model")
         lines.extend([
             f"    model_policy: {policy}",
             f"    notes: {notes}",
@@ -143,10 +143,18 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
         "codex", "codex",
         "Codex deve usar gpt-5.6-sol com esforço xhigh pelo Codex CLI.",
     )
-    lines += route_block(
+    grok_lines = route_block(
         "grok", "cursor",
-        "Grok deve ser invocado pelo Cursor CLI, nunca pelo Grok CLI nativo.",
+        "Grok usa Cursor por padrão; a rota grok_official pode ser selecionada explicitamente. "
+        "Cada rota preserva seu modelo fixo e nunca há fallback silencioso.",
     )
+    grok_lines[-1:-1] = [
+        "    allowed_routes: [cursor, grok_official]",
+        "    models_by_route: {cursor: cursor-grok-4.6-high, grok_official: grok-4.6}",
+        "    effort_by_route: {cursor: high, grok_official: xhigh}",
+        "    silent_fallback: false",
+    ]
+    lines += grok_lines
     lines += route_block(
         "kimi", "kimi",
         "Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório.",
@@ -240,8 +248,17 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     grok = seats.get("grok", {}) if isinstance(seats.get("grok"), dict) else {}
     if grok.get("default_model") != REQUIRED_GROK_MODEL:
         errors.append(f"modelo obrigatório do Grok deve ser {REQUIRED_GROK_MODEL}")
-    if grok.get("model_policy") != "fixed_default":
-        errors.append("Grok deve usar model_policy=fixed_default")
+    if grok.get("model_policy") != "fixed_per_route":
+        errors.append("Grok deve usar model_policy=fixed_per_route")
+    if grok.get("allowed_routes") != ["cursor", "grok_official"]:
+        errors.append("Grok deve permitir exatamente cursor e grok_official")
+    if grok.get("models_by_route") != {
+        "cursor": REQUIRED_GROK_MODEL,
+        "grok_official": REQUIRED_GROK_OFFICIAL_MODEL,
+    }:
+        errors.append("Grok deve fixar um modelo compatível para cada rota")
+    if grok.get("silent_fallback") is not False:
+        errors.append("Grok não pode fazer fallback silencioso entre rotas")
 
     kimi = seats.get("kimi", {}) if isinstance(seats.get("kimi"), dict) else {}
     if kimi.get("default_model") != REQUIRED_KIMI_MODEL:
@@ -454,7 +471,8 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     if native_sessions.get("native_history_never_proves_consensus") is not True:
         errors.append("sessões nativas nunca podem provar consenso")
     expected_native_routes = {
-        "claude", "codex", "gemini", "antigravity", "cursor", "opencode", "kimi"
+        "claude", "codex", "gemini", "antigravity", "cursor", "grok_official",
+        "opencode", "kimi"
     }
     if set((native_sessions.get("routes") or {}).keys()) != expected_native_routes:
         errors.append("native_sessions.routes diverge das rotas executáveis")

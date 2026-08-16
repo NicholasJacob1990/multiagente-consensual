@@ -1,10 +1,11 @@
 // ============================================
-// Cursor/Grok CLI adapter — fixed model, stream-json and fail-closed execution
+// Cursor CLI adapter — catalog-selected model, stream-json and fail-closed execution
 // ============================================
 
 import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
+import { extractResponseArtifacts, mergeArtifacts, stripArtifactDeclarations } from '../a2a-shared/file-artifacts.js';
 
 export const REQUIRED_GROK_MODEL = 'cursor-grok-4.6-high';
 
@@ -51,6 +52,13 @@ export function parseCursorStreamLine(line) {
   }
 }
 
+export function parseCursorModels(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.match(/^\s*([a-z0-9][a-z0-9._-]*)\s+-\s+.+$/i)?.[1] || null)
+    .filter(Boolean);
+}
+
 export function verifyCursorModelAvailable(binary, model = REQUIRED_GROK_MODEL, { timeoutMs = 90000 } = {}) {
   const result = spawnSync(binary, ['--list-models'], {
     encoding: 'utf8',
@@ -61,10 +69,7 @@ export function verifyCursorModelAvailable(binary, model = REQUIRED_GROK_MODEL, 
   if (result.status !== 0) {
     throw new Error(`cursor-agent --list-models failed (${result.status}): ${(result.stderr || result.stdout || '').trim()}`);
   }
-  const ids = String(result.stdout || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim().split(/\s+-\s+|\s+/)[0])
-    .filter(Boolean);
+  const ids = parseCursorModels(result.stdout);
   if (!ids.includes(model)) {
     throw new Error(`required Cursor model is unavailable: ${model}`);
   }
@@ -168,10 +173,11 @@ export function createCursorExecutor({
   cliTimeoutMs = 900000,
   bootModelVerified = false,
 } = {}) {
+  let activeModel = model;
   const semaphore = createSemaphore(Math.max(1, maxProcesses));
   const healthState = {
-    configuredModel: model,
-    modelPolicy: 'fixed',
+    configuredModel: activeModel,
+    modelPolicy: 'selectable-catalog',
     modelVerified: Boolean(bootModelVerified),
     lastObservedModel: null,
     lastObservedAt: null,
@@ -180,8 +186,11 @@ export function createCursorExecutor({
   async function runRound(task, prompt, round, onChunk, signal, allTextRef) {
     if (signal?.aborted || task.status?.state === 'canceled') throw new Error('Task aborted');
     const toolPrefix = cliToolWrapper?.buildA2AToolPrefix(peers, task.metadata?.maxDepth ?? 7) || '';
-    const governedPrompt = `${systemPrompt}\n\n${toolPrefix}${prompt}`.trim();
-    const args = buildCursorArgs({ model, workspace });
+    const resolvedSystemPrompt = typeof systemPrompt === 'function'
+      ? systemPrompt(activeModel)
+      : systemPrompt;
+    const governedPrompt = `${resolvedSystemPrompt}\n\n${toolPrefix}${prompt}`.trim();
+    const args = buildCursorArgs({ model: activeModel, workspace });
 
     const outcome = await new Promise((resolve, reject) => {
       const child = spawn(binary, args, {
@@ -216,9 +225,9 @@ export function createCursorExecutor({
           observedModel = parsed.model;
           healthState.lastObservedModel = parsed.model;
           healthState.lastObservedAt = new Date().toISOString();
-          if (!modelLabelsMatch(model, parsed.model)) {
+          if (!modelLabelsMatch(activeModel, parsed.model)) {
             healthState.modelVerified = false;
-            modelError = new Error(`model_mismatch: configured=${model} observed=${parsed.model}`);
+            modelError = new Error(`model_mismatch: configured=${activeModel} observed=${parsed.model}`);
             terminateProcessGroup(child);
           } else {
             healthState.modelVerified = true;
@@ -312,10 +321,12 @@ export function createCursorExecutor({
       const outcome = await runRound(task, prompt, 0, onChunk, signal, allText);
       if (signal?.aborted || task.status?.state === 'canceled') return;
       const text = allText.value.trim();
-      const agentMessage = { role: 'agent', parts: [{ type: 'text', text }] };
+      const artifacts = extractResponseArtifacts(text, { taskId: task.id, agentId: selfId });
+      const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(text) }] };
       taskManager.updateTask(task, {
         status: { state: 'completed', message: agentMessage },
         history: [...task.history, agentMessage],
+        artifacts: mergeArtifacts(task.artifacts || [], artifacts),
         metadata: {
           ...task.metadata,
           observedModel: outcome.observedModel,
@@ -337,9 +348,25 @@ export function createCursorExecutor({
     }
   }
 
+  function updateModel(nextModel, { verified = false } = {}) {
+    const normalized = String(nextModel || '').trim();
+    if (!normalized) throw new Error('O modelo Cursor selecionado não pode ficar vazio.');
+    if (semaphore.active > 0 || semaphore.queued > 0) {
+      throw new Error('Aguarde as tarefas do Grok terminarem antes de trocar o modelo Cursor.');
+    }
+    activeModel = normalized;
+    healthState.configuredModel = activeModel;
+    healthState.modelVerified = Boolean(verified);
+    healthState.lastObservedModel = null;
+    healthState.lastObservedAt = null;
+    return activeModel;
+  }
+
   return {
     executeTask,
     healthState,
     concurrency: semaphore,
+    updateModel,
+    get configuredModel() { return activeModel; },
   };
 }

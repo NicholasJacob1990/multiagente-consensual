@@ -133,10 +133,21 @@ function executable(binary, env = process.env) {
 }
 
 export function agentCliAvailability(env = process.env) {
-  return Object.fromEntries(Object.entries(AGENTS).map(([name, definition]) => [name, {
-    available: Boolean(executable(definition.cliBinary, env)),
-    binary: definition.cliBinary,
-  }]));
+  return Object.fromEntries(Object.entries(AGENTS).map(([name, definition]) => {
+    if (name === "grok") {
+      const cursor = executable(definition.routes.cursor.cliBinary, env);
+      const official = executable(definition.routes.official.cliBinary, env);
+      return [name, {
+        available: Boolean(cursor || official),
+        binary: cursor || official,
+        routes: { cursor, official },
+      }];
+    }
+    return [name, {
+      available: Boolean(executable(definition.cliBinary, env)),
+      binary: definition.cliBinary,
+    }];
+  }));
 }
 
 export function cursorModelAvailability(env = process.env) {
@@ -145,7 +156,9 @@ export function cursorModelAvailability(env = process.env) {
   if (!binary) return { available: false, binary: null, model: definition.model, reason: `CLI ausente: ${definition.cliBinary}` };
   const probe = command(binary, ["--list-models"], { env });
   const models = probe.status === 0
-    ? probe.stdout.split(/\r?\n/).map((line) => line.trim().split(/\s+-\s+|\s+/)[0]).filter(Boolean)
+    ? probe.stdout.split(/\r?\n/)
+      .map((line) => line.match(/^\s*([a-z0-9][a-z0-9._-]*)\s+-\s+.+$/i)?.[1] || null)
+      .filter(Boolean)
     : [];
   const available = models.includes(definition.model);
   return {
@@ -156,6 +169,25 @@ export function cursorModelAvailability(env = process.env) {
     reason: available ? null : (probe.status === 0
       ? `modelo indisponível: ${definition.model}`
       : `falha ao consultar modelos do Cursor: ${probe.error || probe.stderr.trim() || `status ${probe.status}`}`),
+  };
+}
+
+export function officialGrokAvailability(env = process.env) {
+  const route = AGENTS.grok.routes.official;
+  const binary = executable(route.cliBinary, env);
+  if (!binary) return { available: false, authenticated: false, binary: null, model: route.model, reason: `CLI ausente: ${route.cliBinary}` };
+  const probe = command(binary, ["models"], { env });
+  const output = `${probe.stdout}\n${probe.stderr}`;
+  const models = output.split(/\r?\n/).map((line) => line.match(/^\s*\*\s+([^\s(]+)/)?.[1] || line.match(/^\s*Default model:\s*(\S+)/i)?.[1]).filter(Boolean);
+  const modelAvailable = models.includes(route.model);
+  const authenticated = probe.status === 0 && !/not authenticated|authentication required|please log in/i.test(output);
+  return {
+    available: probe.status === 0 && modelAvailable,
+    authenticated,
+    binary,
+    model: route.model,
+    models: [...new Set(models)],
+    reason: modelAvailable ? (authenticated ? null : "CLI instalada; autenticação pendente (`grok login`)") : `modelo indisponível: ${route.model}`,
   };
 }
 
@@ -209,7 +241,7 @@ function serverEnvironment(home) {
   }
   return {
     ...process.env,
-    PATH: [path.join(home, ".local", "bin"), process.env.PATH || ""].filter(Boolean).join(path.delimiter),
+    PATH: [path.join(home, ".grok", "bin"), path.join(home, ".local", "bin"), process.env.PATH || ""].filter(Boolean).join(path.delimiter),
     HOME: home,
     A2A_BASE_DIR: RUNTIME_ROOT,
     A2A_AUTH_TOKEN_FILE: paths.tokenFile,
@@ -232,6 +264,10 @@ function serverEnvironment(home) {
     ANTIGRAVITY_MODEL: process.env.ANTIGRAVITY_MODEL || "gemini-3.7-flash-high",
     A2A_GEMINI_ALLOW_MODEL_FALLBACK: process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK || "false",
     A2A_GROK_MODEL: "cursor-grok-4.6-high",
+    A2A_GROK_ROUTE: process.env.A2A_GROK_ROUTE || "cursor",
+    A2A_GROK_OFFICIAL_BINARY: process.env.A2A_GROK_OFFICIAL_BINARY || path.join(home, ".grok", "bin", "grok"),
+    A2A_GROK_OFFICIAL_MODEL: "grok-4.6",
+    A2A_GROK_OFFICIAL_REASONING_EFFORT: process.env.A2A_GROK_OFFICIAL_REASONING_EFFORT || "xhigh",
     A2A_GLM_MODEL: "opencode-go/glm-5.3",
     A2A_DEEPSEEK_MODEL: "opencode-go/deepseek-v4-pro",
     A2A_KIMI_MODEL: "kimi-code/k3",
@@ -295,14 +331,16 @@ async function startServers(args, { foreground = false } = {}) {
   const children = [];
   const runtimeEnvironment = serverEnvironment(args.home);
   const availability = agentCliAvailability(runtimeEnvironment);
-  const grokAvailability = availability.grok.available ? cursorModelAvailability(runtimeEnvironment) : null;
+  const cursorGrok = cursorModelAvailability(runtimeEnvironment);
+  const officialGrok = officialGrokAvailability(runtimeEnvironment);
+  if (!cursorGrok.available && officialGrok.available) runtimeEnvironment.A2A_GROK_ROUTE = "official";
   for (const [name, definition] of Object.entries(AGENTS)) {
     if (!availability[name].available) {
       unavailable.push({ name, reason: `CLI ausente: ${definition.cliBinary}` });
       continue;
     }
-    if (name === "grok" && !grokAvailability?.available) {
-      unavailable.push({ name, reason: grokAvailability?.reason || `modelo indisponível: ${definition.model}` });
+    if (name === "grok" && !cursorGrok.available && !officialGrok.available) {
+      unavailable.push({ name, reason: `${cursorGrok.reason}; ${officialGrok.reason}` });
       continue;
     }
     if (definition.route === "opencode") {
@@ -552,12 +590,23 @@ async function doctor(args) {
   checks.push({ name: "token", ok: fs.existsSync(pathsFor(args.home).tokenFile) });
   const env = serverEnvironment(args.home);
   for (const [name, definition] of Object.entries(AGENTS)) {
+    if (name === "grok") {
+      const cursor = executable(definition.routes.cursor.cliBinary, env);
+      const official = executable(definition.routes.official.cliBinary, env);
+      checks.push({ name: "cli:grok:cursor", ok: Boolean(cursor), detail: cursor, warning: Boolean(official) });
+      checks.push({ name: "cli:grok:official", ok: Boolean(official), detail: official, warning: Boolean(cursor) });
+      continue;
+    }
     const binary = executable(definition.cliBinary, env);
     checks.push({ name: `cli:${name}`, ok: Boolean(binary), detail: binary });
   }
-  if (executable(AGENTS.grok.cliBinary, env)) {
+  if (executable(AGENTS.grok.routes.cursor.cliBinary, env)) {
     const model = cursorModelAvailability(env);
-    checks.push({ name: "model:grok", ok: model.available, detail: model.reason || model.model });
+    checks.push({ name: "model:grok:cursor", ok: model.available, detail: model.reason || model.model });
+  }
+  if (executable(AGENTS.grok.routes.official.cliBinary, env)) {
+    const model = officialGrokAvailability(env);
+    checks.push({ name: "model:grok:official", ok: model.available, warning: model.available && !model.authenticated, detail: model.reason || model.model });
   }
   for (const name of ["glm", "deepseek", "qwen"]) {
     if (!executable(AGENTS[name].cliBinary, env)) continue;

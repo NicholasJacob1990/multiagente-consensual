@@ -719,6 +719,15 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertNotIn("--yolo", command)
         self.assertNotIn("--auto", command)
         self.assertFalse(any("segredo" in item for item in command))
+        command, stdin, _env = adapter.build_invocation(
+            "grok", "grok_official", "grok", root, prompt_path, "segredo",
+            "grok-4.6", "xhigh", "adaptive_up_to_native_max",
+        )
+        self.assertIsNone(stdin)
+        self.assertIn("--prompt-file", command)
+        self.assertIn("--sandbox", command)
+        self.assertIn("off", command)
+        self.assertFalse(any("segredo" in item for item in command))
 
     def test_native_session_persistence_is_explicit_and_optional(self) -> None:
         root = ROOT.resolve()
@@ -877,6 +886,10 @@ class AdapterAndGateTests(unittest.TestCase):
         kimi = adapter.resolve_seat(manifest, "kimi", None)
         gemini = adapter.resolve_seat(manifest, "gemini", None)
         opencode = adapter.resolve_seat(manifest, "opencode", None)
+        grok_cursor = adapter.resolve_seat(manifest, "grok", None)
+        grok_official = adapter.resolve_seat(
+            manifest, "grok", "grok-4.6", "grok_official"
+        )
         self.assertEqual(claude["route"], "claude")
         self.assertEqual(claude["model"], "claude-opus-5")
         self.assertEqual(adapter.resolve_seat(manifest, "claude", "opus")["model"], "claude-opus-5")
@@ -895,6 +908,15 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(gemini["model"], "gemini-3.7-flash-high")
         self.assertEqual(opencode["route"], "opencode")
         self.assertEqual(opencode["model"], "opencode-go/glm-5.3")
+        self.assertEqual(grok_cursor["route"], "cursor")
+        self.assertEqual(grok_cursor["model"], "cursor-grok-4.6-high")
+        self.assertEqual(grok_official["route"], "grok_official")
+        self.assertEqual(grok_official["model"], "grok-4.6")
+        self.assertEqual(grok_official["default_effort"], "xhigh")
+        with self.assertRaises(RuntimeError):
+            adapter.resolve_seat(
+                manifest, "grok", "cursor-grok-4.6-high", "grok_official"
+            )
         self.assertEqual(adapter.resolve_effort(opencode, None), "max")
         requested = adapter.resolve_seat(manifest, "opencode", "opencode-go/qwen3.8-max")
         self.assertEqual(requested["model"], "opencode-go/qwen3.8-max")
