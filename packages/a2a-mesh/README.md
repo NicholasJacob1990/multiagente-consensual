@@ -10,6 +10,10 @@ Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 
 ![Página inicial do A2A Mesh com oito agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.10.png)
 
+Visão completa da página inicial, com atalhos, equipe e compositor:
+
+![Página inicial completa do A2A Mesh com atalhos, seleção da equipe e compositor](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-full-v1.10.png)
+
 Durante a execução, cada tarefa apresenta fases, agente ativo e telemetria:
 
 ![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-models-v1.10.png)
