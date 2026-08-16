@@ -73,3 +73,24 @@ test("pin do instalador coincide com a versão local do pacote A2A", async () =>
   const packageDocument = JSON.parse(fs.readFileSync(packageFile, "utf8"));
   assert.equal(A2A_PACKAGE, `@nicholasjacob90/a2a-mesh@${packageDocument.version}`);
 });
+
+test("upgrade atualiza todas as superfícies e também o A2A quando solicitado", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-upgrade-test-"));
+  const home = path.join(root, "home");
+  const installRoot = path.join(root, "marketplace");
+  const { spawnSync } = await import("node:child_process");
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "cli.mjs");
+  const result = spawnSync(
+    process.execPath,
+    [cli, "upgrade", "--all", "--with-a2a", "--dry-run", "--json", "--home", home, "--install-root", installRoot, "--skip-registries", "--skip-bridge"],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.command, "upgrade");
+  assert.deepEqual(report.targets, [...ALL_TARGETS]);
+  assert.equal(report.a2a.package, A2A_PACKAGE);
+  assert.equal(report.simulation, true);
+  assert.equal(fs.existsSync(home), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});

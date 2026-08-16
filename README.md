@@ -129,7 +129,13 @@ Diagnóstico e atualização:
 npx @nicholasjacob90/multiagente-consensual status --all
 npx @nicholasjacob90/multiagente-consensual doctor --all
 npx @nicholasjacob90/multiagente-consensual update --all
+npx --yes @nicholasjacob90/multiagente-consensual@latest upgrade --all --with-a2a
 ```
+
+O último comando força o `npx` a buscar a versão mais recente no registry e atualiza, numa única
+execução, as seis superfícies, o plugin, os comandos, as skills e o A2A Mesh fixado por essa versão.
+`update` continua disponível para compatibilidade; `upgrade` é o alias recomendado para atualização
+completa. Omita `--with-a2a` se quiser atualizar somente o plugin e as superfícies das CLIs.
 
 Antes de sobrescrever arquivos gerenciados, o instalador preserva cópias em
 `~/.local/state/multiagente-consensual-backups`. `--dry-run` mostra o plano sem escrever; o

@@ -2398,7 +2398,13 @@ Code, sincroniza os comandos e skills pertinentes e instala `multiagent-bridge` 
 npx @nicholasjacob90/multiagente-consensual status --all
 npx @nicholasjacob90/multiagente-consensual doctor --all
 npx @nicholasjacob90/multiagente-consensual update --all
+npx --yes @nicholasjacob90/multiagente-consensual@latest upgrade --all --with-a2a
 ```
+
+O comando `upgrade` é o caminho recomendado para uma atualização completa: `@latest` obriga o
+`npx` a resolver a versão mais recente publicada, enquanto `--with-a2a` atualiza também o A2A Mesh
+fixado pelo instalador. O comando histórico `update` permanece aceito. Sem `--with-a2a`, somente o
+plugin, as skills, os comandos e as superfícies das CLIs são atualizados.
 
 Use `--dry-run` para ver as ações antes da instalação. Arquivos gerenciados preexistentes recebem
 backup em `~/.local/state/multiagente-consensual-backups`. A desinstalação só remove arquivos cujo

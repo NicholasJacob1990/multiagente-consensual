@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "plugin_version": "1.9.1",
+  "plugin_version": "1.9.2",
   "contract": "multiagent_local_v1",
   "policy": "strict",
   "fallback": "pause_and_report",
