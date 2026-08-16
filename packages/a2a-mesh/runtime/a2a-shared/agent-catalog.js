@@ -102,6 +102,21 @@ const entries = {
     color: '#c084fc',
     dotColor: 'violet',
   },
+  qwen: {
+    id: 'qwen',
+    port: 3148,
+    displayName: 'Qwen 3.8 Max',
+    cliBinary: 'opencode',
+    route: 'opencode',
+    provider: 'alibaba',
+    model: 'opencode-go/qwen3.8-max',
+    modelPolicy: 'fixed',
+    reasoningEffort: 'max',
+    timeoutCapMs: 1_800_000,
+    maxCliProcesses: 1,
+    color: '#f97316',
+    dotColor: 'orange',
+  },
 };
 
 export const AGENT_CATALOG = Object.freeze(Object.fromEntries(

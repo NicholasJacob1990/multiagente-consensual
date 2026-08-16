@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const MARKETPLACE_NAME = "multiagente-npm";
 export const PLUGIN_NAME = "multiagente-consensual";
-export const A2A_PACKAGE = "@nicholasjacob90/a2a-mesh@1.2.0";
+export const A2A_PACKAGE = "@nicholasjacob90/a2a-mesh@1.3.0";
 export const ALL_TARGETS = Object.freeze([
   "codex",
   "claude",

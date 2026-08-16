@@ -345,7 +345,7 @@ async function submitTool(method, params, args = {}) {
 // ============================================
 
 const mcpServer = new Server(
-  { name: 'a2a-mesh', version: '1.2.0' },
+  { name: 'a2a-mesh', version: '1.3.0' },
   { capabilities: { tools: {} } }
 );
 

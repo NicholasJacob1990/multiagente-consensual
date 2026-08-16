@@ -2,17 +2,17 @@
 
 Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 
-- sete servidores A2A locais para Codex, Claude, Gemini, Grok, GLM, DeepSeek e Kimi;
+- oito servidores A2A locais para Codex, Claude, Gemini, Grok, GLM, DeepSeek, Kimi e Qwen;
 - bridge MCP `a2a-mesh`;
 - painel web de chamadas, debates, consenso, ensemble, equipes e planos;
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
-![Página inicial do A2A Mesh com título, sete agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
+![Página inicial do A2A Mesh com título, agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
 
 Durante a execução, cada tarefa apresenta fases, agente ativo e telemetria:
 
-![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
+![Painel local do A2A Mesh com stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 O servidor se vincula exclusivamente a `127.0.0.1`. Credenciais, `.env`, sessões e históricos não
 são distribuídos. As CLIs usam a autenticação já existente na máquina do usuário.
@@ -45,32 +45,38 @@ a2a-mesh open
 | GLM 5.3 | `127.0.0.1:3145` | `http://127.0.0.1:3145/ui` | `http://127.0.0.1:3145/sandbox` |
 | DeepSeek V4 Pro | `127.0.0.1:3146` | `http://127.0.0.1:3146/ui` | `http://127.0.0.1:3146/sandbox` |
 | Kimi K3 | `127.0.0.1:3147` | `http://127.0.0.1:3147/ui` | `http://127.0.0.1:3147/sandbox` |
+| Qwen 3.8 Max | `127.0.0.1:3148` | `http://127.0.0.1:3148/ui` | `http://127.0.0.1:3148/sandbox` |
 
 O Grok é um peer nativo com rota fixa pelo `cursor-agent`, modelo obrigatório
 `cursor-grok-4.6-high` e limite padrão de dois processos simultâneos. A execução usa `stream-json`,
 confirma `system/init.model` e falha de forma explícita se faltar o evento final `result`.
 
-GLM e DeepSeek são peers nativos pelo OpenCode Go, respectivamente com os modelos fixos
-`opencode-go/glm-5.3` e `opencode-go/deepseek-v4-pro`, ambos na variante `max`. Como as duas rotas
-compartilham o banco local do OpenCode, o adaptador serializa seus processos para evitar disputa de
-lock. O Kimi é invocado exclusivamente pelo Kimi Code com `kimi-code/k3`; sua saúde permanece como
+GLM, DeepSeek e Qwen são peers nativos pelo OpenCode Go, respectivamente com os modelos fixos
+`opencode-go/glm-5.3`, `opencode-go/deepseek-v4-pro` e `opencode-go/qwen3.8-max`, todos na variante
+`max`. Como as três rotas compartilham o banco local do OpenCode, o adaptador serializa seus
+processos para evitar disputa de lock. O Kimi é invocado exclusivamente pelo Kimi Code com `kimi-code/k3`; sua saúde permanece como
 "verificação pendente" até a primeira execução autenticada e não há fallback silencioso.
 
 ## Comandos do painel
 
-Abra o painel autenticado com `a2a-mesh open`. Texto comum é enviado a todos
-os agentes. Use comandos curtos para escolher outro modo:
+Abra o painel autenticado com `a2a-mesh open`. Texto comum é enviado aos agentes selecionados.
+Use os botões da faixa **Equipe** para ligar ou desligar cadeiras e comandos curtos para escolher
+outro modo:
 
 | Comando | Ação |
 |---|---|
-| `/call <agente> <prompt>` | Chama qualquer um dos sete agentes |
-| `/broadcast <prompt>` | Consulta todos em paralelo, sem síntese |
-| `/consensus <questão>` | Consulta todos e pede síntese ao juiz |
+| `/call <agente> <prompt>` | Chama qualquer um dos oito agentes |
+| `/broadcast <prompt>` | Consulta a equipe selecionada em paralelo, sem síntese |
+| `/consensus <questão>` | Consulta a equipe selecionada e pede síntese ao juiz |
 | `/debate <tema>` | Executa rodadas adversariais e julgamento |
 | `/ensemble <tarefa>` | Gera código, faz revisão cruzada e sintetiza |
 | `/team <objetivo>` | Reúne contribuições paralelas e síntese do juiz |
 | `/plan <descrição>` | Alterna autor e revisor sobre um plano persistido |
 | `/help` | Mostra a ajuda completa no próprio painel |
+
+A seleção fica salva no navegador. **Todos** restaura as oito cadeiras. Para substituir a seleção
+somente numa execução, acrescente `--agents=claude,codex,qwen`; o override vale para broadcast,
+consenso, ensemble, debate e team.
 
 Exemplo:
 

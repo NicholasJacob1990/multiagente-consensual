@@ -74,7 +74,7 @@ const AGENT_CARD = {
   name: 'Grok Agent',
   description: 'Grok 4.6 High via Cursor CLI, com modelo fixo e participação nativa na mesh A2A.',
   url: `http://localhost:${PORT}`,
-  version: '1.2.0',
+  version: '1.3.0',
   provider: 'xai',
   route: 'cursor',
   capabilities: {

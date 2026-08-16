@@ -1,11 +1,11 @@
 ---
-description: Chama um agente do mesh diretamente (codex|claude|gemini|grok|glm|deepseek|kimi)
-argument-hint: <codex|claude|gemini|grok|glm|deepseek|kimi> <prompt>
+description: Chama um agente do mesh diretamente (codex|claude|gemini|grok|glm|deepseek|kimi|qwen)
+argument-hint: <codex|claude|gemini|grok|glm|deepseek|kimi|qwen> <prompt>
 entrypoint: workflow-agentes
 profile: a2a_call
 approval-ceiling: none
 ---
-Invoque a tool MCP `mcp__a2a-mesh__a2a_call`. O primeiro token de `$ARGUMENTS` é o nome do agente (`codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek` ou `kimi`); o restante é o prompt. Retorne integralmente a resposta do agente. As rotas são fixas: Grok 4.6 High pelo Cursor, GLM 5.3 e DeepSeek V4 Pro pelo OpenCode Go em esforço `max`, e Kimi K3 pelo Kimi Code. Não substitua um agente indisponível silenciosamente.
+Invoque a tool MCP `mcp__a2a-mesh__a2a_call`. O primeiro token de `$ARGUMENTS` é o nome do agente (`codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek`, `kimi` ou `qwen`); o restante é o prompt. Retorne integralmente a resposta do agente. As rotas são fixas: Grok 4.6 High pelo Cursor; GLM 5.3, DeepSeek V4 Pro e Qwen 3.8 Max pelo OpenCode Go em esforço `max`; e Kimi K3 pelo Kimi Code. Não substitua um agente indisponível silenciosamente.
 
 A tool devolve um recibo durável por padrão. Guarde o `task_id` e use `a2a_task_wait` em esperas de até 240 segundos, repetindo enquanto o estado for ativo, salvo se o usuário pedir apenas o disparo. Use `a2a_task_status` para retomar acompanhamento; nunca reenvie o pedido só porque uma espera terminou. Se falhar, informe o estado e apresente `partial-output.md` quando existir. O diálogo ao vivo fica no painel A2A.
 
