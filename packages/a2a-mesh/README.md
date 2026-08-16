@@ -8,6 +8,10 @@ Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
+![Página inicial do A2A Mesh com título, sete agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
+
+Durante a execução, cada tarefa apresenta fases, agente ativo e telemetria:
+
 ![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 O servidor se vincula exclusivamente a `127.0.0.1`. Credenciais, `.env`, sessões e históricos não

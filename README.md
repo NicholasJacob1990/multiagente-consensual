@@ -8,6 +8,10 @@ O manual completo atualizado acompanha o pacote em `assets/Manual-completo-coman
 
 ## Escolha rápida
 
+![Página inicial do A2A Mesh com título, sete agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.9.png)
+
+### Execução observável
+
 ![Painel local do A2A Mesh com sete agentes, stepper e telemetria](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-panel-v1.9.png)
 
 Você não precisa decorar os 29 comandos públicos. O manifesto também registra a skill interna
