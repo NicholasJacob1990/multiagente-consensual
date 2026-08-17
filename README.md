@@ -9,11 +9,11 @@ O manual completo atualizado acompanha o pacote em `assets/Manual-completo-coman
 
 ### Visão completa do painel
 
-![Página inicial completa do A2A Mesh com atalhos, seleção da equipe e compositor](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-full-v1.10.png)
+![Página inicial completa do A2A Mesh com atalhos, seleção da equipe e compositor](docs/images/a2a-mesh-home-full-v1.10.png)
 
 ### Execução observável
 
-![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-models-v1.10.png)
+![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](docs/images/a2a-mesh-models-v1.10.png)
 
 Você não precisa decorar os 29 comandos públicos. O manifesto também registra a skill interna
 `bridge-agentes`, usada como transporte do Cowork, totalizando 30 entradas governadas. Comece pelo
