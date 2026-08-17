@@ -6,9 +6,6 @@ instalações independentes existentes.
 
 O manual completo atualizado acompanha o pacote em `assets/Manual-completo-comandos-multiagente.pdf`.
 
-## Escolha rápida
-
-![Página inicial do A2A Mesh com oito agentes e ações rápidas](https://raw.githubusercontent.com/NicholasJacob1990/multiagente-consensual/main/docs/images/a2a-mesh-home-v1.10.png)
 
 ### Visão completa do painel
 
