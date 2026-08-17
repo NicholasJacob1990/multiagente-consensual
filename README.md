@@ -35,17 +35,16 @@ exemplos completos de código e redação jurídica.
 
 ## Instalação única com NPM/NPX
 
-O instalador NPM é separado do ZIP hospedado do Cowork. Depois de publicado no registry, a
-instalação completa usa:
+O instalador NPM é separado do pacote importado pelo Cowork. A instalação completa usa:
 
 ```bash
-npx @nicholasjacob90/multiagente-consensual install --all
+npx --yes @nicholasjacob90/multiagente-consensual@latest install --all
 ```
 
 Para incluir também o runtime A2A local, o bridge MCP e o painel web:
 
 ```bash
-npx @nicholasjacob90/multiagente-consensual install --all --with-a2a
+npx --yes @nicholasjacob90/multiagente-consensual@latest install --all --with-a2a
 ```
 
 Também é possível instalar ou reparar uma única superfície:
@@ -172,14 +171,36 @@ depois, mas não é necessário para o funcionamento local.
 
 ## Instalação no Cowork
 
-1. Abra **Customize → Plugins → Add**.
-2. Selecione `dist/multiagente-consensual.plugin`.
-3. Nas opções do plugin, cole no campo sensível `bridge_secret` o valor gerado em
+O GitHub contém o código-fonte e a documentação, mas o arquivo `.plugin` não é distribuído como
+anexo da release. Gere localmente a versão compatível com o Cowork pelo instalador NPM:
+
+```bash
+npx --yes @nicholasjacob90/multiagente-consensual@latest install --all --with-a2a
+```
+
+No macOS, revele no Finder o pacote gerado:
+
+```bash
+open -R "$HOME/.local/share/multiagente-consensual/marketplace/cowork/multiagente-consensual.plugin"
+```
+
+Em seguida:
+
+1. Abra o **Claude Desktop** e entre na aba **Cowork**.
+2. Abra **Customize → Plugins → Add → Upload plugin**.
+3. Selecione
+   `~/.local/share/multiagente-consensual/marketplace/cowork/multiagente-consensual.plugin`.
+4. Confirme a instalação e habilite o plugin.
+5. Nas opções do plugin, cole no campo sensível `bridge_secret` o valor gerado em
    `~/.agents/cowork-bridge-config.json`. Use `multiagent-bridge copy-secret` para copiá-lo sem
    exibi-lo no terminal.
-4. Crie ou abra um projeto do Cowork e adicione como pasta a raiz do trabalho.
-5. Adicione também `~/.agents/cowork-bridge` como pasta compartilhada.
-6. No Terminal do Mac, mantenha `multiagent-bridge serve` em execução.
+6. Crie uma nova tarefa do Cowork para carregar as skills recém-instaladas.
+7. Adicione à tarefa a pasta raiz do trabalho e `~/.agents/cowork-bridge` como pasta compartilhada.
+8. No Terminal do Mac, mantenha `multiagent-bridge serve` em execução.
+
+Digite `/` ou clique em `+` na nova tarefa para conferir as skills do plugin. O Cowork exige o
+upload manual: o comando `npx` prepara e atualiza o arquivo local, mas não instala silenciosamente
+o plugin dentro do aplicativo.
 
 Para iniciar automaticamente a cada login no macOS:
 
