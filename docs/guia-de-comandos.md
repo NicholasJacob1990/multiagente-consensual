@@ -3,15 +3,15 @@
 Este guia mostra qual comando escolher, o que acontece durante a execução e
 como formular pedidos que os agentes consigam executar sem adivinhações.
 
-![Página inicial do A2A Mesh com oito agentes e ações rápidas](images/a2a-mesh-home-v1.10.png)
+![Página inicial do A2A Mesh com oito agentes e ações rápidas](https://github.com/NicholasJacob1990/multiagente-consensual/releases/download/v1.10.0/a2a-mesh-home-v1.10.png)
 
 Visão completa da página inicial, com atalhos, equipe e compositor:
 
-![Página inicial completa do A2A Mesh com atalhos, seleção da equipe e compositor](images/a2a-mesh-home-full-v1.10.png)
+![Página inicial completa do A2A Mesh com atalhos, seleção da equipe e compositor](https://github.com/NicholasJacob1990/multiagente-consensual/releases/download/v1.10.0/a2a-mesh-home-full-v1.10.png)
 
 Durante a execução, o painel apresenta fases, agente ativo e telemetria:
 
-![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](images/a2a-mesh-models-v1.10.png)
+![Catálogo do A2A Mesh com modelos selecionáveis do Antigravity, Cursor e OpenCode](https://github.com/NicholasJacob1990/multiagente-consensual/releases/download/v1.10.0/a2a-mesh-models-v1.10.png)
 
 ## Comece pela intenção, não pelo nome do comando
 
