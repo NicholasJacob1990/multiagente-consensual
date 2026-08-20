@@ -15,6 +15,7 @@ import {
   removeCursorMcp,
   upsertCursorMcp,
 } from "../runtime/a2a-shared/cursor-mcp-config.js";
+import { resolveCursorCommand } from "../runtime/a2a-grok/cursor-cli-adapter.js";
 
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const RUNTIME_ROOT = path.join(PACKAGE_ROOT, "runtime");
@@ -103,6 +104,14 @@ export function pathsFor(home) {
   };
 }
 
+export function supervisionEnvironment({ foreground = false, supervisorPid = process.pid } = {}) {
+  if (!foreground) return {};
+  return {
+    A2A_SUPERVISOR_PID: String(supervisorPid),
+    A2A_SUPERVISOR_MODE: "foreground",
+  };
+}
+
 function writeAtomic(file, value, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.tmp`);
@@ -154,7 +163,8 @@ export function cursorModelAvailability(env = process.env) {
   const definition = AGENTS.grok;
   const binary = executable(definition.cliBinary, env);
   if (!binary) return { available: false, binary: null, model: definition.model, reason: `CLI ausente: ${definition.cliBinary}` };
-  const probe = command(binary, ["--list-models"], { env });
+  const invocation = resolveCursorCommand(binary, ["--list-models"]);
+  const probe = command(invocation.binary, invocation.args, { env });
   const models = probe.status === 0
     ? probe.stdout.split(/\r?\n/)
       .map((line) => line.match(/^\s*([a-z0-9][a-z0-9._-]*)\s+-\s+.+$/i)?.[1] || null)
@@ -363,15 +373,23 @@ async function startServers(args, { foreground = false } = {}) {
     const child = spawn(process.execPath, [definition.entry], {
       cwd: path.dirname(definition.entry),
       detached: !foreground,
-      env: { ...runtimeEnvironment, A2A_PORT: String(definition.port) },
+      env: {
+        ...runtimeEnvironment,
+        ...supervisionEnvironment({ foreground }),
+        A2A_PORT: String(definition.port),
+      },
       stdio: ["ignore", log, log],
     });
     fs.closeSync(log);
     if (!foreground) child.unref();
-    children.push(child);
-    pids[name] = child.pid;
     const ready = await waitForHealth(definition.port);
-    if (!ready) throw new Error(`${name} não ficou saudável; consulte ${logFile}`);
+    const outcome = finalizePeerStartup({ name, child, ready, logFile });
+    if (!outcome.started) {
+      unavailable.push(outcome.unavailable);
+      continue;
+    }
+    children.push(child);
+    pids[name] = outcome.pid;
     started.push(name);
   }
   if (!foreground) writeJson(paths.pidFile, { createdAt: new Date().toISOString(), pids });
@@ -380,6 +398,30 @@ async function startServers(args, { foreground = false } = {}) {
 
 function processAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+export function finalizePeerStartup({ name, child, ready, logFile }) {
+  if (ready) return { started: true, pid: child.pid, unavailable: null };
+  if (child?.exitCode === null) {
+    try { child.kill("SIGTERM"); } catch { /* o processo já terminou */ }
+  }
+  return {
+    started: false,
+    pid: null,
+    unavailable: { name, reason: `peer não ficou saudável; consulte ${logFile}` },
+  };
+}
+
+export async function waitForChildrenExit(children) {
+  const active = children.filter((child) => child.exitCode === null);
+  if (!active.length) return;
+  await new Promise((resolve) => {
+    let remaining = active.length;
+    for (const child of active) child.once("exit", () => {
+      remaining -= 1;
+      if (remaining === 0) resolve();
+    });
+  });
 }
 
 async function stopServers(args) {
@@ -644,11 +686,7 @@ async function serve(args) {
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
-  await new Promise((resolve) => {
-    if (!children.length) return resolve();
-    let remaining = children.length;
-    for (const child of children) child.once("exit", () => { remaining -= 1; if (remaining === 0) resolve(); });
-  });
+  await waitForChildrenExit(children);
   return { ok: true, command: "serve" };
 }
 

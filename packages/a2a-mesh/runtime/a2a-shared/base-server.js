@@ -28,6 +28,35 @@ export function extractArtifacts(output, options = {}) {
   return extractResponseArtifacts(output, options);
 }
 
+export function supervisionDetails(env = process.env, pid = process.pid) {
+  const supervisorPid = Number.parseInt(String(env.A2A_SUPERVISOR_PID || ''), 10);
+  if (!Number.isInteger(supervisorPid) || supervisorPid <= 0) return null;
+  return {
+    pid,
+    supervisorPid,
+    mode: env.A2A_SUPERVISOR_MODE || 'foreground',
+  };
+}
+
+export function startSupervisorWatchdog({
+  supervisorPid = Number.parseInt(String(process.env.A2A_SUPERVISOR_PID || ''), 10),
+  intervalMs = Number.parseInt(process.env.A2A_SUPERVISOR_WATCHDOG_MS || '1000', 10),
+  onOrphaned = () => process.kill(process.pid, 'SIGTERM'),
+} = {}) {
+  if (!Number.isInteger(supervisorPid) || supervisorPid <= 0 || supervisorPid === process.pid) return null;
+  const cadence = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 1000;
+  const timer = setInterval(() => {
+    try {
+      process.kill(supervisorPid, 0);
+    } catch {
+      clearInterval(timer);
+      onOrphaned();
+    }
+  }, cadence);
+  timer.unref();
+  return timer;
+}
+
 // --- HTTP utilities ---
 
 const MAX_BODY_SIZE = (() => {
@@ -698,6 +727,8 @@ export function createA2AServer(config) {
 
   const ctx = { tm, executeTask, taskTimeoutMs, meshBus, authToken };
   const sandboxManager = createSandboxManager();
+  const supervision = supervisionDetails();
+  let supervisorWatchdog = null;
 
   // JSON-RPC 2.0 adapter
   const rpcAdapter = createRPCAdapter({
@@ -762,6 +793,7 @@ export function createA2AServer(config) {
           reaper: typeof tm.getReaperStats === 'function' ? tm.getReaperStats() : null,
           mesh: meshBus ? meshBus.getStatus() : null,
           ...details,
+          ...(supervision ? { supervision } : {}),
         }, 200, origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {});
       }
 
@@ -1211,6 +1243,10 @@ export function createA2AServer(config) {
   const shutdown = () => {
     if (_shuttingDown) return;
     _shuttingDown = true;
+    if (supervisorWatchdog) {
+      clearInterval(supervisorWatchdog);
+      supervisorWatchdog = null;
+    }
     console.log('Encerrando servidor...');
     try {
       for (const task of tm.tasks.values()) {
@@ -1282,6 +1318,12 @@ export function createA2AServer(config) {
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  supervisorWatchdog = startSupervisorWatchdog({
+    onOrphaned: () => {
+      console.error(`[supervision] Supervisor ${supervision?.supervisorPid} indisponível; encerrando peer órfão.`);
+      shutdown();
+    },
+  });
 
   // Start
   server.listen(port, host, () => {

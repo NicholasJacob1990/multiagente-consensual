@@ -3,11 +3,28 @@
 // ============================================
 
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { bridgeEnvironmentForTask } from '../a2a-shared/bridge-context.js';
 import { extractResponseArtifacts, mergeArtifacts, stripArtifactDeclarations } from '../a2a-shared/file-artifacts.js';
 
 export const REQUIRED_GROK_MODEL = 'cursor-grok-4.6-high';
+
+export function resolveCursorCommand(binary, args = []) {
+  try {
+    const resolved = fs.realpathSync(binary);
+    const directory = path.dirname(resolved);
+    const bundledNode = path.join(directory, 'node');
+    const entry = path.join(directory, 'index.js');
+    if (path.basename(resolved) !== 'cursor-agent') throw new Error('not a Cursor wrapper');
+    fs.accessSync(bundledNode, fs.constants.X_OK);
+    fs.accessSync(entry, fs.constants.R_OK);
+    return { binary: bundledNode, args: [entry, ...args], bypassedSystemCaWrapper: true };
+  } catch {
+    return { binary, args, bypassedSystemCaWrapper: false };
+  }
+}
 
 export function normalizeModelLabel(value) {
   return String(value || '')
@@ -60,7 +77,8 @@ export function parseCursorModels(output) {
 }
 
 export function verifyCursorModelAvailable(binary, model = REQUIRED_GROK_MODEL, { timeoutMs = 90000 } = {}) {
-  const result = spawnSync(binary, ['--list-models'], {
+  const invocation = resolveCursorCommand(binary, ['--list-models']);
+  const result = spawnSync(invocation.binary, invocation.args, {
     encoding: 'utf8',
     timeout: timeoutMs,
     env: process.env,
@@ -181,6 +199,9 @@ export function createCursorExecutor({
     modelVerified: Boolean(bootModelVerified),
     lastObservedModel: null,
     lastObservedAt: null,
+    executionAvailable: true,
+    lastExecutionError: null,
+    lastExecutionAt: null,
   };
 
   async function runRound(task, prompt, round, onChunk, signal, allTextRef) {
@@ -191,9 +212,10 @@ export function createCursorExecutor({
       : systemPrompt;
     const governedPrompt = `${resolvedSystemPrompt}\n\n${toolPrefix}${prompt}`.trim();
     const args = buildCursorArgs({ model: activeModel, workspace });
+    const invocation = resolveCursorCommand(binary, args);
 
     const outcome = await new Promise((resolve, reject) => {
-      const child = spawn(binary, args, {
+      const child = spawn(invocation.binary, invocation.args, {
         cwd: workspace,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: cleanCursorEnvironment(task, selfId),
@@ -320,6 +342,9 @@ export function createCursorExecutor({
       const allText = { value: '' };
       const outcome = await runRound(task, prompt, 0, onChunk, signal, allText);
       if (signal?.aborted || task.status?.state === 'canceled') return;
+      healthState.executionAvailable = true;
+      healthState.lastExecutionError = null;
+      healthState.lastExecutionAt = new Date().toISOString();
       const text = allText.value.trim();
       const artifacts = extractResponseArtifacts(text, { taskId: task.id, agentId: selfId });
       const agentMessage = { role: 'agent', parts: [{ type: 'text', text: stripArtifactDeclarations(text) }] };
@@ -337,6 +362,9 @@ export function createCursorExecutor({
       onChunk?.({ type: 'completed', task: taskManager.taskToJSON(task) });
     } catch (error) {
       if (signal?.aborted || task.status?.state === 'canceled') return;
+      healthState.executionAvailable = false;
+      healthState.lastExecutionError = error.message;
+      healthState.lastExecutionAt = new Date().toISOString();
       const message = { role: 'agent', parts: [{ type: 'text', text: `Erro ao executar Grok pelo Cursor: ${error.message}` }] };
       taskManager.updateTask(task, {
         status: { state: 'failed', message },

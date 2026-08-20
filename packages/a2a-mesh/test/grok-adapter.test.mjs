@@ -72,6 +72,8 @@ test('falha fechado em mismatch de modelo', async () => {
   assert.equal(task.status.state, 'failed');
   assert.match(task.status.message.parts[0].text, /model_mismatch/);
   assert.equal(healthState.modelVerified, false);
+  assert.equal(healthState.executionAvailable, false);
+  assert.match(healthState.lastExecutionError, /model_mismatch/);
 });
 
 test('falha fechado sem result terminal e não promove parcial', async () => {
@@ -111,13 +113,58 @@ test('executor Cursor aceita troca explícita para modelo do catálogo', () => {
 });
 
 test('publica a resposta terminal do Grok uma única vez', async () => {
-  const { task } = await executeFixture([
+  const { task, healthState } = await executeFixture([
     { type: 'system', subtype: 'init', model: 'Cursor Grok 4.6 High' },
     { type: 'assistant', message: { text: 'resposta natural' } },
     { type: 'result', subtype: 'success', result: 'resposta natural' },
   ]);
   assert.equal(task.status.state, 'completed');
   assert.equal(task.status.message.parts[0].text, 'resposta natural');
+  assert.equal(healthState.executionAvailable, true);
+  assert.equal(healthState.lastExecutionError, null);
+});
+
+test('executor usa o runtime empacotado sem o wrapper --use-system-ca', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-grok-packaged-'));
+  const binary = path.join(workspace, 'cursor-agent');
+  const bundledNode = path.join(workspace, 'node');
+  const index = path.join(workspace, 'index.js');
+  fs.writeFileSync(binary, '#!/bin/sh\nprintf "ERROR: SecItemCopyMatching failed -50\\n" >&2\nkill -SEGV $$\n', { mode: 0o700 });
+  fs.writeFileSync(index, '// marcador do runtime empacotado\n');
+  fs.writeFileSync(bundledNode, `#!/usr/bin/env node
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({ type: 'system', subtype: 'init', model: 'Cursor Grok 4.6 High' }));
+  console.log(JSON.stringify({ type: 'result', subtype: 'success', result: 'runtime direto' }));
+});
+`, { mode: 0o700 });
+  const taskManager = {
+    taskEmitter: new EventEmitter(),
+    updateTask(task, update) { Object.assign(task, update); },
+    taskToJSON(task) { return task; },
+  };
+  const task = {
+    id: 'packaged-fixture',
+    history: [{ role: 'user', parts: [{ type: 'text', text: 'teste' }] }],
+    status: { state: 'submitted' },
+    metadata: { maxDepth: 0 },
+  };
+  const executor = createCursorExecutor({
+    binary,
+    workspace,
+    taskManager,
+    cliTimeoutMs: 5000,
+    cliToolWrapper: { buildA2AToolPrefix: () => '', parseToolCall: () => null, removeToolCalls: (text) => text },
+    dispatchTool: async () => '',
+    normalizeToolOutput: String,
+  });
+  try {
+    await executor.executeTask(task, () => {}, { signal: new AbortController().signal });
+    assert.equal(task.status.state, 'completed');
+    assert.equal(task.status.message.parts[0].text, 'runtime direto');
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test('configura a CLI oficial com rota explícita, esforço xhigh e sandbox desligado', () => {

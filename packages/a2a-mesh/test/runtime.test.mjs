@@ -55,12 +55,19 @@ test("servidor empacotado expõe health, painel e sandbox somente em loopback", 
       A2A_GROK_PORT: "43144",
       A2A_CLAUDE_DATA_DIR: path.join(temporaryHome, "tasks", "claude"),
       A2A_AUTO_START: "false",
+      A2A_SUPERVISOR_PID: String(process.pid),
+      A2A_SUPERVISOR_MODE: "foreground",
     },
     stdio: "ignore",
   });
   try {
     const health = await (await waitFor(`http://127.0.0.1:${port}/health`)).json();
     assert.equal(health.status, "ok");
+    assert.deepEqual(health.supervision, {
+      pid: child.pid,
+      supervisorPid: process.pid,
+      mode: "foreground",
+    });
     const crossPortHealth = await fetch(`http://127.0.0.1:${port}/health`, {
       headers: { Origin: "http://127.0.0.1:43141" },
     });
@@ -183,6 +190,20 @@ test("peer Grok alterna explicitamente entre Cursor e CLI oficial sem fallback",
     const selectedHealth = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
     assert.equal(selectedHealth.model, "cursor-grok-4.6-xhigh");
     assert.equal(selectedHealth.reasoningEffort, "xhigh");
+
+    const failedTaskResponse = await fetch(`http://127.0.0.1:${port}/tasks/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: { role: "user", parts: [{ type: "text", text: "teste de falha" }] },
+      }),
+    });
+    assert.equal(failedTaskResponse.status, 200);
+    assert.equal((await failedTaskResponse.json()).result.status.state, "failed");
+    const degradedHealth = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+    assert.equal(degradedHealth.status, "degraded");
+    assert.equal(degradedHealth.executionAvailable, false);
+    assert.match(degradedHealth.lastExecutionError, /model_unconfirmed/);
   } finally {
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("exit", resolve));

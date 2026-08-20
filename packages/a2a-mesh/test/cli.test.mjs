@@ -15,6 +15,7 @@ import {
   parseArgs,
   pathsFor,
 } from "../npm/cli.mjs";
+import * as cli from "../npm/cli.mjs";
 
 test("usa somente portas locais fixas e distintas", () => {
   assert.deepEqual(Object.values(AGENTS).map((agent) => agent.port), [3141, 3142, 3143, 3144, 3145, 3146, 3147, 3148]);
@@ -69,6 +70,39 @@ test("mantém estado e dados fora do pacote", () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test("serve identifica o supervisor nos peers e start destacado não cria vínculo", () => {
+  assert.deepEqual(cli.supervisionEnvironment?.({ foreground: true, supervisorPid: 4321 }), {
+    A2A_SUPERVISOR_PID: "4321",
+    A2A_SUPERVISOR_MODE: "foreground",
+  });
+  assert.deepEqual(cli.supervisionEnvironment?.({ foreground: false, supervisorPid: 4321 }), {});
+});
+
+test("falha de boot de um peer encerra somente esse processo e retorna indisponibilidade", async () => {
+  assert.equal(typeof cli.finalizePeerStartup, "function");
+  const outcome = cli.finalizePeerStartup({
+    name: "gemini",
+    child: { pid: 43210, exitCode: 1, kill: () => false },
+    ready: null,
+    logFile: "/tmp/gemini.log",
+  });
+  assert.deepEqual(outcome, {
+    started: false,
+    pid: null,
+    unavailable: { name: "gemini", reason: "peer não ficou saudável; consulte /tmp/gemini.log" },
+  });
+});
+
+test("serve resolve quando o filho já terminou antes do listener", async () => {
+  assert.equal(typeof cli.waitForChildrenExit, "function");
+  let listenerRegistered = false;
+  await cli.waitForChildrenExit([{
+    exitCode: 1,
+    once() { listenerRegistered = true; },
+  }]);
+  assert.equal(listenerRegistered, false);
+});
+
 test("ausência do Cursor degrada apenas o peer Grok", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-cli-availability-"));
   for (const binary of ["codex", "claude", "agy", "opencode", "kimi-secure"]) {
@@ -107,6 +141,19 @@ test("reconhece o Grok 4.6 High pela lista do Cursor", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-cursor-model-"));
   const cursor = path.join(root, "cursor-agent");
   fs.writeFileSync(cursor, "#!/bin/sh\nprintf 'cursor-grok-4.6-high - Grok 4.6 High\\n'\n", { mode: 0o700 });
+  try {
+    assert.equal(cursorModelAvailability({ PATH: root }).available, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("sonda o catálogo pelo runtime Cursor empacotado sem --use-system-ca", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "a2a-mesh-cursor-runtime-"));
+  const cursor = path.join(root, "cursor-agent");
+  fs.writeFileSync(cursor, "#!/bin/sh\nprintf 'ERROR: SecItemCopyMatching failed -50\\n' >&2\nexit 139\n", { mode: 0o700 });
+  fs.writeFileSync(path.join(root, "index.js"), "// marcador do runtime empacotado\n");
+  fs.writeFileSync(path.join(root, "node"), "#!/bin/sh\nprintf 'cursor-grok-4.6-high - Grok 4.6 High\\n'\n", { mode: 0o700 });
   try {
     assert.equal(cursorModelAvailability({ PATH: root }).available, true);
   } finally {

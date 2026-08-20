@@ -256,8 +256,15 @@ createA2AServer({
   healthDetails: () => {
     const executor = activeExecutor();
     const configuration = routeConfiguration();
+    const executionAvailable = activeRoute === 'official'
+      ? Boolean(configuration.authenticated && configuration.modelAvailable)
+      : executor.healthState.executionAvailable !== false;
     return {
       ...configuration,
+      status: executionAvailable ? 'ok' : 'degraded',
+      executionAvailable,
+      lastExecutionError: executor.healthState.lastExecutionError || executor.healthState.lastProbeError || null,
+      lastExecutionAt: executor.healthState.lastExecutionAt || executor.healthState.lastProbeAt || null,
       model: configuration.configuredModel,
       modelPolicy: activeRoute === 'cursor' ? 'selectable-catalog' : 'fixed-per-route',
       modelVerified: executor.healthState.modelVerified,
