@@ -400,10 +400,23 @@ function processAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-export function finalizePeerStartup({ name, child, ready, logFile }) {
+export function finalizePeerStartup({
+  name,
+  child,
+  ready,
+  logFile,
+  terminationGraceMs = Number.parseInt(process.env.A2A_KILL_GRACE_MS || "5000", 10),
+}) {
   if (ready) return { started: true, pid: child.pid, unavailable: null };
-  if (child?.exitCode === null) {
+  if (child?.exitCode === null && child?.signalCode === null) {
     try { child.kill("SIGTERM"); } catch { /* o processo já terminou */ }
+    const timer = setTimeout(() => {
+      if (processAlive(child.pid)) {
+        try { child.kill("SIGKILL"); } catch { /* o processo já terminou */ }
+      }
+    }, Math.max(0, terminationGraceMs));
+    timer.unref();
+    child.once?.("exit", () => clearTimeout(timer));
   }
   return {
     started: false,
@@ -413,7 +426,7 @@ export function finalizePeerStartup({ name, child, ready, logFile }) {
 }
 
 export async function waitForChildrenExit(children) {
-  const active = children.filter((child) => child.exitCode === null);
+  const active = children.filter((child) => child.exitCode === null && child.signalCode === null);
   if (!active.length) return;
   await new Promise((resolve) => {
     let remaining = active.length;

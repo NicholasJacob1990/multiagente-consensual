@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -93,11 +93,37 @@ test("falha de boot de um peer encerra somente esse processo e retorna indisponi
   });
 });
 
+test("falha de boot escala para SIGKILL quando o peer ignora SIGTERM", { timeout: 3000 }, async () => {
+  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)"], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  await new Promise((resolve) => child.stdout.once("data", resolve));
+  try {
+    const outcome = cli.finalizePeerStartup({
+      name: "gemini",
+      child,
+      ready: null,
+      logFile: "/tmp/gemini.log",
+      terminationGraceMs: 20,
+    });
+    assert.equal(outcome.started, false);
+    await Promise.race([
+      new Promise((resolve) => child.once("exit", resolve)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("peer permaneceu órfão")), 1000)),
+    ]);
+    assert.equal(child.signalCode, "SIGKILL");
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    child.stdout.destroy();
+  }
+});
+
 test("serve resolve quando o filho já terminou antes do listener", async () => {
   assert.equal(typeof cli.waitForChildrenExit, "function");
   let listenerRegistered = false;
   await cli.waitForChildrenExit([{
-    exitCode: 1,
+    exitCode: null,
+    signalCode: "SIGKILL",
     once() { listenerRegistered = true; },
   }]);
   assert.equal(listenerRegistered, false);
