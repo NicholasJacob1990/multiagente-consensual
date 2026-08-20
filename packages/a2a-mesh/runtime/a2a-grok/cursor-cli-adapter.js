@@ -35,7 +35,14 @@ export function normalizeModelLabel(value) {
 }
 
 export function modelLabelsMatch(configuredModel, observedLabel) {
-  return normalizeModelLabel(configuredModel) === normalizeModelLabel(observedLabel);
+  const configured = normalizeModelLabel(configuredModel);
+  const observed = normalizeModelLabel(observedLabel);
+  if (configured === observed) return true;
+  // Cursor may stream the catalog display label without the selected effort
+  // suffix (e.g. cursor-grok-4.6-high -> "Cursor Grok 4.6"). The model id
+  // itself was already passed explicitly to the CLI, so accept only this
+  // narrowly-defined omission; version/provider differences still fail.
+  return configured.replace(/\s+(?:none|low|medium|high|xhigh|max)$/, '') === observed;
 }
 
 export function extractCursorText(value) {

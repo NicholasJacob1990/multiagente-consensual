@@ -89,6 +89,8 @@ test('confirma o rótulo observado e exige evento terminal', () => {
   const init = parseCursorStreamLine(JSON.stringify({ type: 'system', subtype: 'init', model: 'Cursor Grok 4.6 High' }));
   const result = parseCursorStreamLine(JSON.stringify({ type: 'result', subtype: 'success', result: 'ok' }));
   assert.equal(modelLabelsMatch(REQUIRED_GROK_MODEL, init.model), true);
+  assert.equal(modelLabelsMatch(REQUIRED_GROK_MODEL, 'Cursor Grok 4.6'), true);
+  assert.equal(modelLabelsMatch(REQUIRED_GROK_MODEL, 'Cursor Grok 4.5'), false);
   assert.equal(result.terminal, true);
   assert.equal(result.result, 'ok');
   assert.equal(parseCursorStreamLine('texto parcial não JSON'), null);
