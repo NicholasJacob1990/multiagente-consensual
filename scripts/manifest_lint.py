@@ -541,7 +541,12 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     }
 
 
-def resolve_seat(data: dict[str, Any], requested: str, model: str | None) -> dict[str, Any]:
+def resolve_seat(
+    data: dict[str, Any],
+    requested: str,
+    model: str | None,
+    requested_route: str | None = None,
+) -> dict[str, Any]:
     seats = data["seats"]
     canonical = requested
     if requested not in seats:
@@ -550,6 +555,35 @@ def resolve_seat(data: dict[str, Any], requested: str, model: str | None) -> dic
             raise ValueError(f"seat desconhecida ou ambígua: {requested}")
         canonical = matches[0]
     seat = seats[canonical]
+    allowed_routes = seat.get("allowed_routes") or [seat.get("route")]
+    if requested_route is not None and requested_route not in allowed_routes:
+        raise ValueError(
+            f"rota incompatível para {canonical}: escolha uma de {', '.join(allowed_routes)}"
+        )
+    route_name = requested_route or seat["route"]
+    if seat.get("model_policy") == "fixed_per_route":
+        models = seat.get("models_by_route", {})
+        if requested_route is None and model:
+            matching = [name for name, fixed in models.items() if model == fixed]
+            if len(matching) == 1:
+                route_name = matching[0]
+        if route_name not in allowed_routes:
+            raise ValueError(
+                f"rota incompatível para {canonical}: escolha uma de {', '.join(allowed_routes)}"
+            )
+        fixed = models.get(route_name)
+        if not fixed:
+            raise ValueError(f"a rota {route_name} não declara modelo fixo para {canonical}")
+        if model and model not in {fixed, *seat.get("aliases", [])}:
+            raise ValueError(
+                f"modelo incompatível para {canonical} na rota {route_name}: "
+                f"esperado {fixed}, recebeu {model}"
+            )
+        if model and model in models.values() and model != fixed:
+            raise ValueError(
+                f"o modelo {model} pertence a outra rota; selecione-a explicitamente"
+            )
+        model = fixed
     if seat.get("model_policy") == "fixed_default":
         fixed = seat.get("default_model")
         if model in seat.get("aliases", []):
@@ -559,7 +593,6 @@ def resolve_seat(data: dict[str, Any], requested: str, model: str | None) -> dic
                 f"modelo incompatível para {canonical}: a política local fixa {fixed}, recebeu {model}"
             )
         model = fixed
-    route_name = seat["route"]
     route = data["routes"][route_name]
     output = data.get("output") or default_output_policy()
     filesystem = data.get("filesystem") or default_filesystem_policy()
@@ -604,6 +637,10 @@ def main() -> int:
     seat = sub.add_parser("resolve-seat")
     seat.add_argument("seat")
     seat.add_argument("--model")
+    seat.add_argument(
+        "--route",
+        help="Rota explícita quando a cadeira admite mais de uma (ex.: cursor ou grok_official)",
+    )
     command = sub.add_parser("resolve-command")
     command.add_argument("name")
     routing = sub.add_parser("render-routing")
@@ -629,7 +666,7 @@ def main() -> int:
             emit(report)
             return 0 if report["valid"] else 2
         if args.command == "resolve-seat":
-            emit(resolve_seat(data, args.seat, args.model))
+            emit(resolve_seat(data, args.seat, args.model, args.route))
             return 0
         if args.command == "resolve-command":
             if args.name not in data["commands"]:

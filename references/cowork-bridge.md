@@ -38,6 +38,7 @@ Nome recomendado: `<uuid>.request.json`.
   "request_id": "uuid",
   "participant": "grok",
   "model": "cursor-grok-4.6-high",
+  "route": "cursor",
   "root_id": "processo-123",
   "prompt_rel": ".multiagent/prompts/critica.md",
   "effort": "high",
@@ -49,6 +50,12 @@ Nome recomendado: `<uuid>.request.json`.
   "signature": "hexadecimal"
 }
 ```
+
+`route` é opcional e só faz sentido nas cadeiras que declaram mais de uma rota no manifesto; hoje
+apenas `grok`, com `cursor` (modelo `cursor-grok-4.6-high`) e `grok_official` (modelo `grok-4.6`).
+Omitido, o host usa a rota padrão da cadeira e, quando o `model` pedido é o modelo fixo de outra
+rota permitida, seleciona essa rota. Uma rota fora das `allowed_routes` da cadeira é recusada, assim
+como um modelo que não seja o fixo daquela rota nem um alias da cadeira: não há troca silenciosa.
 
 O Cowork deve construir o objeto inicialmente sem `signature_alg` e `signature`, passá-lo por stdin
 ao assinador e deixar que ele publique o arquivo final de forma atômica:

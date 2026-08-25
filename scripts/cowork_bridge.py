@@ -208,7 +208,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return data
 
 
-def resolve_seat(manifest: dict[str, Any], requested: str, model: str | None) -> dict[str, Any]:
+def resolve_seat(
+    manifest: dict[str, Any],
+    requested: str,
+    model: str | None,
+    requested_route: str | None = None,
+) -> dict[str, Any]:
     seats = manifest["seats"]
     canonical = requested
     if canonical not in seats:
@@ -217,7 +222,37 @@ def resolve_seat(manifest: dict[str, Any], requested: str, model: str | None) ->
             raise ValueError(f"cadeira desconhecida ou ambígua: {requested}")
         canonical = matches[0]
     seat = seats[canonical]
-    route = seat.get("route")
+    allowed_routes = seat.get("allowed_routes") or [seat.get("route")]
+    if requested_route is not None and requested_route not in allowed_routes:
+        raise ValueError(
+            f"rota incompatível para {canonical}; escolha uma de {', '.join(allowed_routes)}"
+        )
+    route = requested_route or seat.get("route")
+    route_pinned = False
+    if seat.get("model_policy") == "fixed_per_route":
+        models = seat.get("models_by_route", {})
+        if requested_route is None and model:
+            matching = [name for name, fixed in models.items() if model == fixed]
+            if len(matching) == 1:
+                route = matching[0]
+        if route not in allowed_routes:
+            raise ValueError(
+                f"rota incompatível para {canonical}; escolha uma de {', '.join(allowed_routes)}"
+            )
+        fixed = models.get(route)
+        if not fixed:
+            raise ValueError(f"a rota {route} não declara modelo fixo para {canonical}")
+        if model and model not in {fixed, *seat.get("aliases", [])}:
+            raise ValueError(
+                f"modelo incompatível para {canonical} na rota {route}; "
+                f"esperado {fixed}, recebeu {model}"
+            )
+        if model and model in models.values() and model != fixed:
+            raise ValueError(
+                f"o modelo {model} pertence a outra rota; selecione-a explicitamente"
+            )
+        model = fixed
+        route_pinned = True
     if route not in manifest["routes"]:
         raise ValueError(f"rota inexistente para {canonical}: {route}")
     if seat.get("model_policy") == "fixed_default":
@@ -230,6 +265,7 @@ def resolve_seat(manifest: dict[str, Any], requested: str, model: str | None) ->
     return {
         "seat": canonical,
         "route": route,
+        "route_pinned": route_pinned,
         "provider": seat.get("provider"),
         "model": model or seat.get("default_model"),
     }
@@ -270,7 +306,10 @@ def validate_request(
     model = payload.get("model")
     if model is not None and not isinstance(model, str):
         raise ValueError("model deve ser texto")
-    resolved = resolve_seat(manifest, participant, model)
+    route_requested = payload.get("route")
+    if route_requested is not None and not isinstance(route_requested, str):
+        raise ValueError("route deve ser texto")
+    resolved = resolve_seat(manifest, participant, model, route_requested)
     root_id = payload.get("root_id")
     if root_id is not None:
         root_id = valid_root_id(str(root_id))
@@ -319,6 +358,7 @@ def validate_request(
         "participant": participant,
         "seat": resolved["seat"],
         "route": resolved["route"],
+        "route_pinned": resolved.get("route_pinned", False),
         "provider": resolved["provider"],
         "model": resolved["model"],
         "root": root,
@@ -354,6 +394,8 @@ def adapter_command(
     ]
     if request["model"]:
         command += ["--model", request["model"]]
+    if request.get("route_pinned") and request.get("route"):
+        command += ["--route", request["route"]]
     if request["effort"]:
         command += ["--effort", request["effort"]]
     if request.get("persist_native_session"):
