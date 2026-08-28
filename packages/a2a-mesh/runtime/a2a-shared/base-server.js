@@ -14,6 +14,7 @@ import { mergeRequestTaskMetadata } from './provider-session.js';
 import { DEFAULT_PORTS, publicAgentCatalog } from './agent-catalog.js';
 import { recoverPartialArtifacts } from './partial-output.js';
 import { extractResponseArtifacts, resolveStoredArtifact } from './file-artifacts.js';
+import { managedRuntimeIdentity } from './runtime-identity.js';
 
 // --- Shared helpers ---
 
@@ -787,6 +788,7 @@ export function createA2AServer(config) {
         return sendJSON(res, {
           status: 'ok', model, mode: useApi ? 'api' : 'cli',
           protocolVersion: A2A_PROTOCOL_VERSION,
+          runtimeIdentity: managedRuntimeIdentity(selfId),
           tasks: tm.tasks.size,
           // Reaper telemetry: if totalReaped grows, something upstream is
           // failing to emit terminal states. lastReaped > 0 = active leak.

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_PORTS } from './agent-catalog.js';
+import { isManagedAgentHealth } from './runtime-identity.js';
 
 function parseJsonSafe(raw) {
   if (!raw || typeof raw !== 'string') return null;
@@ -216,15 +217,21 @@ export class PeerDiscovery {
       clearTimeout(timeout);
 
       if (resp.ok) {
+        let data = null;
+        try {
+          data = await resp.json();
+        } catch {
+          peer.status = 'offline';
+          return false;
+        }
+        if (!isManagedAgentHealth(data, agentId)) {
+          peer.status = 'offline';
+          return false;
+        }
         peer.status = 'online';
         peer.lastSeen = new Date();
-        try {
-          const data = await resp.json();
-          if (data.protocolVersion) {
-            peer.protocolVersion = data.protocolVersion;
-          }
-        } catch {
-          // JSON parse error — health endpoint is still reachable
+        if (data.protocolVersion) {
+          peer.protocolVersion = data.protocolVersion;
         }
         // Fetch agent card if not cached or TTL expired
         const cardExpired = !peer.agentCardFetchedAt ||

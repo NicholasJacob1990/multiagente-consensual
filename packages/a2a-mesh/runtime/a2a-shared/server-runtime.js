@@ -204,6 +204,7 @@ export async function createSharedRuntime({
       meshBus,
       authToken,
       selfUrl,
+      peerDiscovery,
     });
   }
 

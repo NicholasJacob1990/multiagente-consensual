@@ -9,6 +9,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { AGENT_IDS as CATALOG_AGENT_IDS } from './agent-catalog.js';
+import { isManagedAgentHealth } from './runtime-identity.js';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const AGENT_IDS = new Set(CATALOG_AGENT_IDS);
@@ -35,7 +36,7 @@ function assertLocalAgent(agentId, baseUrl) {
   return url;
 }
 
-export function checkAgentHealth(baseUrl, timeoutMs = 3000) {
+export function checkAgentHealth(baseUrl, timeoutMs = 3000, expectedAgentId = null) {
   return new Promise((resolve) => {
     const request = http.get(new URL('/health', baseUrl), (response) => {
       const chunks = [];
@@ -47,7 +48,7 @@ export function checkAgentHealth(baseUrl, timeoutMs = 3000) {
         }
         try {
           const health = JSON.parse(Buffer.concat(chunks).toString());
-          resolve(health?.status === 'ok' ? health : null);
+          resolve(isManagedAgentHealth(health, expectedAgentId) ? health : null);
         } catch {
           resolve(null);
         }
@@ -65,8 +66,13 @@ async function startLocalAgent(agentId, baseUrl, timeoutMs) {
   if (!AGENT_IDS.has(agentId)) {
     throw new Error(`Unknown A2A agent: ${agentId}`);
   }
-  const currentHealth = await checkAgentHealth(baseUrl);
+  const currentHealth = await checkAgentHealth(baseUrl, 3000, agentId);
   if (currentHealth) return currentHealth;
+
+  const foreignHealth = await checkAgentHealth(baseUrl);
+  if (foreignHealth) {
+    throw new Error(`A2A agent ${agentId} port is owned by an incompatible or legacy runtime at ${baseUrl}`);
+  }
 
   if (process.env.A2A_AUTO_START === 'false') {
     throw new Error(`A2A agent ${agentId} is offline at ${baseUrl} and auto-start is disabled`);
@@ -101,7 +107,7 @@ async function startLocalAgent(agentId, baseUrl, timeoutMs) {
       throw new Error(`Failed to start A2A agent ${agentId}: ${spawnError.message}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
-    const health = await checkAgentHealth(baseUrl, 1000);
+    const health = await checkAgentHealth(baseUrl, 1000, agentId);
     if (health) return health;
   }
 
@@ -111,7 +117,10 @@ async function startLocalAgent(agentId, baseUrl, timeoutMs) {
 /**
  * Ensure a local A2A peer is online. Concurrent callers share one start attempt.
  */
-export function ensureAgentOnline(agentId, baseUrl, { timeoutMs = 20000 } = {}) {
+export function ensureAgentOnline(agentId, baseUrl, options = {}) {
+  const timeoutMs = options.timeoutMs ?? (agentId === 'gemini'
+    ? Number.parseInt(process.env.A2A_GEMINI_STARTUP_TIMEOUT_MS || '120000', 10)
+    : 20000);
   const key = `${agentId}:${baseUrl}`;
   if (inFlightStarts.has(key)) return inFlightStarts.get(key);
 

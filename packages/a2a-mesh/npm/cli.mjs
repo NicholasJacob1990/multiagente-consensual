@@ -16,6 +16,7 @@ import {
   upsertCursorMcp,
 } from "../runtime/a2a-shared/cursor-mcp-config.js";
 import { resolveCursorCommand } from "../runtime/a2a-grok/cursor-cli-adapter.js";
+import { isManagedAgentHealth } from "../runtime/a2a-shared/runtime-identity.js";
 
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const RUNTIME_ROOT = path.join(PACKAGE_ROOT, "runtime");
@@ -273,6 +274,8 @@ function serverEnvironment(home) {
     GEMINI_CLI_PROVIDER: process.env.GEMINI_CLI_PROVIDER || "antigravity",
     ANTIGRAVITY_MODEL: process.env.ANTIGRAVITY_MODEL || "gemini-3.7-flash-high",
     A2A_GEMINI_ALLOW_MODEL_FALLBACK: process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK || "false",
+    A2A_GEMINI_STARTUP_TIMEOUT_MS: process.env.A2A_GEMINI_STARTUP_TIMEOUT_MS || "120000",
+    A2A_ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS: process.env.A2A_ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS || "90000",
     A2A_GROK_MODEL: "cursor-grok-4.6-high",
     A2A_GROK_ROUTE: process.env.A2A_GROK_ROUTE || "cursor",
     A2A_GROK_OFFICIAL_BINARY: process.env.A2A_GROK_OFFICIAL_BINARY || path.join(home, ".grok", "bin", "grok"),
@@ -290,7 +293,7 @@ function serverEnvironment(home) {
   };
 }
 
-export function health(port, timeoutMs = 1500) {
+export function health(port, timeoutMs = 1500, expectedAgentId = null) {
   return new Promise((resolve) => {
     const request = http.get(`http://127.0.0.1:${port}/health`, (response) => {
       const chunks = [];
@@ -298,7 +301,7 @@ export function health(port, timeoutMs = 1500) {
       response.on("end", () => {
         try {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          resolve(response.statusCode === 200 && body.status === "ok" ? body : null);
+          resolve(response.statusCode === 200 && isManagedAgentHealth(body, expectedAgentId) ? body : null);
         } catch { resolve(null); }
       });
     });
@@ -318,10 +321,10 @@ function portOpen(port, timeoutMs = 500) {
   });
 }
 
-async function waitForHealth(port, timeoutMs = 20000) {
+async function waitForHealth(port, timeoutMs = 20000, expectedAgentId = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const value = await health(port, 1000);
+    const value = await health(port, 1000, expectedAgentId);
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -360,10 +363,14 @@ async function startServers(args, { foreground = false } = {}) {
         continue;
       }
     }
-    const current = await health(definition.port);
+    const current = await health(definition.port, 1500, name);
     if (current) {
       existing.push(name);
       continue;
+    }
+    const foreignHealth = await health(definition.port);
+    if (foreignHealth) {
+      throw new Error(`porta ${definition.port} pertence a runtime incompatível ou legado (${name})`);
     }
     if (await portOpen(definition.port)) {
       throw new Error(`porta ${definition.port} ocupada, mas /health não responde (${name})`);
@@ -382,7 +389,10 @@ async function startServers(args, { foreground = false } = {}) {
     });
     fs.closeSync(log);
     if (!foreground) child.unref();
-    const ready = await waitForHealth(definition.port);
+    const startupTimeoutMs = name === "gemini"
+      ? Number.parseInt(runtimeEnvironment.A2A_GEMINI_STARTUP_TIMEOUT_MS, 10)
+      : 20000;
+    const ready = await waitForHealth(definition.port, startupTimeoutMs, name);
     const outcome = finalizePeerStartup({ name, child, ready, logFile });
     if (!outcome.started) {
       unavailable.push(outcome.unavailable);
@@ -448,7 +458,7 @@ async function stopServers(args) {
     stopped.push({ name, pid });
   }
   for (const [name, definition] of Object.entries(AGENTS)) {
-    if (await health(definition.port, 500) && !(state.pids || {})[name]) preserved.push(name);
+    if (await health(definition.port, 500, name) && !(state.pids || {})[name]) preserved.push(name);
   }
   if (!args.dryRun) fs.rmSync(paths.pidFile, { force: true });
   return { stopped, preserved };
@@ -459,7 +469,7 @@ async function statusReport(args) {
   const configured = readJson(paths.installState, null);
   const agents = {};
   for (const [name, definition] of Object.entries(AGENTS)) {
-    const value = await health(definition.port);
+    const value = await health(definition.port, 1500, name);
     agents[name] = { online: Boolean(value), port: definition.port, health: value };
   }
   return {

@@ -63,6 +63,10 @@ test("servidor empacotado expõe health, painel e sandbox somente em loopback", 
   try {
     const health = await (await waitFor(`http://127.0.0.1:${port}/health`)).json();
     assert.equal(health.status, "ok");
+    assert.deepEqual(health.runtimeIdentity, {
+      owner: "@nicholasjacob90/a2a-mesh",
+      agentId: "claude",
+    });
     assert.deepEqual(health.supervision, {
       pid: child.pid,
       supervisorPid: process.pid,

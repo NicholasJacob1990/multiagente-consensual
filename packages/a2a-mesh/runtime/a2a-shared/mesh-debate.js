@@ -61,7 +61,7 @@ function normalizeMeshChain(meshChain) {
  * @param {Object} [config.meshStore] - MeshStore (optional)
  * @param {Object} [config.meshBus] - MeshEventBus (optional)
  */
-export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '' }) {
+export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, meshStore, meshBus, authToken = '', selfUrl = '', peerDiscovery = null }) {
   const resolvedSelfUrl = selfUrl || resolveSelfUrl({ selfId, peers });
   const DEFAULT_DEBATE_TIMEOUT_MS = normalizePositiveInt(process.env.A2A_TIMEOUT_DEBATE_MS, 1800000); // 30 min per model call
 
@@ -89,11 +89,31 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
 
     // Determine participants: requested agents, or all available (peers + self)
     const allAvailable = [...Object.keys(peers), selfId];
-    const requestedAgents = params.agents?.filter(a => allAvailable.includes(a));
+    const explicitAgents = Array.isArray(params.agents) ? params.agents : null;
+    const unknownAgents = explicitAgents?.filter(agent => !allAvailable.includes(agent)) || [];
+    if (unknownAgents.length) {
+      throw new Error(`Unknown debate agents: ${unknownAgents.join(', ')}`);
+    }
+    const requestedAgents = explicitAgents?.filter(a => allAvailable.includes(a));
+    const strictParticipants = Boolean(explicitAgents?.length);
     const agents = (requestedAgents?.length ? requestedAgents : allAvailable)
       .filter(agent => agent === selfId || !parentChain.includes(agent));
 
     if (agents.length < 2) throw new Error('Debate requires at least 2 agents');
+
+    if (requestedAgents?.length && peerDiscovery) {
+      const unavailable = [];
+      for (const agent of agents) {
+        if (agent === selfId) continue;
+        const online = await peerDiscovery.checkHealth(agent);
+        if (online) continue;
+        const peer = peerDiscovery.getPeer(agent);
+        unavailable.push(`${agent} (last seen: ${peer?.lastSeen ? peer.lastSeen.toISOString() : 'never'})`);
+      }
+      if (unavailable.length) {
+        throw new Error(`Debate preflight failed: requested participants unavailable: ${unavailable.join(', ')}`);
+      }
+    }
 
     const context = {
       depth: parentDepth - 1,
@@ -135,6 +155,7 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         const prompt = buildDebaterPrompt(topicForPrompt, history, agent, round, rounds, agents);
         let response;
         let participantFailed = false;
+        let participantError = '';
 
         emitDialogue(`round-${round}`, agent, 'system', `${agent} elaborando argumento…`);
 
@@ -168,7 +189,8 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
         } catch (err) {
           response = null;
           participantFailed = true;
-          emitDialogue(`round-${round}`, agent, 'error', formatError(err));
+          participantError = formatError(err);
+          emitDialogue(`round-${round}`, agent, 'error', participantError);
         }
 
         // executeA2ACall returns string errors instead of throwing; convert
@@ -178,11 +200,15 @@ export function createDebateExecutor({ meshCaller, peers, selfId, maxDepth, mesh
           const errText = String(response).trim();
           emitDialogue(`round-${round}`, agent, 'error', errText);
           participantFailed = true;
+          participantError = errText;
         }
 
         // A provider/transport failure is an explicit missing argument, never
         // debate content. The judge can see the absence from the roster; the
         // UI already received one error event above.
+        if (participantFailed && strictParticipants) {
+          throw new Error(`Debate participant ${agent} failed in round ${round}: ${participantError || 'unknown error'}`);
+        }
         if (participantFailed) continue;
 
         const entry = { round, agent, argument: String(response) };

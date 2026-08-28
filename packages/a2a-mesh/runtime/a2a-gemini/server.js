@@ -76,9 +76,17 @@ const GEMINI_CLI_MODEL = process.env.GEMINI_CLI_MODEL || GEMINI_FALLBACK_MODEL;
 const GEMINI_APPROVAL_MODE = process.env.GEMINI_APPROVAL_MODE || 'yolo';
 const GEMINI_YOLO = process.env.GEMINI_YOLO !== 'false';
 const ANTIGRAVITY_CLI = process.env.ANTIGRAVITY_CLI || join(os.homedir(), '.local', 'bin', 'agy');
-const USE_ANTIGRAVITY_CLI = process.env.GEMINI_CLI_PROVIDER !== 'gemini' && fs.existsSync(ANTIGRAVITY_CLI);
+const GEMINI_CLI_PROVIDER = process.env.GEMINI_CLI_PROVIDER || 'antigravity';
+const USE_ANTIGRAVITY_CLI = GEMINI_CLI_PROVIDER === 'antigravity';
+if (USE_ANTIGRAVITY_CLI && !fs.existsSync(ANTIGRAVITY_CLI)) {
+  throw new Error(`Antigravity CLI not found: ${ANTIGRAVITY_CLI}`);
+}
 const ANTIGRAVITY_MODEL = process.env.ANTIGRAVITY_MODEL || REQUIRED_ANTIGRAVITY_MODEL;
 const ANTIGRAVITY_FALLBACK_MODEL = process.env.ANTIGRAVITY_FALLBACK_MODEL || ANTIGRAVITY_MODEL;
+const ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS = parseInt(
+  process.env.A2A_ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS || '90000',
+  10,
+);
 const ALLOW_ANTIGRAVITY_MODEL_FALLBACK = process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK === 'true';
 const GEMINI_VERTEX_FALLBACK_MODEL = process.env.GEMINI_VERTEX_FALLBACK_MODEL || GEMINI_CLI_MODEL || 'gemini-2.5-pro';
 // Output token cap for direct API calls (PublicAPI/Vertex). CLI mode (`gemini -o json`)
@@ -93,14 +101,16 @@ const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 
 // Auth: service account JWT preferred for both public API + Vertex
 const FORCE_CLI = process.env.USE_CLI === 'force';
-const USE_API = !FORCE_CLI;
-const USE_CLI = !FORCE_CLI;
+const USE_API = !FORCE_CLI && !USE_ANTIGRAVITY_CLI;
+const USE_CLI = FORCE_CLI || USE_ANTIGRAVITY_CLI;
 let EFFECTIVE_GEMINI_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : (FORCE_CLI ? GEMINI_CLI_MODEL : GEMINI_MODEL);
 let CLI_EXECUTION_MODEL = USE_ANTIGRAVITY_CLI ? ANTIGRAVITY_MODEL : GEMINI_CLI_MODEL;
 let antigravityBootModelVerified = false;
 let antigravityAvailableModels = [ANTIGRAVITY_MODEL];
 if (USE_ANTIGRAVITY_CLI && process.env.A2A_GEMINI_SKIP_MODEL_CHECK !== 'true') {
-  const probe = verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, ANTIGRAVITY_MODEL);
+  const probe = verifyAntigravityModelAvailable(ANTIGRAVITY_CLI, ANTIGRAVITY_MODEL, {
+    timeoutMs: ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS,
+  });
   antigravityAvailableModels = probe.availableModels;
   antigravityBootModelVerified = true;
 }

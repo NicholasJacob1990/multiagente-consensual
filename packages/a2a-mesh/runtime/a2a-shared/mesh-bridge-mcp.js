@@ -103,7 +103,7 @@ async function checkPeer(agentId, autoStart = false) {
   try {
     const health = autoStart
       ? await ensureAgentOnline(agentId, url)
-      : await checkAgentHealth(url);
+      : await checkAgentHealth(url, 3000, agentId);
     if (!health) return { agent: agentId, status: 'offline' };
     return { agent: agentId, status: 'online', model: health.model, mode: health.mode };
   } catch (error) {
