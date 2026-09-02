@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -224,6 +226,256 @@ class CoworkBridgeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "não será sobrescrito"):
                 bridge.atomic_json_new(target, {"versao": 2})
             self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["versao"], 1)
+
+    def test_case_inventory_is_deterministic_and_excludes_sensitive_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            (root / "autos").mkdir()
+            (root / "autos" / "peticao.md").write_text("conteúdo jurídico", encoding="utf-8")
+            (root / "notas.txt").write_text("nota", encoding="utf-8")
+            (root / ".env").write_text("TOKEN=segredo", encoding="utf-8")
+            (root / "credentials.json").write_text('{"secret":"x"}', encoding="utf-8")
+            (root / "node_modules").mkdir()
+            (root / "node_modules" / "pacote.js").write_text("ignorar", encoding="utf-8")
+            (root / "atalho.txt").symlink_to(root / "notas.txt")
+
+            first = bridge.build_case_inventory(root)
+            second = bridge.build_case_inventory(root)
+
+            self.assertEqual(first["snapshot_sha256"], second["snapshot_sha256"])
+            self.assertEqual(
+                [entry["path"] for entry in first["files"]],
+                ["autos/peticao.md", "notas.txt"],
+            )
+            excluded = {entry["path"]: entry["reason"] for entry in first["excluded"]}
+            self.assertEqual(excluded[".env"], "sensitive")
+            self.assertEqual(excluded["credentials.json"], "sensitive")
+            self.assertEqual(excluded["node_modules"], "excluded_directory")
+            self.assertEqual(excluded["atalho.txt"], "symlink")
+
+    def test_prepare_case_registers_root_and_creates_auditable_bundle_without_model_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            root = base / "caso"
+            root.mkdir()
+            (root / "documento.md").write_text("fatos do caso", encoding="utf-8")
+            queue = base / "queue"
+            private = base / "private"
+            config = base / "config.json"
+            bridge.atomic_json(
+                config,
+                {"config_version": 2, "bridge_secret": "f" * 64, "roots": {}},
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "id": "caso-teste",
+                    "path": str(root),
+                    "participant": ["claude", "codex"],
+                    "replace": False,
+                    "start": False,
+                    "bridge_dir": str(queue),
+                    "private_state": str(private),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(bridge.run_prepare_case(args), 0)
+
+            receipt = json.loads(stdout.getvalue())
+            saved_config = bridge.load_config(config)
+            case_manifest = json.loads(
+                (root / ".multiagent" / "case-manifest.json").read_text(encoding="utf-8")
+            )
+            stored_receipt = json.loads(
+                (root / ".multiagent" / "prepare-case-receipt.json").read_text(encoding="utf-8")
+            )
+            prompt = root / ".multiagent" / "prompts" / "shared-case.md"
+
+            self.assertEqual(saved_config["roots"]["caso-teste"], str(root))
+            self.assertEqual(case_manifest["contract"], "multiagent_case_v1")
+            self.assertEqual(case_manifest["files"][0]["path"], "documento.md")
+            self.assertEqual(receipt["snapshot_sha256"], case_manifest["snapshot_sha256"])
+            self.assertEqual(stored_receipt["model_calls_executed"], False)
+            self.assertEqual(stored_receipt["file_read_by_models_confirmed"], False)
+            self.assertEqual([item["seat"] for item in receipt["participants"]], ["claude", "codex"])
+            self.assertTrue(prompt.is_file())
+            self.assertIn(case_manifest["snapshot_sha256"], prompt.read_text(encoding="utf-8"))
+            self.assertTrue(queue.joinpath("inbox").is_dir())
+
+    def test_prepare_case_refuses_to_remap_existing_root_without_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            first = base / "primeiro"
+            second = base / "segundo"
+            first.mkdir()
+            second.mkdir()
+            (second / "doc.txt").write_text("x", encoding="utf-8")
+            config = base / "config.json"
+            bridge.atomic_json(
+                config,
+                {
+                    "config_version": 2,
+                    "bridge_secret": "g" * 64,
+                    "roots": {"caso": str(first)},
+                },
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "id": "caso",
+                    "path": str(second),
+                    "participant": ["codex"],
+                    "replace": False,
+                    "start": False,
+                    "bridge_dir": str(base / "queue"),
+                    "private_state": str(base / "private"),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+            with self.assertRaisesRegex(ValueError, "já aponta para outra pasta"):
+                bridge.run_prepare_case(args)
+
+    def test_prepare_case_does_not_register_empty_corpus(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            root = base / "vazio"
+            root.mkdir()
+            (root / ".env").write_text("TOKEN=x", encoding="utf-8")
+            config = base / "config.json"
+            bridge.atomic_json(
+                config,
+                {"config_version": 2, "bridge_secret": "j" * 64, "roots": {}},
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "id": "caso-vazio",
+                    "path": str(root),
+                    "participant": ["codex"],
+                    "replace": False,
+                    "start": False,
+                    "bridge_dir": str(base / "queue"),
+                    "private_state": str(base / "private"),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+            with self.assertRaisesRegex(ValueError, "nenhum arquivo elegível"):
+                bridge.run_prepare_case(args)
+            self.assertEqual(bridge.load_config(config)["roots"], {})
+
+    def test_prepare_case_creates_private_config_on_first_use(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            root = base / "caso"
+            root.mkdir()
+            (root / "documento.txt").write_text("conteúdo", encoding="utf-8")
+            config = base / "config.json"
+            args = type(
+                "Args",
+                (),
+                {
+                    "id": "primeiro-caso",
+                    "path": str(root),
+                    "participant": ["codex"],
+                    "replace": False,
+                    "start": False,
+                    "bridge_dir": str(base / "queue"),
+                    "private_state": str(base / "private"),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(bridge.run_prepare_case(args), 0)
+            saved = bridge.load_config(config)
+            self.assertEqual(saved["roots"]["primeiro-caso"], str(root))
+            self.assertGreaterEqual(len(saved["bridge_secret"]), 64)
+            self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+
+    def test_prepare_case_start_reuses_existing_daemon(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            root = base / "caso"
+            root.mkdir()
+            (root / "documento.txt").write_text("conteúdo", encoding="utf-8")
+            queue = base / "queue"
+            private = base / "private"
+            config = base / "config.json"
+            bridge.atomic_json(
+                config,
+                {"config_version": 2, "bridge_secret": "h" * 64, "roots": {}},
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "id": "caso",
+                    "path": str(root),
+                    "participant": ["codex"],
+                    "replace": False,
+                    "start": True,
+                    "bridge_dir": str(queue),
+                    "private_state": str(private),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+            stdout = io.StringIO()
+            with bridge.exclusive_daemon(private):
+                with contextlib.redirect_stdout(stdout):
+                    self.assertEqual(bridge.run_prepare_case(args), 0)
+            receipt = json.loads(stdout.getvalue())
+            self.assertEqual(receipt["bridge_service"]["status"], "already_running")
+            self.assertIsNone(receipt["bridge_service"]["pid"])
+
+    def test_start_bridge_service_launches_and_records_background_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw).resolve()
+            root = base / "caso"
+            root.mkdir()
+            queue = base / "queue"
+            private = base / "private"
+            config = base / "config.json"
+            bridge.atomic_json(
+                config,
+                {"config_version": 2, "bridge_secret": "i" * 64, "roots": {"caso": str(root)}},
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "bridge_dir": str(queue),
+                    "private_state": str(private),
+                    "config": str(config),
+                    "manifest": str(bridge.DEFAULT_MANIFEST),
+                },
+            )()
+            state = None
+            try:
+                state = bridge.start_bridge_service(args, root)
+                self.assertEqual(state["status"], "started")
+                self.assertGreater(state["pid"], 0)
+                self.assertTrue((private / "bridge-daemon.json").is_file())
+                self.assertTrue(bridge.bridge_daemon_running(private))
+                self.assertNotIn("--allow-root", state["command"])
+                self.assertEqual(state["root_policy"], "registered_roots")
+            finally:
+                if state and state.get("pid"):
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(state["pid"], bridge.signal.SIGTERM)
+                    for _ in range(30):
+                        if not bridge.bridge_daemon_running(private):
+                            break
+                        time.sleep(0.05)
 
     def test_run_once_signed_dry_run_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

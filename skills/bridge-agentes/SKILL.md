@@ -8,8 +8,11 @@ description: "Conectar Claude Cowork às CLIs locais Claude Code, Codex, Cursor/
 Interprete o texto fornecido após `/multiagente-consensual:bridge-agentes` como pedido em linguagem
 natural. Antes de chamar um modelo externo, mostre **Entendi assim** e aguarde confirmação explícita.
 
-Leia integralmente [references/cowork-bridge.md](../../references/cowork-bridge.md) antes de criar ou
-processar pedidos.
+Antes de criar ou processar pedidos, leia integralmente `references/cowork-bridge.md` na raiz do
+plugin. No pacote NPM local, o fallback é
+`~/.local/share/multiagente-consensual/marketplace/plugins/multiagente-consensual/references/cowork-bridge.md`;
+no Cowork, resolva o arquivo sob `${CLAUDE_PLUGIN_ROOT}`. Não presuma que a referência fica dois
+níveis acima da skill, pois as superfícies compartilhadas podem copiar apenas o diretório da skill.
 
 ## Detectar a superfície
 
@@ -45,6 +48,21 @@ Se a sessão não permitir aguardar, informe o request id e retome pelo mesmo id
 voltar. Não crie pedido duplicado.
 
 ## Modo host
+
+Para preparar uma pasta de caso em uma única etapa, prefira:
+
+```text
+multiagent-bridge prepare-case --id meu-caso --path /caminho/do/caso --start
+```
+
+O comando cadastra a raiz, cria `.multiagent/case-manifest.json` com hashes, gera o prompt comum,
+faz preflight sem chamadas a modelos e inicia ou reutiliza o daemon. `ready` no preflight comprova
+rota, binário e configuração de acesso; não comprova que o modelo leu os arquivos. A confirmação de
+leitura só existe depois que cada manifestação enumera os arquivos efetivamente consultados.
+
+Use `--participant cadeira` repetidamente para limitar a equipe. Sem esse argumento, a equipe
+principal configurada é preparada. Um `root_id` não pode ser remapeado silenciosamente; `--replace`
+é exigido quando a mesma identificação precisa apontar para outra pasta.
 
 Use:
 

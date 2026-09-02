@@ -100,6 +100,52 @@ Use esses campos para navegação e diagnóstico, não como prova de independên
 
 ## Operação no host
 
+### Preparação simplificada do caso
+
+O fluxo recomendado reúne inicialização, cadastro da raiz, inventário, hashes e preflight em um
+único comando:
+
+```bash
+multiagent-bridge prepare-case \
+  --id processo-123 \
+  --path /caminho/do/projeto \
+  --participant claude \
+  --participant codex \
+  --participant kimi \
+  --start
+```
+
+Se `--path` for omitido, usa o diretório atual. Se nenhum `--participant` for informado, prepara a
+equipe principal do manifesto. `--start` inicia o daemon em segundo plano ou reutiliza o daemon que
+já possui o lock da fila. O daemon iniciado por esse atalho consulta dinamicamente as raízes
+registradas; assim, casos preparados depois não exigem reinício. Pedidos do Cowork continuam
+limitados a `root_id` cadastrado e assinatura HMAC válida.
+
+Na raiz do caso, o comando cria:
+
+```text
+.multiagent/
+├── case-manifest.json          arquivos, tamanhos, hashes e exclusões
+├── prepare-case-receipt.json  rotas, modelos, binários e estado do bridge
+└── prompts/
+    └── shared-case.md          instrução comum vinculada ao snapshot
+```
+
+O inventário não segue symlinks e exclui preventivamente `.env`, credenciais, chaves privadas,
+`.git`, `node_modules`, ambientes virtuais, caches, builds e a própria pasta `.multiagent`. O hash do
+snapshot depende apenas da lista ordenada de arquivos elegíveis, seus tamanhos e hashes.
+
+O preflight não chama modelos nem consome quota. `status=ready` significa que a rota e o binário
+estão disponíveis e configurados para receber a raiz; `file_read_by_models_confirmed=false` continua
+até cada agente responder e declarar os arquivos realmente lidos. A skill deve pausar se uma cadeira
+estiver `unavailable`, sem substituí-la silenciosamente.
+
+Por segurança, um identificador já cadastrado para outra pasta só pode ser alterado com
+`--replace`. Se o corpus estiver vazio ou contiver apenas arquivos excluídos, a preparação falha sem
+cadastrar a raiz.
+
+### Operação manual
+
 ```bash
 multiagent-bridge init
 multiagent-bridge register-root --id processo-123 --path /caminho/do/projeto
