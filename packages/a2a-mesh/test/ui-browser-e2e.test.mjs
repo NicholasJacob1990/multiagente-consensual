@@ -178,28 +178,30 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   const page = await browser.newPage();
   let grokRoute = 'cursor';
   const models = {
-    claude: 'claude-opus-5', codex: 'gpt-5.6-sol', gemini: 'gemini-3.7-flash-high', grok: 'cursor-grok-4.6-high',
-    glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3', qwen: 'opencode-go/qwen3.8-max',
+    claude: 'claude-opus-5', codex: 'gpt-5.6-sol', gemini: 'gemini-3.8-flash-high', grok: 'cursor-grok-4.6-high',
+    glm: 'opencode-go/glm-5.3', deepseek: 'opencode-go/deepseek-v4-pro', kimi: 'kimi-code/k3', qwen: 'opencode-go/qwen3.8-max', muse: 'opencode-go/muse-spark-1.3-contributor',
   };
   const availableModels = {
-    gemini: ['gemini-3.7-flash-high', 'gemini-3.1-pro-high'],
+    gemini: ['gemini-3.8-flash-high', 'gemini-3.1-pro-high'],
     grok: ['cursor-grok-4.6-high', 'cursor-grok-4.6-xhigh'],
     glm: ['opencode-go/glm-5.3', 'opencode-go/kimi-k3'],
     deepseek: ['opencode-go/deepseek-v4-pro', 'opencode-go/glm-5.3'],
+    kimi: ['kimi-code/k3', 'opencode-go/kimi-k3'],
     qwen: ['opencode-go/qwen3.8-max', 'opencode-go/deepseek-v4-pro'],
+    muse: ['opencode-go/muse-spark-1.3-contributor', 'opencode/muse-spark-1.3-contributor-free'],
   };
   const externalRequests = [];
   page.on('request', (request) => {
     const url = request.url();
-    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-8]\/(health|mesh\/config)/.test(url)) externalRequests.push(url);
+    if (!url.startsWith(origin) && !/127\.0\.0\.1:314[1-9]\/(health|mesh\/config)/.test(url)) externalRequests.push(url);
   });
-  await page.route(/http:\/\/127\.0\.0\.1:314[1-8]\/mesh\/config/, async (route) => {
+  await page.route(/http:\/\/127\.0\.0\.1:314[1-9]\/mesh\/config/, async (route) => {
     const requestUrl = new URL(route.request().url());
-    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen' }[requestUrl.port];
+    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen', 3149: 'muse' }[requestUrl.port];
     const payload = JSON.parse(route.request().postData() || '{}');
     if (agent === 'grok') grokRoute = payload.route || grokRoute;
     if (payload.model) models[agent] = payload.model;
-    const configurableModels = ['gemini', 'glm', 'deepseek', 'qwen'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor');
+    const configurableModels = ['gemini', 'glm', 'deepseek', 'kimi', 'qwen', 'muse'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor');
     const configuredModel = agent === 'grok' && grokRoute === 'official' ? 'grok-4.6' : models[agent];
     await route.fulfill({
       status: 200,
@@ -208,8 +210,8 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
       body: JSON.stringify({
         ok: true,
         agent,
-        route: agent === 'grok' ? grokRoute : (agent === 'gemini' ? 'antigravity' : ['glm', 'deepseek', 'qwen'].includes(agent) ? 'opencode' : agent),
-        cliBinary: agent === 'grok' ? (grokRoute === 'official' ? 'grok' : 'cursor-agent') : (agent === 'gemini' ? 'agy' : ['glm', 'deepseek', 'qwen'].includes(agent) ? 'opencode' : agent),
+        route: agent === 'grok' ? grokRoute : (agent === 'gemini' ? 'antigravity' : ['glm', 'deepseek', 'qwen', 'muse'].includes(agent) ? 'opencode' : agent),
+        cliBinary: agent === 'grok' ? (grokRoute === 'official' ? 'grok' : 'cursor-agent') : (agent === 'gemini' ? 'agy' : ['glm', 'deepseek', 'qwen', 'muse'].includes(agent) ? 'opencode' : agent),
         configuredModel,
         availableModels: agent === 'grok' && grokRoute === 'official' ? ['grok-4.6'] : (availableModels[agent] || [configuredModel]),
         configurableModels,
@@ -218,9 +220,9 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
       }),
     });
   });
-  await page.route(/http:\/\/127\.0\.0\.1:314[1-8]\/health/, async (route) => {
+  await page.route(/http:\/\/127\.0\.0\.1:314[1-9]\/health/, async (route) => {
     const port = new URL(route.request().url()).port;
-    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen' }[port];
+    const agent = { 3141: 'codex', 3142: 'claude', 3143: 'gemini', 3144: 'grok', 3145: 'glm', 3146: 'deepseek', 3147: 'kimi', 3148: 'qwen', 3149: 'muse' }[port];
     await route.fulfill({
       status: 200,
       headers: { 'Access-Control-Allow-Origin': '*' },
@@ -229,7 +231,7 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
         status: 'ok', mode: 'cli',
         configuredModel: agent === 'grok' && grokRoute === 'official' ? 'grok-4.6' : models[agent],
         availableModels: agent === 'grok' && grokRoute === 'official' ? ['grok-4.6'] : (availableModels[agent] || [models[agent]]),
-        configurableModels: ['gemini', 'glm', 'deepseek', 'qwen'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor'),
+        configurableModels: ['gemini', 'glm', 'deepseek', 'kimi', 'qwen', 'muse'].includes(agent) || (agent === 'grok' && grokRoute === 'cursor'),
         modelVerified: !['grok', 'kimi'].includes(agent),
         ...(agent === 'grok' ? { route: grokRoute, cliBinary: grokRoute === 'official' ? 'grok' : 'cursor-agent', authenticated: grokRoute !== 'official', provider: 'xai' } : {}),
         ...(agent === 'codex' ? { reasoningEffort: 'xhigh' } : {}),
@@ -258,11 +260,13 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
 
   await page.getByRole('button', { name: 'Modelos e CLIs' }).click();
   await page.getByRole('heading', { name: 'Modelos, CLIs e rotas efetivas' }).waitFor();
-  await page.waitForFunction(() => document.querySelectorAll('#model-config-body tr').length === 8);
-  assert.equal(await page.locator('#model-config-body tr').count(), 8);
+  await page.waitForFunction(() => document.querySelectorAll('#model-config-body tr').length === 9);
+  assert.equal(await page.locator('#model-config-body tr').count(), 9);
   assert.equal(await page.getByLabel('Modelo de execução de gemini').locator('option').count(), 2);
   assert.equal(await page.getByLabel('Modelo de execução de grok').locator('option').count(), 2);
   assert.equal(await page.getByLabel('Modelo de execução de glm').locator('option').count(), 2);
+  assert.equal(await page.getByLabel('Modelo de execução de kimi').locator('option').count(), 2);
+  assert.equal(await page.getByLabel('Modelo de execução de muse').locator('option').count(), 2);
   assert.match(await page.locator('[data-model-agent="gemini"]').innerText(), /2 modelo\(s\) disponíveis/);
   await page.getByLabel('Rota de execução do Grok').selectOption('official');
   await page.getByText(/CLI oficial não autenticada/).waitFor();
@@ -275,6 +279,8 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   await page.getByText(/Modelo de gemini alterado/).waitFor();
   await page.getByLabel('Modelo de execução de glm').selectOption('opencode-go/kimi-k3');
   await page.getByText(/Modelo de glm alterado/).waitFor();
+  await page.getByLabel('Modelo de execução de kimi').selectOption('opencode-go/kimi-k3');
+  await page.getByText(/Modelo de kimi alterado/).waitFor();
   await page.getByRole('button', { name: 'Concluir' }).click();
 
   await page.waitForFunction(() => document.querySelector('#sse-badge')?.textContent?.includes('●'));
@@ -321,10 +327,10 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   assert.equal(await page.locator('#composer-error').getAttribute('role'), 'alert');
 
   await input.fill('/team --profile=normal Produza uma síntese curta');
-  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen']) {
+  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen', 'muse']) {
     await page.locator(`[data-team-agent="${agent}"]`).click();
   }
-  await page.getByText('2 de 8').waitFor();
+  await page.getByText('2 de 9').waitFor();
   await input.press('Enter');
   await page.getByText('Result / team').waitFor();
   const teamBubble = page.locator('#chat .bubble-gold').last();
@@ -362,7 +368,7 @@ test('painel executa comandos, detalhes, clear e virtualização em navegador re
   assert.equal(ensembleRequest.params.early_exit, true);
   assert.deepEqual(ensembleRequest.params.agents, ['claude', 'codex']);
   await page.getByRole('button', { name: 'Todos' }).click();
-  await page.getByText('8 de 8').waitFor();
+  await page.getByText('9 de 9').waitFor();
 
   await input.fill('/status');
   await input.press('Enter');

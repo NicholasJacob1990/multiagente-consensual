@@ -1,7 +1,7 @@
 {
   "name": "@nicholasjacob90/a2a-mesh",
-  "version": "1.4.1",
-  "description": "Mesh A2A local, bridge MCP e painel web para oito agentes CLI, com seleção de equipe.",
+  "version": "1.4.2",
+  "description": "Mesh A2A local, bridge MCP e painel web para nove agentes CLI, com seleção de equipe.",
   "type": "module",
   "bin": {
     "a2a-mesh": "npm/cli.mjs",
@@ -12,6 +12,7 @@
     "runtime/",
     "!runtime/a2a-claude/.playwright-mcp/",
     "!runtime/a2a-claude/*.png",
+    "!runtime/a2a-codex/.claude-octopus/",
     "README.md"
   ],
   "scripts": {
@@ -40,6 +41,7 @@
     "gemini",
     "grok",
     "qwen",
+    "muse",
     "cursor",
     "dashboard"
   ],

@@ -28,14 +28,17 @@ REQUIRED_SEAT_ROUTES = {
     "grok": "cursor",
     "kimi": "kimi",
     "gemini": "antigravity",
+    "muse": "opencode",
 }
 REQUIRED_CLAUDE_MODEL = "claude-opus-5"
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
 REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
 REQUIRED_KIMI_MODEL = "kimi-code/k3"
-REQUIRED_GEMINI_MODEL = "gemini-3.7-flash-high"
+REQUIRED_KIMI_MODELS = ["kimi-code/k3", "opencode-go/kimi-k3"]
+REQUIRED_GEMINI_MODEL = "gemini-3.8-flash-high"
 REQUIRED_OPENCODE_MODEL = "opencode-go/glm-5.3"
-REQUIRED_MAX_EFFORT_SEATS = {"kimi", "glm", "deepseek", "qwen"}
+REQUIRED_MUSE_MODEL = "opencode-go/muse-spark-1.3-contributor"
+REQUIRED_MAX_EFFORT_SEATS = {"kimi", "glm", "deepseek", "qwen", "muse"}
 CANONICAL_ENTRYPOINTS = {
     "consenso", "loop-debate-agentes", "workflow-agentes", "multiagente",
     "bridge-agentes"
@@ -114,11 +117,10 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
             "fixed_default": "fixed_default",
             "fixed_per_route": "fixed_per_route",
         }.get(entry.get("model_policy"), f"preserve_requested_{seat}_model")
-        lines.extend([
-            f"    model_policy: {policy}",
-            f"    notes: {notes}",
-            "",
-        ])
+        lines.append(f"    model_policy: {policy}")
+        if entry.get("allowed_models"):
+            lines.append(f"    allowed_models: [{', '.join(entry['allowed_models'])}]")
+        lines.extend([f"    notes: {notes}", ""])
         return lines
 
     lines = [
@@ -157,15 +159,20 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
     lines += grok_lines
     lines += route_block(
         "kimi", "kimi",
-        "Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório.",
+        "Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório; "
+        "OAuth é o padrão e a chave OpenCode Go pode ser escolhida explicitamente.",
     )
     lines += route_block(
         "gemini", "antigravity",
-        "Gemini 3.7 Flash High deve ser invocado pelo Antigravity CLI.",
+        "Gemini 3.8 Flash High deve ser invocado pelo Antigravity CLI.",
     )
     lines += route_block(
         "opencode", "opencode",
-        "OpenCode usa GLM-5.3 por padrão e preserva outro modelo solicitado; GLM, DeepSeek e Qwen exigem esforço max.",
+        "OpenCode usa GLM-5.3 por padrão e preserva outro modelo solicitado; GLM, DeepSeek, Qwen e Muse exigem esforço max.",
+    )
+    lines += route_block(
+        "muse", "opencode",
+        "Muse Spark 1.3 Contributor usa exclusivamente OpenCode Go com esforço max.",
     )
     return "\n".join(lines).rstrip() + "\n"
 
@@ -263,6 +270,8 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     kimi = seats.get("kimi", {}) if isinstance(seats.get("kimi"), dict) else {}
     if kimi.get("default_model") != REQUIRED_KIMI_MODEL:
         errors.append(f"modelo padrão do Kimi deve ser {REQUIRED_KIMI_MODEL}")
+    if kimi.get("allowed_models") != REQUIRED_KIMI_MODELS:
+        errors.append("Kimi deve permitir exatamente OAuth e OpenCode Go para o K3")
     if kimi.get("context_window_tokens") != 1048576:
         errors.append("Kimi K3 deve declarar a janela integral de 1.048.576 tokens")
 
@@ -276,6 +285,12 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     gemini = seats.get("gemini", {}) if isinstance(seats.get("gemini"), dict) else {}
     if gemini.get("default_model") != REQUIRED_GEMINI_MODEL:
         errors.append(f"modelo padrão do Gemini deve ser {REQUIRED_GEMINI_MODEL}")
+
+    muse = seats.get("muse", {}) if isinstance(seats.get("muse"), dict) else {}
+    if muse.get("default_model") != REQUIRED_MUSE_MODEL:
+        errors.append(f"modelo obrigatório do Muse deve ser {REQUIRED_MUSE_MODEL}")
+    if muse.get("model_policy") != "fixed_default":
+        errors.append("Muse deve usar model_policy=fixed_default")
 
     opencode = seats.get("opencode", {}) if isinstance(seats.get("opencode"), dict) else {}
     if opencode.get("default_model") != REQUIRED_OPENCODE_MODEL:

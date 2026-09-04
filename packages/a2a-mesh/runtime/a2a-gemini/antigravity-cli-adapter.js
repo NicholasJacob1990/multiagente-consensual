@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-export const REQUIRED_ANTIGRAVITY_MODEL = 'gemini-3.7-flash-high';
+export const REQUIRED_ANTIGRAVITY_MODEL = 'gemini-3.8-flash-high';
 
 function normalizeModelLabel(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');

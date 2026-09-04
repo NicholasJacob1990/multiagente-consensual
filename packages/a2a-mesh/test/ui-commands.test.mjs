@@ -79,7 +79,7 @@ test("painel aceita aliases portáveis e não transforma comando desconhecido em
 });
 
 test("painel mostra modelos efetivos e substitui streaming duplicado no resultado final", () => {
-  for (const agent of ["claude", "codex", "gemini", "grok", "glm", "deepseek", "kimi", "qwen"]) {
+  for (const agent of ["claude", "codex", "gemini", "grok", "glm", "deepseek", "kimi", "qwen", "muse"]) {
     assert.match(ui, new RegExp(`id="label-${agent}"`));
   }
   assert.match(ui, /function effectiveHealthModel\(health\)/);
@@ -112,6 +112,7 @@ test("painel mostra modelos efetivos e substitui streaming duplicado no resultad
 test("painel permite selecionar a equipe e aplicar override por comando", () => {
   assert.match(ui, /id="team-picker"/);
   assert.match(ui, /data-team-agent="qwen"/);
+  assert.match(ui, /data-team-agent="muse"/);
   assert.match(ui, /function setTeamSelection\(agents\)/);
   assert.match(ui, /function parseAgentsOption\(text/);
   assert.match(ui, /--agents=claude,codex,qwen/);

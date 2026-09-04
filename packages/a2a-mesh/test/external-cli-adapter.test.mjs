@@ -40,22 +40,30 @@ test('rotas externas preservam o modelo selecionado e esforço máximo do OpenCo
   const qwen = buildExternalCliArgs({ route: 'opencode', model: 'opencode-go/qwen3.8-max', prompt: 'tarefa' });
   assert.deepEqual(qwen.slice(0, 8), ['run', '--model', 'opencode-go/qwen3.8-max', '--variant', 'max', '--format', 'json', '--auto']);
   const kimi = buildExternalCliArgs({ route: 'kimi-code', model: 'kimi-code/k3', prompt: 'tarefa' });
-  assert.deepEqual(kimi, ['--prompt', 'tarefa', '--output-format', 'stream-json']);
-  assert.equal(kimi.includes('kimi-code/k3'), false);
+  assert.deepEqual(kimi, ['--model', 'kimi-code/k3', '--prompt', 'tarefa', '--output-format', 'stream-json']);
+  const kimiOpenCode = buildExternalCliArgs({ route: 'kimi-code', model: 'opencode-go/kimi-k3', prompt: 'tarefa' });
+  assert.deepEqual(kimiOpenCode, ['--model', 'opencode-go/kimi-k3', '--prompt', 'tarefa', '--output-format', 'stream-json']);
 });
 
-test('Kimi usa wrapper seguro e não inclui modelo nem credencial nos argumentos', () => {
+test('Kimi verifica separadamente OAuth e provider efêmero OpenCode Go', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'a2a-kimi-secure-'));
   const binary = path.join(root, 'kimi-secure');
-  fs.writeFileSync(binary, '#!/bin/sh\nprintf "__kimi_env__  type=openai  models=1  source=inline\\n"\n', { mode: 0o700 });
+  fs.writeFileSync(binary, `#!/bin/sh
+case "$*" in
+  *opencode-go/kimi-k3*) printf "__kimi_env__  type=openai  models=1  source=inline\\n" ;;
+  *) printf "managed:kimi-code  type=kimi  models=4  source=oauth\\n" ;;
+esac
+`, { mode: 0o700 });
   try {
-    const probe = verifyKimiSecureCredential(binary);
-    assert.equal(probe.verified, true);
-    assert.equal(probe.credentialProvider, 'opencode-go');
-    assert.equal(probe.credentialSource, 'macos-keychain');
-    const args = buildExternalCliArgs({ route: 'kimi-code', model: 'kimi-code/k3', prompt: 'teste' });
-    assert.equal(args.includes('--model'), false);
-    assert.equal(args.join(' ').includes('kimi-code/k3'), false);
+    const managed = verifyKimiSecureCredential(binary, 'kimi-code/k3');
+    assert.equal(managed.verified, true);
+    assert.equal(managed.credentialProvider, 'managed:kimi-code');
+    assert.equal(managed.credentialSource, 'oauth');
+
+    const openCode = verifyKimiSecureCredential(binary, 'opencode-go/kimi-k3');
+    assert.equal(openCode.verified, true);
+    assert.equal(openCode.credentialProvider, 'opencode-go');
+    assert.equal(openCode.credentialSource, 'macos-keychain');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -66,7 +74,7 @@ test('sonda Kimi falha fechada quando o wrapper não ativa o provider efêmero',
   const binary = path.join(root, 'kimi-secure');
   fs.writeFileSync(binary, '#!/bin/sh\nprintf "opencode-go  type=openai  models=1  source=inline\\n"\n', { mode: 0o700 });
   try {
-    assert.throws(() => verifyKimiSecureCredential(binary), /did not activate/);
+    assert.throws(() => verifyKimiSecureCredential(binary, 'opencode-go/kimi-k3'), /did not activate/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "plugin_version": "1.10.1",
+  "plugin_version": "1.10.2",
   "contract": "multiagent_local_v1",
   "policy": "strict",
   "fallback": "pause_and_report",
@@ -35,7 +35,7 @@
     "same_user_unrestricted_shell_is_cryptographic_boundary": false
   },
   "identity_policy": {
-    "canonical_external_seats": ["claude", "codex", "gemini", "grok", "kimi", "opencode", "glm", "deepseek", "qwen"],
+    "canonical_external_seats": ["claude", "codex", "gemini", "grok", "kimi", "opencode", "glm", "deepseek", "qwen", "muse"],
     "aliases_never_create_independent_seats": true,
     "local_persona_homonyms_count_as_external_seat": false,
     "route_provider_and_fixed_model_must_match_manifest": true,
@@ -107,14 +107,15 @@
   "seats": {
     "claude": {"route": "claude", "provider": "anthropic", "default_model": "claude-opus-5", "model_policy": "fixed_default", "aliases": ["opus", "opus-5", "claude-opus", "claude-opus-5"]},
     "codex": {"route": "codex", "provider": "openai", "default_model": "gpt-5.6-sol", "default_effort": "xhigh", "model_policy": "fixed_default", "aliases": ["gpt-5.6-sol"]},
-    "gemini": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.7-flash-high", "model_policy": "preserve_requested", "aliases": ["gemini-3.7", "gemini-3.7-flash-high"]},
-    "antigravity": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.7-flash-high", "model_policy": "preserve_requested", "aliases": ["agy", "gemini-3.7-antigravity"]},
+    "gemini": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.8-flash-high", "model_policy": "preserve_requested", "aliases": ["gemini-3.8", "gemini-3.8-flash-high"]},
+    "antigravity": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.8-flash-high", "model_policy": "preserve_requested", "aliases": ["agy", "gemini-3.8-antigravity"]},
     "grok": {"route": "cursor", "allowed_routes": ["cursor", "grok_official"], "provider": "xai", "default_model": "cursor-grok-4.6-high", "models_by_route": {"cursor": "cursor-grok-4.6-high", "grok_official": "grok-4.6"}, "effort_by_route": {"cursor": "high", "grok_official": "xhigh"}, "model_policy": "fixed_per_route", "silent_fallback": false, "aliases": ["grok-4.6-high", "cursor-grok-4.6-high", "grok-4.6", "grok-official"]},
-    "kimi": {"route": "kimi", "provider": "opencode-go", "upstream_model_family": "moonshot/kimi", "default_model": "kimi-code/k3", "default_effort": "max", "effort_policy": "fixed_max", "context_window_tokens": 1048576, "model_policy": "preserve_requested", "aliases": ["kimi-k3", "k3"]},
+    "kimi": {"route": "kimi", "provider": "moonshot", "credential_providers": ["managed:kimi-code", "opencode-go"], "upstream_model_family": "moonshot/kimi", "default_model": "kimi-code/k3", "allowed_models": ["kimi-code/k3", "opencode-go/kimi-k3"], "default_effort": "max", "effort_policy": "fixed_max", "context_window_tokens": 1048576, "model_policy": "preserve_requested", "aliases": ["kimi-k3", "k3"]},
     "opencode": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "model_policy": "preserve_requested", "aliases": ["opencode"]},
     "glm": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["glm-5.3", "opencode-go/glm-5.3"]},
     "deepseek": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/deepseek-v4-pro", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["deepseek-v4-pro", "opencode-go/deepseek-v4-pro"]},
-    "qwen": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/qwen3.8-max", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["qwen-coder", "qwen3.8-max", "opencode-go/qwen3.8-max"]}
+    "qwen": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/qwen3.8-max", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["qwen-coder", "qwen3.8-max", "opencode-go/qwen3.8-max"]},
+    "muse": {"route": "opencode", "provider": "opencode-go", "upstream_model_family": "muse/spark", "default_model": "opencode-go/muse-spark-1.3-contributor", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["muse-spark", "muse-spark-1.3", "muse-spark-1.3-contributor", "opencode-go/muse-spark-1.3-contributor"]}
   },
   "consensus": {
     "contract": "veredito_consenso_v1",

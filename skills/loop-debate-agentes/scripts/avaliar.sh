@@ -131,7 +131,7 @@ modelo_padrao() {
   case "$1" in
     codex) echo gpt-5.6-sol ;;
     claude) echo claude-opus-5 ;;
-    gemini|antigravity) echo gemini-3.7-flash-high ;;
+    gemini|antigravity) echo gemini-3.8-flash-high ;;
     grok) echo cursor-grok-4.6-high ;;
     kimi) echo kimi-code/k3 ;;
     *) echo "" ;;
@@ -143,7 +143,7 @@ modelo_exige_esforco_maximo() {
   local NOME_MODELO
   NOME_MODELO=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')
   case "$MOTOR_MODELO:$NOME_MODELO" in
-    kimi:*|*:*kimi*|*:*glm-*|*:*deepseek*|*:*qwen*) return 0 ;;
+    kimi:*|*:*kimi*|*:*glm-*|*:*deepseek*|*:*qwen*|*:*muse-spark*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -163,7 +163,7 @@ esforco_padrao() {
 
 valida_esforco_modelo() {
   if modelo_exige_esforco_maximo "$1" "$2" && [ "$3" != "max" ]; then
-    die "Kimi, GLM, DeepSeek e Qwen exigem esforço max; recebido '$3' para '$2'"
+    die "Kimi, GLM, DeepSeek, Qwen e Muse exigem esforço max; recebido '$3' para '$2'"
   fi
 }
 

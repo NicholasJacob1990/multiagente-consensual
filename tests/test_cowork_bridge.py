@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import uuid
@@ -307,6 +308,17 @@ class CoworkBridgeTests(unittest.TestCase):
             self.assertIn(case_manifest["snapshot_sha256"], prompt.read_text(encoding="utf-8"))
             self.assertTrue(queue.joinpath("inbox").is_dir())
 
+    def test_default_case_team_includes_muse(self) -> None:
+        participants = bridge.case_participants(self.manifest, [])
+        seats = [item["seat"] for item in participants]
+        self.assertEqual(
+            seats,
+            ["claude", "codex", "gemini", "grok", "glm", "deepseek", "kimi", "qwen", "muse"],
+        )
+        muse = participants[-1]
+        self.assertEqual(muse["route"], "opencode")
+        self.assertEqual(muse["model"], "opencode-go/muse-spark-1.3-contributor")
+
     def test_prepare_case_refuses_to_remap_existing_root_without_replace(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             base = Path(raw).resolve()
@@ -476,6 +488,24 @@ class CoworkBridgeTests(unittest.TestCase):
                         if not bridge.bridge_daemon_running(private):
                             break
                         time.sleep(0.05)
+
+    def test_wait_for_bridge_daemon_accepts_delayed_lock_acquisition(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            private = Path(raw) / "private"
+
+            def delayed_daemon() -> None:
+                time.sleep(0.35)
+                with bridge.exclusive_daemon(private):
+                    time.sleep(0.25)
+
+            worker = threading.Thread(target=delayed_daemon)
+            worker.start()
+            try:
+                self.assertTrue(
+                    bridge.wait_for_bridge_daemon(private, timeout=1.0, poll_interval=0.02)
+                )
+            finally:
+                worker.join()
 
     def test_run_once_signed_dry_run_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

@@ -17,15 +17,19 @@ export async function startExternalAgentServer(agentId) {
   let bootModelVerified = false;
   let bootCredentialVerified = false;
   let bootCredentialError = null;
-  let availableModels = [configuredModel];
+  let bootCredentialProvider = null;
+  let bootCredentialSource = null;
+  let availableModels = definition.models ? [...definition.models] : [configuredModel];
   if (definition.route === 'opencode') {
     const probe = verifyOpenCodeModelAvailable(binary, configuredModel);
     availableModels = probe.availableModels;
     bootModelVerified = true;
   } else if (definition.route === 'kimi-code') {
     try {
-      const probe = verifyKimiSecureCredential(binary);
+      const probe = verifyKimiSecureCredential(binary, configuredModel);
       bootCredentialVerified = probe.verified;
+      bootCredentialProvider = probe.credentialProvider;
+      bootCredentialSource = probe.credentialSource;
     } catch (error) {
       bootCredentialError = error.message;
     }
@@ -48,6 +52,7 @@ export async function startExternalAgentServer(agentId) {
     if (value.includes('deepseek')) return 'deepseek';
     if (value.includes('/glm-')) return 'zai';
     if (value.includes('/qwen')) return 'alibaba';
+    if (value.includes('/muse-')) return 'muse';
     if (value.includes('/kimi')) return 'moonshot';
     if (value.includes('/grok')) return 'xai';
     if (value.includes('/gpt-')) return 'openai';
@@ -79,6 +84,9 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
     bootModelVerified,
     bootCredentialVerified,
     bootCredentialError,
+    bootCredentialProvider,
+    bootCredentialSource,
+    modelPolicy: definition.modelPolicy,
   });
 
   const agentCard = {
@@ -107,23 +115,38 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
       cliBinary: binary,
       configuredModel: executor.configuredModel,
       availableModels,
-      configurableModels: definition.route === 'opencode',
+      configurableModels: definition.modelPolicy === 'selectable-catalog',
       reasoningEffort: definition.reasoningEffort,
       provider: effectiveProvider(executor.configuredModel),
       modelVendor: definition.modelVendor || effectiveProvider(executor.configuredModel),
-      credentialProvider: definition.credentialProvider || (definition.route === 'opencode' ? 'opencode-go' : effectiveProvider(executor.configuredModel)),
+      credentialProvider: executor.healthState.credentialProvider || definition.credentialProvider || (definition.route === 'opencode' ? 'opencode-go' : effectiveProvider(executor.configuredModel)),
+      credentialSource: executor.healthState.credentialSource,
+      dataPolicy: definition.dataPolicy || null,
     };
   }
 
   function updateRuntimeConfiguration(update = {}) {
-    if (definition.route !== 'opencode') {
-      throw new Error(`${definition.displayName} não usa um catálogo OpenCode configurável.`);
-    }
     const requestedModel = String(update.model || '').trim();
-    if (!requestedModel) throw new Error('Informe o modelo OpenCode desejado.');
-    const probe = verifyOpenCodeModelAvailable(binary, requestedModel);
-    availableModels = probe.availableModels;
-    executor.updateModel(requestedModel, { verified: probe.verified });
+    if (!requestedModel) throw new Error('Informe o modelo desejado.');
+    if (definition.route === 'opencode') {
+      const probe = verifyOpenCodeModelAvailable(binary, requestedModel);
+      availableModels = probe.availableModels;
+      executor.updateModel(requestedModel, { verified: probe.verified });
+    } else if (definition.route === 'kimi-code') {
+      if (!availableModels.includes(requestedModel)) {
+        throw new Error(`modelo Kimi não permitido: ${requestedModel}`);
+      }
+      const probe = verifyKimiSecureCredential(binary, requestedModel);
+      executor.updateModel(requestedModel, {
+        verified: probe.verified,
+        credentialProvider: probe.credentialProvider,
+        credentialSource: probe.credentialSource,
+        credentialAvailable: true,
+        credentialError: null,
+      });
+    } else {
+      throw new Error(`${definition.displayName} não usa um catálogo configurável.`);
+    }
     return runtimeConfiguration();
   }
 
@@ -149,7 +172,7 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
     planExecutor: runtime.planExecutor,
     executeTask: executor.executeTask,
     runtimeConfigDetails: runtimeConfiguration,
-    updateRuntimeConfig: definition.route === 'opencode' ? updateRuntimeConfiguration : null,
+    updateRuntimeConfig: definition.modelPolicy === 'selectable-catalog' ? updateRuntimeConfiguration : null,
     healthDetails: () => ({
       model: executor.configuredModel,
       route: definition.route,
@@ -162,9 +185,10 @@ Você pode analisar e, quando autorizado pela tarefa, criar ou alterar código, 
       credentialError: executor.healthState.credentialError,
       configuredModel: executor.configuredModel,
       availableModels,
-      configurableModels: definition.route === 'opencode',
+      configurableModels: definition.modelPolicy === 'selectable-catalog',
       reasoningEffort: definition.reasoningEffort,
-      modelPolicy: definition.route === 'opencode' ? 'selectable-catalog' : 'fixed',
+      modelPolicy: definition.modelPolicy,
+      dataPolicy: definition.dataPolicy || null,
       modelVerified: executor.healthState.modelVerified,
       lastObservedModel: executor.healthState.lastObservedModel,
       lastObservedAt: executor.healthState.lastObservedAt,

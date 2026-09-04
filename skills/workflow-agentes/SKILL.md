@@ -50,7 +50,7 @@ Não ativar swarm, roteamento adaptativo ou votação automática quando o usuá
 
 Aceitar agentes OpenCode nomeados, modelos no formato `provedor/modelo` e CLIs/seats `claude`, `codex`, `gemini`, `antigravity`, `grok`, `kimi` e `opencode`.
 
-Ler `~/.agents/multiagent-manifest.json` e congelar separadamente seat, modelo e rota efetiva. A política exige Claude Opus 5 (`claude-opus-5`) via Claude Code, Grok via Cursor, Kimi K3 via Kimi Code e Gemini 3.7 via Antigravity. Manifesto inválido ou indisponibilidade pausa a cadeira; não autoriza troca silenciosa de CLI, modelo ou provedor. O YAML legado é somente visão gerada.
+Ler `~/.agents/multiagent-manifest.json` e congelar separadamente seat, modelo e rota efetiva. A política exige Claude Opus 5 (`claude-opus-5`) via Claude Code, Grok via Cursor, Kimi K3 via Kimi Code, Gemini 3.8 via Antigravity e Muse Spark 1.3 via OpenCode Go. Manifesto inválido ou indisponibilidade pausa a cadeira; não autoriza troca silenciosa de CLI, modelo ou provedor. O YAML legado é somente visão gerada.
 
 Quando o usuário escrever `@nome`, resolver nesta ordem:
 

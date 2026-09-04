@@ -72,6 +72,7 @@ CASE_DEFAULT_PARTICIPANTS = (
     "deepseek",
     "kimi",
     "qwen",
+    "muse",
 )
 
 
@@ -958,6 +959,17 @@ def bridge_daemon_running(private_state: Path) -> bool:
     return False
 
 
+def wait_for_bridge_daemon(
+    private_state: Path, timeout: float = 3.0, poll_interval: float = 0.05
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if bridge_daemon_running(private_state):
+            return True
+        time.sleep(poll_interval)
+    return bridge_daemon_running(private_state)
+
+
 def spawn_detached_process(
     command: list[str], cwd: Path, stdout_path: Path, stderr_path: Path
 ) -> int:
@@ -1017,8 +1029,7 @@ def start_bridge_service(args: argparse.Namespace, root: Path) -> dict[str, Any]
     stdout_path = dirs["state"] / "bridge.stdout.log"
     stderr_path = dirs["state"] / "bridge.stderr.log"
     daemon_pid = spawn_detached_process(command, root, stdout_path, stderr_path)
-    time.sleep(0.25)
-    if not bridge_daemon_running(private_state):
+    if not wait_for_bridge_daemon(private_state):
         raise RuntimeError(
             f"bridge encerrou durante a inicialização; consulte {stderr_path}"
         )

@@ -40,7 +40,7 @@ test('Gemini usa Antigravity como rota efetiva quando o provider CLI é antigrav
   fs.writeFileSync(agy, [
     '#!/bin/sh',
     'if [ "$1" = "models" ]; then',
-    "  printf 'gemini-3.7-flash-high\\tGemini 3.7 Flash (High)\\n'",
+    "  printf 'gemini-3.8-flash-high\\tGemini 3.8 Flash (High)\\n'",
     '  exit 0',
     'fi',
     'exit 23',
@@ -65,7 +65,7 @@ test('Gemini usa Antigravity como rota efetiva quando o provider CLI é antigrav
       A2A_SUPERVISOR_MODE: 'foreground',
       GEMINI_CLI_PROVIDER: 'antigravity',
       ANTIGRAVITY_CLI: agy,
-      ANTIGRAVITY_MODEL: 'gemini-3.7-flash-high',
+      ANTIGRAVITY_MODEL: 'gemini-3.8-flash-high',
       USE_CLI: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -76,7 +76,7 @@ test('Gemini usa Antigravity como rota efetiva quando o provider CLI é antigrav
     const health = await waitForHealth(port, child);
     assert.equal(health.mode, 'cli');
     assert.equal(health.route, 'antigravity');
-    assert.equal(health.model, 'gemini-3.7-flash-high');
+    assert.equal(health.model, 'gemini-3.8-flash-high');
     assert.deepEqual(health.runtimeIdentity, {
       owner: '@nicholasjacob90/a2a-mesh',
       agentId: 'gemini',

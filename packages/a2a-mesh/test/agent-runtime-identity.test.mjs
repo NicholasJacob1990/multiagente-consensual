@@ -51,7 +51,7 @@ test('supervisores rejeitam health legado que não pertence ao peer empacotado',
 test('supervisores aceitam somente a identidade gerenciada do peer esperado', async () => {
   const managed = {
     status: 'ok',
-    model: 'gemini-3.7-flash-high',
+    model: 'gemini-3.8-flash-high',
     mode: 'cli',
     protocolVersion: '1.0',
     runtimeIdentity: {

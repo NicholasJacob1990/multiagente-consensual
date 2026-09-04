@@ -272,7 +272,7 @@ function serverEnvironment(home) {
     CODEX_REASONING_EFFORT: process.env.CODEX_REASONING_EFFORT || "xhigh",
     CLAUDE_CLI_MODEL: process.env.CLAUDE_CLI_MODEL || "claude-opus-5",
     GEMINI_CLI_PROVIDER: process.env.GEMINI_CLI_PROVIDER || "antigravity",
-    ANTIGRAVITY_MODEL: process.env.ANTIGRAVITY_MODEL || "gemini-3.7-flash-high",
+    ANTIGRAVITY_MODEL: process.env.ANTIGRAVITY_MODEL || "gemini-3.8-flash-high",
     A2A_GEMINI_ALLOW_MODEL_FALLBACK: process.env.A2A_GEMINI_ALLOW_MODEL_FALLBACK || "false",
     A2A_GEMINI_STARTUP_TIMEOUT_MS: process.env.A2A_GEMINI_STARTUP_TIMEOUT_MS || "120000",
     A2A_ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS: process.env.A2A_ANTIGRAVITY_MODEL_PROBE_TIMEOUT_MS || "90000",
@@ -285,10 +285,12 @@ function serverEnvironment(home) {
     A2A_DEEPSEEK_MODEL: "opencode-go/deepseek-v4-pro",
     A2A_KIMI_MODEL: "kimi-code/k3",
     A2A_QWEN_MODEL: "opencode-go/qwen3.8-max",
+    A2A_MUSE_MODEL: "opencode-go/muse-spark-1.3-contributor",
     A2A_GLM_REASONING_EFFORT: "max",
     A2A_DEEPSEEK_REASONING_EFFORT: "max",
     A2A_KIMI_REASONING_EFFORT: "max",
     A2A_QWEN_REASONING_EFFORT: "max",
+    A2A_MUSE_REASONING_EFFORT: "max",
     USE_CLI: process.env.USE_CLI || "force",
   };
 }
@@ -673,7 +675,7 @@ async function doctor(args) {
     const model = officialGrokAvailability(env);
     checks.push({ name: "model:grok:official", ok: model.available, warning: model.available && !model.authenticated, detail: model.reason || model.model });
   }
-  for (const name of ["glm", "deepseek", "qwen"]) {
+  for (const name of ["glm", "deepseek", "qwen", "muse"]) {
     if (!executable(AGENTS[name].cliBinary, env)) continue;
     const model = openCodeModelAvailability(name, env);
     checks.push({ name: `model:${name}`, ok: model.available, detail: model.reason || model.model });

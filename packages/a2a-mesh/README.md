@@ -8,7 +8,7 @@ Runtime complementar do **Multiagente Consensual**. O pacote fornece:
 - sandbox visual com uma sessão de CLI por agente;
 - armazenamento SQLite e eventos SSE locais.
 
-![Página inicial do A2A Mesh com oito agentes e ações rápidas](https://github.com/NicholasJacob1990/multiagente-consensual/releases/download/v1.10.0/a2a-mesh-home-v1.10.png)
+![Página inicial do A2A Mesh com agentes e ações rápidas](https://github.com/NicholasJacob1990/multiagente-consensual/releases/download/v1.10.0/a2a-mesh-home-v1.10.png)
 
 Visão completa da página inicial, com atalhos, equipe e compositor:
 
@@ -50,21 +50,29 @@ a2a-mesh open
 | DeepSeek V4 Pro | `127.0.0.1:3146` | `http://127.0.0.1:3146/ui` | `http://127.0.0.1:3146/sandbox` |
 | Kimi K3 | `127.0.0.1:3147` | `http://127.0.0.1:3147/ui` | `http://127.0.0.1:3147/sandbox` |
 | Qwen 3.8 Max | `127.0.0.1:3148` | `http://127.0.0.1:3148/ui` | `http://127.0.0.1:3148/sandbox` |
+| Muse Spark 1.3 | `127.0.0.1:3149` | `http://127.0.0.1:3149/ui` | `http://127.0.0.1:3149/sandbox` |
 
 O Grok é um peer nativo com duas rotas explícitas e sem fallback silencioso. A rota padrão usa
 `cursor-agent` com `cursor-grok-4.6-high`; a alternativa usa a CLI oficial `grok` com `grok-4.6`
 e esforço `xhigh`. A rota Cursor confirma `system/init.model`; a rota oficial confirma o catálogo
 da CLI e exige autenticação própria por `grok login`. Ambas têm limite padrão de dois processos.
 
-GLM, DeepSeek e Qwen são peers nativos pelo OpenCode Go. Começam, respectivamente, com
-`opencode-go/glm-5.3`, `opencode-go/deepseek-v4-pro` e `opencode-go/qwen3.8-max`, mas cada cadeira
+GLM, DeepSeek, Qwen e Muse são peers nativos pelo OpenCode Go. Começam, respectivamente, com
+`opencode-go/glm-5.3`, `opencode-go/deepseek-v4-pro`, `opencode-go/qwen3.8-max` e
+`opencode-go/muse-spark-1.3-contributor`, mas cada cadeira
 pode receber qualquer modelo atualmente listado por `opencode models`, sempre na variante `max`.
 Como as três rotas compartilham o banco local do OpenCode, o adaptador serializa seus
-processos para evitar disputa de lock. O Kimi é invocado exclusivamente pelo Kimi Code com
-`kimi-code/k3`, por meio do wrapper `kimi-secure`: ele lê do Keychain a mesma credencial OpenCode
-Go já cadastrada no host e cria o provider `KIMI_MODEL_*` apenas na memória do processo-filho. A
+processos para evitar disputa de lock. O Kimi é invocado exclusivamente pelo Kimi Code, por meio
+do wrapper `kimi-secure`. `kimi-code/k3` usa o OAuth do Kimi Code e permanece o padrão;
+`opencode-go/kimi-k3` lê do Keychain a credencial OpenCode Go já cadastrada no host e cria o
+provider `KIMI_MODEL_*` apenas na memória do processo-filho. Nas sessões OAuth, esse provider
+efêmero também é carregado para expor **Kimi K3 · OpenCode Go** no `/model`, sem mudar o modelo
+inicial. A
 mesh distingue `credentialAvailable` de `modelVerified`; a primeira chamada autenticada confirma o
 modelo efetivo. A chave não entra nos argumentos, no banco ou nos logs, e não há fallback silencioso.
+Muse Spark 1.3 exige adesão explícita à política de coleta de dados no workspace OpenCode. Enquanto
+o opt-in não for concluído, a rota permanece configurada, mas a chamada falha fechada com
+`DataPolicyError`; ela nunca é substituída pela variante gratuita.
 
 ## Comandos do painel
 
@@ -74,7 +82,7 @@ outro modo:
 
 | Comando | Ação |
 |---|---|
-| `/call <agente> <prompt>` | Chama qualquer um dos oito agentes |
+| `/call <agente> <prompt>` | Chama qualquer um dos nove agentes |
 | `/broadcast <prompt>` | Consulta a equipe selecionada em paralelo, sem síntese |
 | `/consensus <questão>` | Consulta a equipe selecionada e pede síntese ao juiz |
 | `/debate <tema>` | Executa rodadas adversariais e julgamento |
@@ -83,7 +91,7 @@ outro modo:
 | `/plan <descrição>` | Alterna autor e revisor sobre um plano persistido |
 | `/help` | Mostra a ajuda completa no próprio painel |
 
-A seleção fica salva no navegador. **Todos** restaura as oito cadeiras. Para substituir a seleção
+A seleção fica salva no navegador. **Todos** restaura as nove cadeiras. Para substituir a seleção
 somente numa execução, acrescente `--agents=claude,codex,qwen`; o override vale para broadcast,
 consenso, ensemble, debate e team.
 

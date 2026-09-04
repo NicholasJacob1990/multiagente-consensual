@@ -161,7 +161,7 @@ Decisão não é consenso: se as cadeiras divergirem, informar o dissenso mesmo 
 
 ## Participantes
 
-Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa Cursor com `cursor-grok-4.6-high` por padrão ou a CLI oficial da xAI com `grok-4.6` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial e Gemini 3.7 usa o Antigravity. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
+Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa Cursor com `cursor-grok-4.6-high` por padrão ou a CLI oficial da xAI com `grok-4.6` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial, Gemini 3.8 usa o Antigravity e Muse Spark 1.3 usa o OpenCode Go. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
 
 Usar `scripts/cli_adapter.py` para participantes externos:
 
@@ -169,11 +169,12 @@ Usar `scripts/cli_adapter.py` para participantes externos:
 |---|---|---|
 | Claude | `claude` | Aceitar modelo/alias informado |
 | Codex | `codex` | Aceitar modelo informado |
-| Gemini | `gemini` | Rota `agy`, padrão `gemini-3.7-flash-high`; aceitar override explícito disponível na conta |
-| Antigravity | `antigravity` | Comando `agy`, padrão `gemini-3.7-flash-high`, acesso integral com aprovação automática |
+| Gemini | `gemini` | Rota `agy`, padrão `gemini-3.8-flash-high`; aceitar override explícito disponível na conta |
+| Antigravity | `antigravity` | Comando `agy`, padrão `gemini-3.8-flash-high`, acesso integral com aprovação automática |
+| Muse | `muse` | OpenCode Go · `opencode-go/muse-spark-1.3-contributor` · esforço `max` |
 | Grok | `grok` | Cursor CLI com `cursor-grok-4.6-high` (padrão) ou CLI oficial xAI com `grok-4.6` (seleção explícita) |
-| Kimi | `kimi` | Kimi Code CLI oficial, padrão `kimi-code/k3`, 1.048.576 tokens, esforço `max` obrigatório e provedor efetivo OpenCode Go |
-| OpenCode | `opencode` | Provedor/modelo no formato do CLI; Kimi, GLM, DeepSeek e Qwen usam esforço `max` obrigatório |
+| Kimi | `kimi` | Kimi Code CLI oficial, padrão `kimi-code/k3` via OAuth; opção explícita `opencode-go/kimi-k3` com chave OpenCode Go; 1.048.576 tokens e esforço `max` obrigatório |
+| OpenCode | `opencode` | Provedor/modelo no formato do CLI; Kimi, GLM, DeepSeek, Qwen e Muse usam esforço `max` obrigatório |
 
 O host ocupa sua cadeira sem iniciar cópia recursiva de si mesmo. Se o usuário selecionar um modelo específico, repassar `--model`; caso contrário, usar o padrão atual do CLI e informar que ele não foi fixado. Modelos distintos servidos pelo mesmo provedor continuam sendo cadeiras distintas, mas declarar o provedor compartilhado. Personas não contam como modelos independentes.
 
@@ -253,7 +254,7 @@ Criar um prompt temporário por cadeira e fase sem interpolar seu conteúdo em s
 python3 scripts/cli_adapter.py invoke --participant NOME --root RAIZ --prompt-file ARQUIVO [--model MODELO] [--effort NIVEL] [--output-policy adaptive_up_to_native_max] [--persist-native-session]
 ```
 
-O adaptador não usa shell. O nível de esforço só deve ser enviado quando a rota o oferece; o Antigravity aceita `--effort`. Kimi K3, GLM, DeepSeek e Qwen usam `max` obrigatoriamente e não podem ser rebaixados. Na rota OpenCode, modelos não chineses continuam aceitando o nível solicitado ou o padrão nativo. Remover temporários ao terminar. Não incluir `.env`, credenciais, tokens, chaves privadas ou conteúdo fora do manifesto.
+O adaptador não usa shell. O nível de esforço só deve ser enviado quando a rota o oferece; o Antigravity aceita `--effort`. Kimi K3, GLM, DeepSeek, Qwen e Muse usam `max` obrigatoriamente e não podem ser rebaixados. Na rota OpenCode, outros modelos continuam aceitando o nível solicitado ou o padrão nativo. Remover temporários ao terminar. Não incluir `.env`, credenciais, tokens, chaves privadas ou conteúdo fora do manifesto.
 
 ## Rodada 1 — análise cega
 

@@ -42,19 +42,20 @@ routes:
   kimi:
     cli: kimi
     binary: kimi-secure
-    provider: opencode-go
+    provider: moonshot
     default_model: kimi-code/k3
     default_effort: max
     model_policy: preserve_requested_kimi_model
-    notes: Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório.
+    allowed_models: [kimi-code/k3, opencode-go/kimi-k3]
+    notes: Kimi K3 deve ser invocado pelo Kimi Code CLI oficial com esforço max obrigatório; OAuth é o padrão e a chave OpenCode Go pode ser escolhida explicitamente.
 
   gemini:
     cli: antigravity
     binary: agy
     provider: google
-    default_model: gemini-3.7-flash-high
+    default_model: gemini-3.8-flash-high
     model_policy: preserve_requested_gemini_model
-    notes: Gemini 3.7 Flash High deve ser invocado pelo Antigravity CLI.
+    notes: Gemini 3.8 Flash High deve ser invocado pelo Antigravity CLI.
 
   opencode:
     cli: opencode
@@ -62,4 +63,13 @@ routes:
     provider: opencode-go
     default_model: opencode-go/glm-5.3
     model_policy: preserve_requested_opencode_model
-    notes: OpenCode usa GLM-5.3 por padrão e preserva outro modelo solicitado; GLM, DeepSeek e Qwen exigem esforço max.
+    notes: OpenCode usa GLM-5.3 por padrão e preserva outro modelo solicitado; GLM, DeepSeek, Qwen e Muse exigem esforço max.
+
+  muse:
+    cli: opencode
+    binary: opencode
+    provider: opencode-go
+    default_model: opencode-go/muse-spark-1.3-contributor
+    default_effort: max
+    model_policy: fixed_default
+    notes: Muse Spark 1.3 Contributor usa exclusivamente OpenCode Go com esforço max.

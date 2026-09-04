@@ -165,8 +165,8 @@ export function verifyOpenCodeModelAvailable(binary, model, { timeoutMs = 90_000
   return { verified: true, model, availableModels: models };
 }
 
-export function verifyKimiSecureCredential(binary, { timeoutMs = 30_000 } = {}) {
-  const result = spawnSync(binary, ['provider', 'list'], {
+export function verifyKimiSecureCredential(binary, model = 'opencode-go/kimi-k3', { timeoutMs = 30_000 } = {}) {
+  const result = spawnSync(binary, ['--model', model, 'provider', 'list'], {
     encoding: 'utf8',
     timeout: timeoutMs,
     env: { ...process.env, NO_COLOR: '1' },
@@ -175,10 +175,20 @@ export function verifyKimiSecureCredential(binary, { timeoutMs = 30_000 } = {}) 
   if (result.status !== 0) {
     throw new Error(`Kimi secure credential probe failed (${result.status}): ${(result.stderr || '').trim() || 'sem diagnóstico'}`);
   }
-  if (!String(result.stdout || '').includes('__kimi_env__')) {
-    throw new Error('Kimi secure credential probe did not activate the ephemeral provider');
+  const output = String(result.stdout || '');
+  if (model === 'kimi-code/k3') {
+    if (!output.includes('managed:kimi-code')) {
+      throw new Error('Kimi secure credential probe did not find the managed OAuth provider');
+    }
+    return { verified: true, credentialProvider: 'managed:kimi-code', credentialSource: 'oauth' };
   }
-  return { verified: true, credentialProvider: 'opencode-go', credentialSource: 'macos-keychain' };
+  if (model === 'opencode-go/kimi-k3') {
+    if (!output.includes('__kimi_env__')) {
+      throw new Error('Kimi secure credential probe did not activate the ephemeral provider');
+    }
+    return { verified: true, credentialProvider: 'opencode-go', credentialSource: 'macos-keychain' };
+  }
+  throw new Error(`unsupported Kimi secure model: ${model}`);
 }
 
 export function buildExternalCliArgs({ route, model, prompt }) {
@@ -186,10 +196,9 @@ export function buildExternalCliArgs({ route, model, prompt }) {
     return ['run', '--model', model, '--variant', 'max', '--format', 'json', '--auto', prompt];
   }
   if (route === 'kimi-code') {
-    // KIMI_MODEL_* defines an in-memory provider backed by the OpenCode Go
-    // credential. Passing --model here would take precedence and select the
-    // persistent alias whose config intentionally contains no copied secret.
-    return ['--prompt', prompt, '--output-format', 'stream-json'];
+    // The wrapper preserves the managed OAuth alias and removes only the
+    // OpenCode Go alias before defining its provider through KIMI_MODEL_*.
+    return ['--model', model, '--prompt', prompt, '--output-format', 'stream-json'];
   }
   throw new Error(`Unsupported external CLI route: ${route}`);
 }
@@ -214,20 +223,23 @@ export function createExternalCliExecutor({
   sharedLockPath = route === 'opencode' ? path.join(os.tmpdir(), 'a2a-opencode-go.lock') : '',
   bootCredentialVerified = false,
   bootCredentialError = null,
+  bootCredentialProvider = null,
+  bootCredentialSource = null,
+  modelPolicy = route === 'opencode' ? 'selectable-catalog' : 'fixed',
 } = {}) {
   let activeModel = model;
   const semaphore = createSemaphore(Math.max(1, maxProcesses));
   const parser = route === 'opencode' ? parseOpenCodeStreamLine : parseKimiStreamLine;
   const healthState = {
     configuredModel: activeModel,
-    modelPolicy: route === 'opencode' ? 'selectable-catalog' : 'fixed',
+    modelPolicy,
     modelVerified: Boolean(bootModelVerified),
     lastObservedModel: null,
     lastObservedAt: null,
     lastUsage: null,
     lastCost: null,
-    credentialProvider: route === 'kimi-code' ? 'opencode-go' : null,
-    credentialSource: route === 'kimi-code' ? 'macos-keychain' : null,
+    credentialProvider: route === 'kimi-code' ? bootCredentialProvider : null,
+    credentialSource: route === 'kimi-code' ? bootCredentialSource : null,
     credentialAvailable: route === 'kimi-code' ? Boolean(bootCredentialVerified) : null,
     credentialError: route === 'kimi-code' ? bootCredentialError : null,
   };
@@ -391,7 +403,13 @@ export function createExternalCliExecutor({
     } finally { release?.(); }
   }
 
-  function updateModel(nextModel, { verified = false } = {}) {
+  function updateModel(nextModel, {
+    verified = false,
+    credentialProvider = healthState.credentialProvider,
+    credentialSource = healthState.credentialSource,
+    credentialAvailable = healthState.credentialAvailable,
+    credentialError = healthState.credentialError,
+  } = {}) {
     const normalized = String(nextModel || '').trim();
     if (!normalized) throw new Error('O modelo selecionado não pode ficar vazio.');
     if (semaphore.active > 0 || semaphore.queued > 0) {
@@ -402,6 +420,12 @@ export function createExternalCliExecutor({
     healthState.modelVerified = Boolean(verified);
     healthState.lastObservedModel = null;
     healthState.lastObservedAt = null;
+    if (route === 'kimi-code') {
+      healthState.credentialProvider = credentialProvider;
+      healthState.credentialSource = credentialSource;
+      healthState.credentialAvailable = credentialAvailable;
+      healthState.credentialError = credentialError;
+    }
     return activeModel;
   }
 

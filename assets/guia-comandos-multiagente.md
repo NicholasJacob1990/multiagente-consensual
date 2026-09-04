@@ -257,7 +257,7 @@ avança quando passa pelos gates configurados.
 | Necessidade | Comece com |
 |---|---|
 | Fazer uma pergunta a um único agente do mesh | `/a2a-call` |
-| Comparar até oito respostas rápidas | `/a2a-broadcast` |
+| Comparar até nove respostas rápidas | `/a2a-broadcast` |
 | Dar papéis diferentes a Codex, Claude, Gemini e Grok | `/a2a-team` |
 | Debater um tema sem produzir versões sucessivas | `/a2a-debate` ou `/council` |
 | Conselho multimodelo com crítica adversarial | `/llm-council` |
@@ -662,17 +662,21 @@ Exemplos naturais:
 
 ## 4. Comandos A2A Mesh
 
-O A2A Mesh é o caminho mais direto entre oito peers: Codex, Claude, Gemini,
-Grok 4.6, GLM 5.3, DeepSeek V4 Pro, Kimi K3 e Qwen 3.8 Max. Na porta 3144,
-o Grok pode usar Cursor CLI ou a CLI oficial da xAI; GLM, DeepSeek e Qwen usam o OpenCode Go
-nas portas 3145, 3146 e 3148, com variante `max`; Kimi usa exclusivamente o Kimi
+O A2A Mesh é o caminho mais direto entre nove peers: Codex, Claude, Gemini,
+Grok 4.6, GLM 5.3, DeepSeek V4 Pro, Kimi K3, Qwen 3.8 Max e Muse Spark 1.3. Na porta 3144,
+o Grok pode usar Cursor CLI ou a CLI oficial da xAI; GLM, DeepSeek, Qwen e Muse usam o OpenCode Go
+nas portas 3145, 3146, 3148 e 3149, com variante `max`; Kimi usa exclusivamente o Kimi
 Code na porta 3147. Pelo painel, os modelos podem ser escolhidos nos catálogos reais do
 OpenCode, Cursor e Antigravity. Claude, Codex, Kimi e a rota oficial do Grok permanecem
 fixos. Nenhuma rota usa fallback silencioso.
 
+Muse Spark 1.3 exige opt-in explícito de coleta de dados no workspace OpenCode. Sem essa adesão,
+a cadeira fica configurada, mas retorna `DataPolicyError`; o sistema não troca para a variante
+gratuita nem para outro modelo.
+
 No painel, a faixa **Equipe** permite ligar e desligar cadeiras antes do envio.
 A seleção fica persistida no navegador e vale para broadcast, consenso, ensemble,
-debate e team. O botão **Todos** restaura as oito cadeiras; a opção textual
+debate e team. O botão **Todos** restaura as nove cadeiras; a opção textual
 `--agents=claude,codex,qwen` substitui a seleção apenas na execução atual.
 
 O botão **Modelos e CLIs** abre um quadro com agente, CLI, rota, modelo configurado,
@@ -763,7 +767,7 @@ Mostra agente, porta, modelo, modo CLI/API, tarefas ativas e estado `ok` ou
 ```
 
 Fluxo: prompt → agente escolhido → resposta integral. Os nomes aceitos pelo mesh
-são `codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek`, `kimi` e `qwen`.
+são `codex`, `claude`, `gemini`, `grok`, `glm`, `deepseek`, `kimi`, `qwen` e `muse`.
 
 **Caso concreto:** você está no Claude, mas quer uma segunda opinião pontual do
 Codex sobre um diff, sem convocar o restante do painel.
@@ -776,7 +780,7 @@ Codex sobre um diff, sem convocar o restante do painel.
 /a2a-broadcast Identifique a causa mais provável deste deadlock e proponha um teste.
 ```
 
-Fluxo: um prompt → até oito respostas independentes → apresentação lado a lado. Não
+Fluxo: um prompt → até nove respostas independentes → apresentação lado a lado. Não
 há crítica entre os agentes nem síntese obrigatória.
 
 **Caso concreto:** levantar rapidamente três hipóteses antes de iniciar uma
@@ -1674,7 +1678,7 @@ O resultado fica associado à sessão e aparece no visualizador.
 
 O OpenCode possui oito famílias configuradas. Quando nenhuma identidade ou
 modelo for informado, a sessão usa `opencode-go/glm-5.3` por padrão; uma escolha
-explícita feita pelo usuário continua prevalecendo. Kimi, GLM, DeepSeek e Qwen
+explícita feita pelo usuário continua prevalecendo. Kimi, GLM, DeepSeek, Qwen e Muse
 usam sempre esforço `max`; uma configuração inferior é recusada, não aplicada
 silenciosamente:
 
@@ -1682,12 +1686,13 @@ silenciosamente:
 |---|---|
 | `@claude-opus` | Claude Code · `claude-opus-5` |
 | `@gpt-codex` | Codex CLI · `gpt-5.6-sol`, esforço `xhigh` |
-| `@gemini-pro` | Antigravity CLI · `gemini-3.7-flash-high` |
+| `@gemini-pro` | Antigravity CLI · `gemini-3.8-flash-high` |
 | `@grok` | ponte para a rota Grok selecionada: Cursor · `cursor-grok-4.6-high` ou xAI CLI oficial · `grok-4.6` |
 | `@glm` | `opencode-go/glm-5.3` |
 | `@deepseek` | `opencode-go/deepseek-v4-pro` |
 | `@qwen-coder` | `opencode-go/qwen3.8-max` |
-| `@kimi` | seat canônica externa: Kimi Code · `kimi-code/k3`, usando os créditos OpenCode Go; o perfil OpenCode homônimo é apenas legado explícito |
+| `@muse` | `opencode-go/muse-spark-1.3-contributor` via OpenCode Go |
+| `@kimi` | seat canônica externa: Kimi Code · `kimi-code/k3` via OAuth por padrão; `opencode-go/kimi-k3` usa explicitamente a chave OpenCode Go; o perfil OpenCode homônimo é apenas legado explícito |
 
 Cada base tem identidades funcionais:
 
@@ -1730,16 +1735,19 @@ usou Cursor ou a CLI oficial da xAI.
 Nos comandos
 multiagente, `@codex` resolve para o Codex CLI com `gpt-5.6-sol` e esforço
 `xhigh`, `@kimi` resolve para Kimi Code/K3 e `@gemini` para
-Antigravity/Gemini 3.7. A identidade `@gpt-codex` da tabela acima continua sendo
+Antigravity/Gemini 3.8. A identidade `@gpt-codex` da tabela acima continua sendo
 um agente interno do OpenCode e não substitui a cadeira Codex. Perfis homônimos
 internos do OpenCode só podem ser usados quando o usuário pedir explicitamente a
 rota OpenCode. Nunca permita substituição silenciosa durante um run já
 confirmado.
 
-A credencial OpenCode Go reutilizada pelo Kimi não fica em claro no
-`config.toml`. Ela é guardada no Keychain do macOS sob o serviço
+A credencial OpenCode Go opcional do Kimi não fica em claro no `config.toml`.
+Ela é guardada no Keychain do macOS sob o serviço
 `multiagente.kimi-opencode-go`; o bridge usa `kimi-secure`, que injeta o
-provider temporariamente em memória por `KIMI_MODEL_*`. Em terminal interativo,
+provider temporariamente em memória por `KIMI_MODEL_*`. Nas sessões OAuth, o provider efêmero fica disponível
+como **Kimi K3 · OpenCode Go** no seletor `/model`, mas `kimi-code/k3` permanece selecionado por
+padrão. Se a chave não puder ser lida, o wrapper abre somente com OAuth.
+Em terminal interativo,
 o instalador configura `kimi` como alias do wrapper e preserva
 `kimi-original` para atualização ou diagnóstico do binário oficial.
 
@@ -2345,7 +2353,7 @@ assina por HMAC e publica UUID.request.json em inbox
         ↓
 bridge do Mac valida assinatura, antirreplay, raiz, cadeira e modelo
         ↓
-Claude Code | Codex | Cursor/Grok | Kimi Code/K3 | OpenCode | Antigravity/Gemini 3.7
+Claude Code | Codex | Cursor/Grok | Kimi Code/K3 | OpenCode/Muse | Antigravity/Gemini 3.8
         ↓
 outbox recebe stdout, stderr e recibo com hashes pré/pós
         ↓

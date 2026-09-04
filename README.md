@@ -67,7 +67,7 @@ arquivo, pois o aplicativo hospedado não aceita instalação silenciosa pela CL
 ## Servidor A2A e painel local
 
 `--with-a2a` instala o pacote complementar `@nicholasjacob90/a2a-mesh`, registra o MCP `a2a-mesh`
-no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia oito servidores vinculados
+no Codex, Claude Code e Cursor quando essas CLIs forem selecionadas e inicia nove servidores vinculados
 somente a `127.0.0.1`:
 
 | Agente | Porta |
@@ -80,11 +80,15 @@ somente a `127.0.0.1`:
 | DeepSeek V4 Pro via OpenCode Go | 3146 |
 | Kimi K3 via Kimi Code | 3147 |
 | Qwen 3.8 Max via OpenCode Go | 3148 |
+| Muse Spark 1.3 via OpenCode Go | 3149 |
+
+Muse Spark 1.3 requer opt-in explícito de coleta de dados no workspace OpenCode. Sem essa adesão,
+o peer permanece visível, mas falha fechado com `DataPolicyError`, sem recorrer à variante gratuita.
 
 O painel principal fica em `http://127.0.0.1:3142/ui`; o sandbox visual das CLIs fica em
 `http://127.0.0.1:3142/sandbox`. O painel acompanha tarefas e eventos em tempo real e executa
 chamadas individuais, broadcast, equipes, consenso, debate, ensemble e planejamento. No painel,
-selecione visualmente qualquer subconjunto da equipe; **Todos** restaura as oito cadeiras e
+selecione visualmente qualquer subconjunto da equipe; **Todos** restaura as nove cadeiras e
 `--agents=claude,codex,qwen` substitui a seleção somente naquela execução.
 
 As operações longas são duráveis: painel e MCP recebem um `task_id` imediatamente, enquanto o
@@ -226,7 +230,7 @@ ser gravado na pasta compartilhada.
 |---|---|---|
 | Entrada e gates | `/multiagente`, `/consenso` | roteamento automático e aprovação por hash |
 | Melhoria de artefatos | `/loop-debate-agentes`, `/redacao-juridica-consensual` | crítica, réplica, revisão e novas versões |
-| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os oito peers locais |
+| A2A imediato | `/a2a-call`, `/a2a-broadcast`, `/a2a-team`, `/a2a-debate`, `/a2a-consensus`, `/a2a-ensemble` | colaboração rápida entre os nove peers locais |
 | Workflows | `/workflow-agentes`, `/pipeline-agentes`, `/dag-agentes`, `/swarm-agentes`, `/map-reduce-agentes` | papéis, dependências e paralelismo |
 | Seleção | `/torneio-agentes`, `/votacao-agentes`, `/roteamento-adaptativo` | comparar candidatas ou escolher modelos |
 | Conselhos | `/council`, `/council-high`, `/llm-council`, `/multi-debate`, `/pal-council`, `/sage-debate` | deliberação consultiva especializada |
@@ -359,16 +363,21 @@ Rotas obrigatórias atuais:
 
 - Claude Opus 5 (`claude-opus-5`) → Claude Code CLI;
 - Grok → Cursor CLI, modelo `cursor-grok-4.6-high`;
-- Kimi → `kimi-secure`, wrapper do Kimi Code CLI oficial, padrão `kimi-code/k3` (1M, esforço `max` obrigatório), faturado pelos créditos OpenCode Go locais;
+- Kimi → `kimi-secure`, wrapper do Kimi Code CLI oficial, padrão `kimi-code/k3` via OAuth; no painel ou no bridge, `opencode-go/kimi-k3` seleciona explicitamente a mesma cadeira com a chave OpenCode Go do Keychain (1M, esforço `max` obrigatório);
 - Codex → Codex CLI;
-- Gemini → Antigravity (`agy`), padrão `gemini-3.7-flash-high`;
+- Gemini → Antigravity (`agy`), padrão `gemini-3.8-flash-high`;
 - Antigravity → `agy`.
-- OpenCode → `opencode-go/glm-5.3` por padrão, preservando qualquer modelo solicitado explicitamente. Kimi, GLM, DeepSeek e Qwen sempre usam esforço `max`; pedidos de rebaixamento falham em vez de serem aplicados silenciosamente.
+- OpenCode → `opencode-go/glm-5.3` por padrão, preservando qualquer modelo solicitado explicitamente. Kimi, GLM, DeepSeek, Qwen e Muse sempre usam esforço `max`; pedidos de rebaixamento falham em vez de serem aplicados silenciosamente.
 
 Não há substituição silenciosa se uma cadeira falhar.
 
-O wrapper Kimi lê a credencial do serviço `multiagente.kimi-opencode-go` no
-Keychain e cria o provider temporário por variáveis `KIMI_MODEL_*`. Para migrar
+O wrapper Kimi preserva o OAuth para `kimi-code/k3`. Quando o modelo escolhido é
+`opencode-go/kimi-k3`, ele lê a credencial do serviço `multiagente.kimi-opencode-go`
+no Keychain e cria o provider temporário por variáveis `KIMI_MODEL_*`. O mesmo
+provider efêmero é carregado nas sessões OAuth para que **Kimi K3 · OpenCode Go**
+apareça no seletor `/model`; o argumento explícito mantém o OAuth selecionado por
+padrão. Se o Keychain estiver indisponível, a opção é omitida e o OAuth continua.
+Para migrar
 uma instalação antiga que ainda tenha `api_key` no `config.toml`, sem imprimir
 o segredo:
 

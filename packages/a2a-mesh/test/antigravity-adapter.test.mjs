@@ -8,20 +8,21 @@ import {
   parseAntigravityStreamLine,
 } from '../runtime/a2a-gemini/antigravity-cli-adapter.js';
 
-test('modelo Antigravity obrigatório é Gemini 3.7 Flash High', () => {
-  assert.equal(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.7-flash-high');
-  assert.equal(antigravityModelLabelsMatch(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.7-flash-high'), true);
+test('modelo Antigravity obrigatório é Gemini 3.8 Flash High', () => {
+  assert.equal(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.8-flash-high');
+  assert.equal(antigravityModelLabelsMatch(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.8-flash-high'), true);
+  assert.equal(antigravityModelLabelsMatch(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.7-flash-high'), false);
   assert.equal(antigravityModelLabelsMatch(REQUIRED_ANTIGRAVITY_MODEL, 'gemini-3.6-flash-high'), false);
 });
 
 test('parser reconhece catálogo e stream-json real do Antigravity', () => {
   assert.deepEqual(
-    parseAntigravityModels('gemini-3.7-flash-high  Gemini 3.7 Flash (High)\ngemini-3.6-flash-high  Gemini 3.6 Flash (High)\n'),
-    ['gemini-3.7-flash-high', 'gemini-3.6-flash-high'],
+    parseAntigravityModels('gemini-3.8-flash-high  Gemini 3.8 Flash (High)\ngemini-3.7-flash-high  Gemini 3.7 Flash (High)\n'),
+    ['gemini-3.8-flash-high', 'gemini-3.7-flash-high'],
   );
   assert.deepEqual(
-    parseAntigravityStreamLine('{"event":"init","conversation_id":"c1","init":{"model":"gemini-3.7-flash-high"}}'),
-    { event: 'init', model: 'gemini-3.7-flash-high', conversationId: 'c1' },
+    parseAntigravityStreamLine('{"event":"init","conversation_id":"c1","init":{"model":"gemini-3.8-flash-high"}}'),
+    { event: 'init', model: 'gemini-3.8-flash-high', conversationId: 'c1' },
   );
   const delta = parseAntigravityStreamLine('{"event":"step_update","step_update":{"state":"DONE","step_type":"agent_response","text_delta":"OK\\n"}}');
   assert.equal(delta.text, 'OK\n');

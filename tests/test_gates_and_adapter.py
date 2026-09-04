@@ -698,7 +698,7 @@ class AdapterAndGateTests(unittest.TestCase):
             self.assertFalse(any("segredo" in item for item in command), route)
         command, stdin, _env = adapter.build_invocation(
             "gemini", "antigravity", "agy", root, prompt_path, "segredo",
-            "gemini-3.7-flash-high", None, "adaptive_up_to_native_max",
+            "gemini-3.8-flash-high", None, "adaptive_up_to_native_max",
         )
         self.assertIsNone(stdin)
         self.assertIn("--print", command)
@@ -885,6 +885,7 @@ class AdapterAndGateTests(unittest.TestCase):
         codex = adapter.resolve_seat(manifest, "codex", None)
         kimi = adapter.resolve_seat(manifest, "kimi", None)
         gemini = adapter.resolve_seat(manifest, "gemini", None)
+        muse = adapter.resolve_seat(manifest, "muse", None)
         opencode = adapter.resolve_seat(manifest, "opencode", None)
         grok_cursor = adapter.resolve_seat(manifest, "grok", None)
         grok_official = adapter.resolve_seat(
@@ -904,8 +905,18 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(kimi["model"], "kimi-code/k3")
         self.assertEqual(kimi["default_effort"], "max")
         self.assertEqual(kimi["context_window_tokens"], 1048576)
+        kimi_opencode = adapter.resolve_seat(
+            manifest, "kimi", "opencode-go/kimi-k3"
+        )
+        self.assertEqual(kimi_opencode["route"], "kimi")
+        self.assertEqual(kimi_opencode["model"], "opencode-go/kimi-k3")
+        with self.assertRaises(RuntimeError):
+            adapter.resolve_seat(manifest, "kimi", "opencode-go/kimi-k2.6")
         self.assertEqual(gemini["route"], "antigravity")
-        self.assertEqual(gemini["model"], "gemini-3.7-flash-high")
+        self.assertEqual(gemini["model"], "gemini-3.8-flash-high")
+        self.assertEqual(muse["route"], "opencode")
+        self.assertEqual(muse["model"], "opencode-go/muse-spark-1.3-contributor")
+        self.assertEqual(muse["default_effort"], "max")
         self.assertEqual(opencode["route"], "opencode")
         self.assertEqual(opencode["model"], "opencode-go/glm-5.3")
         self.assertEqual(grok_cursor["route"], "cursor")
@@ -921,9 +932,13 @@ class AdapterAndGateTests(unittest.TestCase):
         requested = adapter.resolve_seat(manifest, "opencode", "opencode-go/qwen3.8-max")
         self.assertEqual(requested["model"], "opencode-go/qwen3.8-max")
         self.assertEqual(adapter.resolve_effort(requested, None), "max")
+        muse_requested = adapter.resolve_seat(
+            manifest, "opencode", "opencode-go/muse-spark-1.3-contributor"
+        )
+        self.assertEqual(adapter.resolve_effort(muse_requested, None), "max")
         with self.assertRaises(RuntimeError):
             adapter.resolve_effort(requested, "high")
-        for participant in ("glm", "deepseek", "qwen"):
+        for participant in ("glm", "deepseek", "qwen", "muse"):
             resolved = adapter.resolve_seat(manifest, participant, None)
             self.assertEqual(resolved["default_effort"], "max")
             self.assertEqual(resolved["effort_policy"], "fixed_max")

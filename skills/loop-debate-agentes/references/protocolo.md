@@ -294,13 +294,14 @@ Se o usuário não indicar redator, detectar o host atual e usar o CLI correspon
 |---|---|
 | Claude Code | `claude` |
 | Codex | `codex` |
-| Gemini 3.7 pelo Antigravity CLI | `gemini` |
+| Gemini 3.8 pelo Antigravity CLI | `gemini` |
+| Muse Spark 1.3 pelo OpenCode Go | `muse` |
 | Antigravity CLI | `antigravity` |
 | Grok CLI | `grok` |
 | Kimi K3 pelo Kimi Code CLI | `kimi` |
 | OpenCode | `opencode` |
 
-Ler `~/.agents/multiagent-manifest.json` e distinguir seat semântica, modelo e rota de execução. A política local resolve Codex exclusivamente pelo Codex CLI com `gpt-5.6-sol` e esforço `xhigh`; Grok pelo Cursor com `cursor-grok-4.6-high` por padrão ou pela CLI oficial xAI com `grok-4.6` quando escolhida explicitamente; Claude exclusivamente pelo Claude Code com `claude-opus-5`; Kimi K3 pelo Kimi Code; e Gemini 3.7 pelo Antigravity. Para novas chamadas Claude, Codex ou Grok, rejeitar modelo incompatível com a rota; runs já congelados preservam sua configuração histórica. A configuração efetiva registra modelo, esforço, rota e provedor. Manifesto ausente/inválido ou indisponibilidade pausa em vez de trocar a rota silenciosamente. `model-routing.yaml` é visão gerada e não pode prevalecer sobre o JSON.
+Ler `~/.agents/multiagent-manifest.json` e distinguir seat semântica, modelo e rota de execução. A política local resolve Codex exclusivamente pelo Codex CLI com `gpt-5.6-sol` e esforço `xhigh`; Grok pelo Cursor com `cursor-grok-4.6-high` por padrão ou pela CLI oficial xAI com `grok-4.6` quando escolhida explicitamente; Claude exclusivamente pelo Claude Code com `claude-opus-5`; Kimi K3 pelo Kimi Code; Gemini 3.8 pelo Antigravity; e Muse Spark 1.3 pelo OpenCode Go. Para novas chamadas Claude, Codex ou Grok, rejeitar modelo incompatível com a rota; runs já congelados preservam sua configuração histórica. A configuração efetiva registra modelo, esforço, rota e provedor. Manifesto ausente/inválido ou indisponibilidade pausa em vez de trocar a rota silenciosamente. `model-routing.yaml` é visão gerada e não pode prevalecer sobre o JSON.
 
 Sem avaliador explícito, usar Codex para um redator Claude e Claude para os demais redatores. Se o modelo/provedor efetivo do redator tornar essa escolha coincidente, trocar o padrão para Codex. No modo simples, esse único agente acumula avaliação, crítica e sugestões. No perfil `debate_agents_v1`, preencher três cadeiras elegíveis em `painel_avaliacao`, preservando diversidade conforme a política e sem chamar todos os CLIs. Para o auditor, preferir um modelo/provedor diferente do redator e do painel, sempre em sessão nova e cega. Se isso não for possível, usar uma cadeira elegível em sessão nova e registrar que a auditoria é cega, mas não independente de modelo. Não criar críticos adicionais ou revisor separado sem pedido explícito.
 

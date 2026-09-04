@@ -225,6 +225,14 @@ def resolve_seat(
         default_effort = seat.get("default_effort")
     if route not in data["routes"]:
         raise RuntimeError(f"Rota inexistente para {canonical}: {route}")
+    allowed_models = seat.get("allowed_models")
+    if isinstance(allowed_models, list) and allowed_models:
+        if model in seat.get("aliases", []):
+            model = seat.get("default_model")
+        elif model and model not in allowed_models:
+            raise RuntimeError(
+                f"Modelo incompatível para {canonical}: escolha um de {', '.join(allowed_models)}."
+            )
     if seat.get("model_policy") == "fixed_default":
         fixed = seat.get("default_model")
         if model in seat.get("aliases", []):
@@ -250,7 +258,7 @@ def chinese_model_requires_max_effort(resolved: dict[str, Any]) -> bool:
     if resolved.get("effort_policy") == "fixed_max":
         return True
     model = str(resolved.get("model") or "").lower()
-    return any(marker in model for marker in ("kimi", "glm-", "deepseek", "qwen"))
+    return any(marker in model for marker in ("kimi", "glm-", "deepseek", "qwen", "muse-spark"))
 
 
 def resolve_effort(resolved: dict[str, Any], requested: str | None) -> str | None:
@@ -258,7 +266,7 @@ def resolve_effort(resolved: dict[str, Any], requested: str | None) -> str | Non
     if chinese_model_requires_max_effort(resolved):
         if requested not in {None, "max"}:
             raise RuntimeError(
-                "Kimi, GLM, DeepSeek e Qwen usam esforço máximo obrigatório; use --effort max."
+                "Kimi, GLM, DeepSeek, Qwen e Muse usam esforço máximo obrigatório; use --effort max."
             )
         return "max"
     return requested or resolved.get("default_effort")

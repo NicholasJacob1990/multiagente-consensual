@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>A2A Mesh</title>
 <script>
-  // O painel depende das APIs locais autenticadas nas portas 3142–3148.
+  // O painel depende das APIs locais autenticadas nas portas 3141–3149.
   // Abrir este HTML diretamente por file:// produz uma tela aparentemente
   // funcional, mas sem catálogos nem execução. Corrija a origem imediatamente.
   if (window.location.protocol === 'file:') {
@@ -99,6 +99,7 @@
   .bubble-cyan   { border-color: #22d3ee; background: rgba(34, 211, 238, 0.06); }
   .bubble-violet { border-color: #c084fc; background: rgba(192, 132, 252, 0.06); }
   .bubble-orange { border-color: #f97316; background: rgba(249, 115, 22, 0.07); }
+  .bubble-lime   { border-color: #84cc16; background: rgba(132, 204, 22, 0.07); }
 
   /* Phase separator */
   .phase-sep { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; color: #6b7280; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; }
@@ -1032,6 +1033,7 @@
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-deepseek" class="dot dot-gray"></span><span id="label-deepseek" style="color:#8b949e">DeepSeek</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-kimi" class="dot dot-gray"></span><span id="label-kimi" style="color:#8b949e">Kimi</span></span>
       <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-qwen" class="dot dot-gray"></span><span id="label-qwen" style="color:#8b949e">Qwen</span></span>
+      <span class="flex items-center gap-1.5" style="font-size:0.75rem"><span id="dot-muse" class="dot dot-gray"></span><span id="label-muse" style="color:#8b949e">Muse</span></span>
     </div>
   </div>
   <div class="header-actions">
@@ -1131,8 +1133,8 @@
     <div class="config-strip" id="config-strip" style="display:none">
       <label class="config-chip" data-ops="plain" title="Destino padrão do texto sem comando"><span class="chip-label">Texto livre</span><select id="cfg-defaultAction" data-config-key="defaultAction" aria-label="Destino do texto livre"><option value="broadcast">Equipe</option><option value="call">Agente escolhido</option></select></label>
       <label class="config-chip" data-ops="consensus,ensemble,debate,team,plan"><span class="chip-label">Perfil</span><select id="cfg-profile" data-config-key="profile" aria-label="Perfil de trabalho"><option>fast</option><option>normal</option><option>deep</option></select></label>
-      <label class="config-chip" data-ops="call,plain"><span class="chip-label">Agente</span><select id="cfg-agent" data-config-key="agent" aria-label="Agente alvo"><option>codex</option><option>gemini</option><option>claude</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option></select></label>
-      <label class="config-chip" data-ops="consensus,ensemble,debate,team"><span class="chip-label">Juiz</span><select id="cfg-judge" data-config-key="judge" aria-label="Agente juiz"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option></select></label>
+      <label class="config-chip" data-ops="call,plain"><span class="chip-label">Agente</span><select id="cfg-agent" data-config-key="agent" aria-label="Agente alvo"><option>codex</option><option>gemini</option><option>claude</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option><option>muse</option></select></label>
+      <label class="config-chip" data-ops="consensus,ensemble,debate,team"><span class="chip-label">Juiz</span><select id="cfg-judge" data-config-key="judge" aria-label="Agente juiz"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>glm</option><option>deepseek</option><option>kimi</option><option>qwen</option><option>muse</option></select></label>
       <label class="config-chip" data-ops="ensemble,debate,plan"><span class="chip-label">Rodadas</span><select id="cfg-rounds" data-config-key="rounds" aria-label="Número de rodadas"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>16</option><option>20</option><option>24</option><option>36</option></select></label>
       <label class="config-chip" data-ops="ensemble"><span class="chip-label">Linguagem</span><select id="cfg-language" data-config-key="language" aria-label="Linguagem do código"><option>python</option><option>javascript</option><option>typescript</option><option>rust</option><option>go</option><option>java</option></select></label>
       <label class="config-chip" data-ops="debate"><span class="chip-label">Ordem</span><select id="cfg-order" data-config-key="order" aria-label="Ordem do debate"><option>rotate</option><option>fixed</option><option>random</option></select></label>
@@ -1148,9 +1150,10 @@
       <button type="button" class="team-agent-toggle" data-team-agent="deepseek" aria-pressed="true" style="--agent-color:#22d3ee"><span class="dot"></span>DeepSeek</button>
       <button type="button" class="team-agent-toggle" data-team-agent="kimi" aria-pressed="true" style="--agent-color:#c084fc"><span class="dot"></span>Kimi</button>
       <button type="button" class="team-agent-toggle" data-team-agent="qwen" aria-pressed="true" style="--agent-color:#f97316"><span class="dot"></span>Qwen</button>
-      <span id="team-picker-count" class="team-picker-count">8 de 8</span>
+      <button type="button" class="team-agent-toggle" data-team-agent="muse" aria-pressed="true" style="--agent-color:#84cc16"><span class="dot"></span>Muse</button>
+      <span id="team-picker-count" class="team-picker-count">9 de 9</span>
     </div>
-    <div id="composer-summary" class="composer-summary" aria-live="polite"><strong>Texto livre</strong><span class="summary-dot">·</span><span>Equipe com 8 agentes</span></div>
+    <div id="composer-summary" class="composer-summary" aria-live="polite"><strong>Texto livre</strong><span class="summary-dot">·</span><span>Equipe com 9 agentes</span></div>
     <div id="composer-error" class="composer-error" role="alert" aria-live="assertive"></div>
     <!-- Terminal Input -->
     <div class="terminal-bar" style="position:relative; border-top:none;">
@@ -1215,7 +1218,7 @@ if (clearRequested) {
   localStorage.setItem('meshChatClearedAt', new Date().toISOString());
   history.replaceState(null, '', '/ui');
 }
-const PORTS = { claude: 3142, codex: 3141, gemini: 3143, grok: 3144, glm: 3145, deepseek: 3146, kimi: 3147, qwen: 3148 };
+const PORTS = { claude: 3142, codex: 3141, gemini: 3143, grok: 3144, glm: 3145, deepseek: 3146, kimi: 3147, qwen: 3148, muse: 3149 };
 function peerEndpoint(port, path = '') {
   const url = new URL(BASE);
   url.port = String(port);
@@ -1233,23 +1236,24 @@ const SELF_REFERENCE_PATTERNS = [
 ];
 const AGENT_COLORS = {
   claude: 'purple', codex: 'amber', gemini: 'blue', grok: 'green',
-  glm: 'rose', deepseek: 'cyan', kimi: 'violet', qwen: 'orange',
+  glm: 'rose', deepseek: 'cyan', kimi: 'violet', qwen: 'orange', muse: 'lime',
   system: 'gray', error: 'red', synthesis: 'gold',
   judge: 'gold',
 };
 const AGENT_DOT_COLORS = {
   claude: '#a78bfa', codex: '#fbbf24', gemini: '#60a5fa', grok: '#34d399',
-  glm: '#fb7185', deepseek: '#22d3ee', kimi: '#c084fc', qwen: '#f97316',
+  glm: '#fb7185', deepseek: '#22d3ee', kimi: '#c084fc', qwen: '#f97316', muse: '#84cc16',
 };
 const FALLBACK_AGENT_CATALOG = Object.freeze({
   claude: { displayName: 'Claude', cliBinary: 'claude', route: 'claude', provider: 'anthropic', model: 'claude-opus-5' },
   codex: { displayName: 'Codex', cliBinary: 'codex', route: 'codex', provider: 'openai', model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
-  gemini: { displayName: 'Gemini', cliBinary: 'agy', route: 'antigravity', provider: 'google', model: 'gemini-3.7-flash-high' },
+  gemini: { displayName: 'Gemini', cliBinary: 'agy', route: 'antigravity', provider: 'google', model: 'gemini-3.8-flash-high' },
   grok: { displayName: 'Grok', cliBinary: 'cursor-agent', route: 'cursor', provider: 'xai', model: 'cursor-grok-4.6-high' },
   glm: { displayName: 'GLM 5.3', cliBinary: 'opencode', route: 'opencode', provider: 'zai', modelVendor: 'zai', credentialProvider: 'opencode-go', model: 'opencode-go/glm-5.3', reasoningEffort: 'max' },
   deepseek: { displayName: 'DeepSeek V4 Pro', cliBinary: 'opencode', route: 'opencode', provider: 'deepseek', modelVendor: 'deepseek', credentialProvider: 'opencode-go', model: 'opencode-go/deepseek-v4-pro', reasoningEffort: 'max' },
-  kimi: { displayName: 'Kimi K3', cliBinary: 'kimi-secure', route: 'kimi-code', provider: 'opencode-go', modelVendor: 'moonshot', credentialProvider: 'opencode-go', model: 'kimi-code/k3', reasoningEffort: 'max' },
+  kimi: { displayName: 'Kimi K3', cliBinary: 'kimi-secure', route: 'kimi-code', provider: 'moonshot', modelVendor: 'moonshot', credentialProvider: 'managed:kimi-code', model: 'kimi-code/k3', reasoningEffort: 'max' },
   qwen: { displayName: 'Qwen 3.8 Max', cliBinary: 'opencode', route: 'opencode', provider: 'alibaba', modelVendor: 'alibaba', credentialProvider: 'opencode-go', model: 'opencode-go/qwen3.8-max', reasoningEffort: 'max' },
+  muse: { displayName: 'Muse Spark 1.3', cliBinary: 'opencode', route: 'opencode', provider: 'muse', modelVendor: 'muse', credentialProvider: 'opencode-go', model: 'opencode-go/muse-spark-1.3-contributor', reasoningEffort: 'max' },
 });
 let agentCatalog = { ...FALLBACK_AGENT_CATALOG };
 const latestAgentHealth = new Map();
@@ -1361,13 +1365,13 @@ let historyDraft = '';
 // ============================================
 // Config State (chips)
 // ============================================
-const AGENTS = ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'];
+const AGENTS = ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen', 'muse'];
 
 const CONFIG_OPTIONS = {
   defaultAction: ['broadcast', 'call'],
   profile:  ['fast', 'normal', 'deep'],
-  agent:    ['codex', 'gemini', 'claude', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'],
-  judge:    ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen'],
+  agent:    ['codex', 'gemini', 'claude', 'grok', 'glm', 'deepseek', 'kimi', 'qwen', 'muse'],
+  judge:    ['claude', 'codex', 'gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen', 'muse'],
   rounds:   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 20, 24, 36],
   language: ['python', 'javascript', 'typescript', 'rust', 'go', 'java'],
   order:    ['rotate', 'fixed', 'random'],
@@ -1805,7 +1809,7 @@ function showHelp() {
   bubble.innerHTML = `
     <div style="font-size:0.75rem; color:#8b949e; line-height:1.8;">
       <strong style="color:#c9d1d9;">Terminal Commands</strong><br>
-      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Consulta direta a um dos oito agentes<br>
+      <code>/call &lt;agent&gt; &lt;prompt&gt;</code> — Consulta direta a um dos nove agentes<br>
       <code>/broadcast &lt;prompt&gt;</code> — Uma resposta direta por agente, sem subdelegação<br>
       <code>--agents=claude,codex,qwen</code> — Substitui a seleção visual da equipe nesta execução<br>
       <code>/broadcast --recursive &lt;prompt&gt;</code> — Modo avançado: autoriza delegação entre agentes<br>
@@ -1859,8 +1863,12 @@ function compactHealthModel(agent, health) {
   }
   if (agent === 'glm') return model.replace(/^opencode-go\/glm-/i, '');
   if (agent === 'deepseek') return model.replace(/^opencode-go\/deepseek-/i, '').replace(/-/g, ' ');
-  if (agent === 'kimi') return model.replace(/^kimi-code\//i, '').toUpperCase();
+  if (agent === 'kimi') {
+    const compact = model.replace(/^(?:kimi-code|opencode-go)\/kimi-/i, '').replace(/^kimi-code\//i, '').toUpperCase();
+    return `${compact} · ${model.startsWith('opencode-go/') ? 'OpenCode Go' : 'OAuth'}`;
+  }
   if (agent === 'qwen') return model.replace(/^opencode-go\/qwen/i, '').replace(/-/g, ' ').trim();
+  if (agent === 'muse') return model.replace(/^opencode-go\/muse-/i, '').replace(/-/g, ' ').trim();
   return model
     .replace(/^cursor-/i, '')
     .replace(/^gemini-/i, '')
@@ -1926,9 +1934,18 @@ function modelSelectionControl(agent, configured, configuration) {
   }
   if (!available.includes(configured)) available.unshift(configured);
   const options = available.map((model) => (
-    `<option value="${escapeAttr(model)}"${model === configured ? ' selected' : ''}>${escapeHtml(model)}</option>`
+    `<option value="${escapeAttr(model)}"${model === configured ? ' selected' : ''}>${escapeHtml(
+      agent === 'kimi' && model === 'kimi-code/k3'
+        ? 'Kimi K3 · OAuth Kimi Code'
+        : agent === 'kimi' && model === 'opencode-go/kimi-k3'
+          ? 'Kimi K3 · chave OpenCode Go'
+          : model,
+    )}</option>`
   )).join('');
-  return `<select id="model-choice-${escapeAttr(agent)}" class="model-route-select model-choice-select" aria-label="Modelo de execução de ${escapeAttr(agent)}">${options}</select><div class="model-catalog-count">${available.length} modelo(s) disponíveis neste CLI</div>`;
+  const policyNote = agent === 'muse'
+    ? '<div class="model-catalog-count">Muse exige opt-in explícito de coleta de dados no workspace OpenCode.</div>'
+    : '';
+  return `<select id="model-choice-${escapeAttr(agent)}" class="model-route-select model-choice-select" aria-label="Modelo de execução de ${escapeAttr(agent)}">${options}</select><div class="model-catalog-count">${available.length} modelo(s) disponíveis neste CLI</div>${policyNote}`;
 }
 
 async function renderModelConfiguration({ refresh = true } = {}) {
@@ -2064,7 +2081,7 @@ async function syncSavedGrokRoute() {
 }
 
 async function syncSavedModels() {
-  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'qwen']) {
+  for (const agent of ['gemini', 'grok', 'glm', 'deepseek', 'kimi', 'qwen', 'muse']) {
     const saved = localStorage.getItem(`meshModel:${agent}`);
     if (!saved) continue;
     const configuration = await fetchAgentConfiguration(agent);
@@ -2086,7 +2103,7 @@ async function openModelConfiguration() {
   } else if (failures.length > 0) {
     setModelConfigMessage(`Alguns catálogos não puderam ser atualizados; usando a última lista disponível (${failures.map(([agent]) => agent).join(', ')}).`, 'warn');
   } else {
-    setModelConfigMessage('Escolha modelos dos catálogos OpenCode, Cursor e Antigravity. Claude, Codex, Kimi e a rota oficial xAI permanecem fixos.');
+    setModelConfigMessage('Escolha modelos dos catálogos OpenCode, Cursor e Antigravity. No Kimi, escolha entre OAuth e a chave OpenCode Go. Claude, Codex e a rota oficial xAI permanecem fixos.');
   }
 }
 
