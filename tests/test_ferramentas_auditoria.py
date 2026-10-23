@@ -102,4 +102,6 @@ def test_pacote_hash_e_diferencas(tmp_path: Path) -> None:
     assert "[1 — ALTERADO; era o 1]" in corpo and "[3 — NOVO]" in corpo
     assert "[4 — contexto, sem alteração]" in corpo and "[5 —" not in corpo
     assert "ÍNDICE DA VERSÃO INTEGRAL" in corpo and "[5] É o parecer, sob censura." in corpo
+    sem_p2 = mod.montar(tmp_path / "a.md", "Audite.", anterior=tmp_path / "b.md")
+    assert "SUPRIMIDO OU REESCRITO" in sem_p2 and "Parágrafo novo sobre a junta eleitoral" in sem_p2
     assert len(diff) < len(mod.montar(tmp_path / "b.md", "Audite.")) + 2000

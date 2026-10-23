@@ -66,6 +66,8 @@ def diferencas(anterior: pm.Documento, atual: pm.Documento, palavras_indice: int
                 linhas += [f"[{n} — NOVO] {novos[n]}", ""]
         else:
             linhas += [f"[{n} — contexto, sem alteração] {novos[n]}", ""]
+    for n in removidos:  # reescritos a ponto de não alinhar, ou suprimidos: o auditor precisa do texto anterior
+        linhas += [f"[{n} da versão anterior — SUPRIMIDO OU REESCRITO EM OUTRO PARÁGRAFO] {antigos[n]}", ""]
     # índice da versão integral: permite conferir remissões a parágrafos que não vieram no pacote
     linhas += ["ÍNDICE DA VERSÃO INTEGRAL (primeiras palavras de cada parágrafo, para conferir remissões):", ""]
     for n, t in novos.items():
