@@ -101,4 +101,5 @@ def test_pacote_hash_e_diferencas(tmp_path: Path) -> None:
     corpo = diff.split("MINUTA — SÓ AS DIFERENÇAS")[1]
     assert "[1 — ALTERADO; era o 1]" in corpo and "[3 — NOVO]" in corpo
     assert "[4 — contexto, sem alteração]" in corpo and "[5 —" not in corpo
+    assert "ÍNDICE DA VERSÃO INTEGRAL" in corpo and "[5] É o parecer, sob censura." in corpo
     assert len(diff) < len(mod.montar(tmp_path / "b.md", "Audite.")) + 2000

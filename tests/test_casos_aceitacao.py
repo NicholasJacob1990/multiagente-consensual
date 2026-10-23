@@ -313,3 +313,9 @@ def test_risco_estrategico_da_peca_so_entra_com_autorizacao_do_usuario() -> None
     assert "reservadas à decisão humana (1)" in em.relatorio("v", "v2", "a", "b", [ap])
     texto, _ = em.aplicar(PETICAO, [ap], autorizadas=("E01",))
     assert "litigância de má-fé" in texto
+
+
+def test_simbolo_de_citacao_perdido_na_renumeracao(tmp_path: Path) -> None:
+    antes = PARECER.replace("salvo motivo justificado.", "salvo motivo justificado (Decreto, art. 25, §§ 2º e 3º).")
+    achados = _pre(tmp_path, antes, antes.replace("§§ 2º e 3º", "2º e 3º"))
+    assert any(a["regra"] == "citacao" and "§§" in a["mensagem"] for a in achados)

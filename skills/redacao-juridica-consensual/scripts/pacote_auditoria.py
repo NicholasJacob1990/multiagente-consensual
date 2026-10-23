@@ -44,7 +44,7 @@ def parte(nome: str, texto: str) -> str:
     return f"===== INÍCIO: {nome} (sha256 {sha}) =====\n{texto.rstrip()}\n===== FIM: {nome} =====\n"
 
 
-def diferencas(anterior: pm.Documento, atual: pm.Documento) -> str:
+def diferencas(anterior: pm.Documento, atual: pm.Documento, palavras_indice: int = 14) -> str:
     mapa = pm.alinhar_paragrafos(anterior, atual)
     inverso = {v: k for k, v in mapa.items()}
     antigos, novos = anterior.por_numero(), atual.por_numero()
@@ -66,6 +66,11 @@ def diferencas(anterior: pm.Documento, atual: pm.Documento) -> str:
                 linhas += [f"[{n} — NOVO] {novos[n]}", ""]
         else:
             linhas += [f"[{n} — contexto, sem alteração] {novos[n]}", ""]
+    # índice da versão integral: permite conferir remissões a parágrafos que não vieram no pacote
+    linhas += ["ÍNDICE DA VERSÃO INTEGRAL (primeiras palavras de cada parágrafo, para conferir remissões):", ""]
+    for n, t in novos.items():
+        ws = pm.sem_negrito(t).split()
+        linhas.append(f"[{n}] {' '.join(ws[:palavras_indice])}{' …' if len(ws) > palavras_indice else ''}")
     return "\n".join(linhas)
 
 

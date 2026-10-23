@@ -309,6 +309,22 @@ def _palavras_norm(texto: str) -> list[str]:
     return re.findall(r"\w+", pm.sem_negrito(texto).lower())
 
 
+CITACAO_SIMBOLOS = {"§§": r"§§", "§": r"(?<!§)§(?!§)", "nº": r"\bn[º°]", "art.": r"\bart\.", "arts.": r"\barts\.", "inciso romano": r"\b[IVXL]+\b(?=,| e |\))"}
+
+
+def checar_simbolos(antigo: str, novo: str, numero: int) -> list[Achado]:
+    """Símbolos de citação que somem sem a citação sumir: ex.: "art. 25, §§ 2º e 3º" virar "art. 25, 2º e 3º"."""
+    perdas = []
+    for nome, rx in CITACAO_SIMBOLOS.items():
+        a, b = len(re.findall(rx, antigo)), len(re.findall(rx, novo))
+        if b < a:
+            perdas.append(f"«{nome}» {a}→{b}")
+    if perdas:
+        return [Achado("alerta", "citacao", numero, "símbolos de citação a menos na nova versão: " + ", ".join(perdas)
+                       + " — conferir se a citação legal ficou íntegra")]
+    return []
+
+
 def checar_alcance(antigo: str, novo: str, numero: int) -> list[Achado]:
     out = []
     mudancas = []
@@ -358,6 +374,7 @@ def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento, revisadas: set
         if antigos[velho] != b.texto:
             out.append(Achado("info", "rescan", b.numero, f"parágrafo alterado (era o {velho}): varrer contra repetição e contradição"))
             out += checar_alcance(antigos[velho], b.texto, b.numero)
+            out += checar_simbolos(antigos[velho], b.texto, b.numero)
             alterados_antigos.append(velho)
         if not mudou:
             continue
