@@ -157,3 +157,15 @@ def test_previsao_sem_cautela_vira_alerta(tmp_path: Path) -> None:
     texto = parecer("1. A eleição poderá terminar, por estimativa, em 17 de março de 2027.", *BASE[1:])
     _, achados = run(tmp_path, texto)
     assert not any(a["regra"] == "calibracao" and a["severidade"] == "alerta" for a in achados)
+
+
+def test_remissao_revisada_de_proposito_vira_informativo(tmp_path: Path) -> None:
+    anterior = parecer(*BASE)
+    inserido = "2. Parágrafo novo sobre a comissão de empregados e a junta eleitoral."
+    novo = parecer(BASE[0], inserido, "3. O regulamento observa a Lei nº 13.303/2016, conforme o parágrafo 2.",
+                   "4. O art. 31 exige defesa, como visto no parágrafo 3.", conclusao=CONCLUSAO.replace("4.", "5."), fecho_n=6)
+    code, achados = run(tmp_path, novo, anterior=anterior)
+    assert "renumeracao" in regras(achados)
+    code, achados = run(tmp_path, novo, "--remissoes-revisadas", "3", anterior=anterior)
+    assert "renumeracao" not in regras(achados)
+    assert any(a["regra"] == "renumeracao" and a["severidade"] == "info" for a in achados)

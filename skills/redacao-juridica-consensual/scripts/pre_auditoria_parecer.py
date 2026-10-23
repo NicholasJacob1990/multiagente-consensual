@@ -343,7 +343,7 @@ def checar_cobertura(anterior: pm.Documento, doc: pm.Documento, numeros_antigos:
     return out
 
 
-def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento) -> list[Achado]:
+def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento, revisadas: set[int] | None = None) -> list[Achado]:
     mapa = pm.alinhar_paragrafos(anterior, doc)
     inverso = {v: k for k, v in mapa.items()}
     antigos = anterior.por_numero()
@@ -364,7 +364,10 @@ def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento) -> list[Achado
         rem_velhas = [n for _, ns in pm.remissoes(antigos[velho]) for n in ns]
         rem_novas = [n for _, ns in pm.remissoes(b.texto) for n in ns]
         esperadas = [mapa.get(n, n) for n in rem_velhas]
-        if rem_velhas and len(rem_velhas) == len(rem_novas) and esperadas != rem_novas:
+        if rem_velhas and len(rem_velhas) == len(rem_novas) and esperadas != rem_novas and b.numero in (revisadas or set()):
+            out.append(Achado("info", "renumeracao", b.numero,
+                              f"remissões {rem_novas} revisadas manualmente (o mapa automático daria {esperadas})"))
+        elif rem_velhas and len(rem_velhas) == len(rem_novas) and esperadas != rem_novas:
             out.append(Achado(
                 "bloqueante", "renumeracao", b.numero,
                 f"remissões {rem_novas} deveriam ser {esperadas} após a renumeração (eram {rem_velhas} no parágrafo {velho})",
@@ -386,7 +389,8 @@ def contar_paginas_pdf(path: Path) -> int:
 
 
 def auditar(doc: pm.Documento, cfg: dict, anterior: pm.Documento | None = None, travados: list[dict] | None = None,
-            proibidos: list[str] | None = None, pdf: Path | None = None, max_paginas: int | None = None) -> list[Achado]:
+            proibidos: list[str] | None = None, pdf: Path | None = None, max_paginas: int | None = None,
+            revisadas: set[int] | None = None) -> list[Achado]:
     fecho = cfg.get("fecho")
     achados = []
     achados += checar_numeracao(doc)
@@ -402,7 +406,7 @@ def auditar(doc: pm.Documento, cfg: dict, anterior: pm.Documento | None = None, 
     if travados:
         achados += checar_travados(doc, travados)
     if anterior is not None:
-        achados += checar_renumeracao(doc, anterior)
+        achados += checar_renumeracao(doc, anterior, revisadas)
     if pdf is not None and max_paginas:
         n = contar_paginas_pdf(pdf)
         if n > max_paginas:
@@ -439,6 +443,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-palavras", type=int, help="sobrepõe o limite do perfil")
     p.add_argument("--fecho", help="sobrepõe o fecho do perfil")
     p.add_argument("--anterior", type=Path, help="versão anterior, para checar renumeração e listar o que varrer")
+    p.add_argument("--remissoes-revisadas", default="",
+                   help="parágrafos (na numeração nova) cujas remissões foram alteradas de propósito, além da renumeração")
     p.add_argument("--travados", type=Path, help='JSON: [{"id": ..., "paragrafo": N, "texto": "..."}]')
     p.add_argument("--proibido", action="append", default=[], help="termo proibido (repetível)")
     p.add_argument("--pdf", type=Path)
@@ -461,7 +467,8 @@ def main(argv: list[str] | None = None) -> int:
     doc = pm.ler(args.minuta)
     anterior = pm.ler(args.anterior) if args.anterior else None
     travados = json.loads(args.travados.read_text(encoding="utf-8")) if args.travados else None
-    achados = auditar(doc, cfg, anterior, travados, args.proibido, args.pdf, args.max_paginas)
+    revisadas = {int(x) for x in args.remissoes_revisadas.split(",") if x.strip()}
+    achados = auditar(doc, cfg, anterior, travados, args.proibido, args.pdf, args.max_paginas, revisadas)
     mostrar = [a for a in achados if not (args.sem_info and a.severidade == "info")]
     print(relatorio(args.minuta, doc, mostrar))
     if args.json:
