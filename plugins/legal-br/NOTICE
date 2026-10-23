@@ -1,0 +1,6 @@
+Legal BR
+Adaptação para o direito brasileiro por Nicholas Jacob.
+Inclui adaptações do plugin Legal de Anthropic Knowledge Work Plugins.
+Origem: https://github.com/anthropics/knowledge-work-plugins/tree/main/legal
+A licença Apache-2.0 do material de origem acompanha este diretório em LICENSE-ANTHROPIC.
+Alterações desta distribuição: configuração portátil, metadados de plugin e correção do hook de contexto.

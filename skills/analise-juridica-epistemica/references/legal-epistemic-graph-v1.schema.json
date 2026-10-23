@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.codex/skills/analise-juridica-epistemica/legal-epistemic-graph-v1.schema.json",
+  "title": "Legal Epistemic Graph v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "graph_id",
+    "as_of",
+    "mode",
+    "objective",
+    "sources",
+    "propositions",
+    "rules",
+    "conflicts",
+    "grants",
+    "actions"
+  ],
+  "properties": {
+    "schema_version": {"const": "legal_epistemic_graph_v1"},
+    "graph_id": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "format": "date"},
+    "mode": {"enum": ["analysis", "drafting", "audit", "decision_support"]},
+    "objective": {"$ref": "#/$defs/objective"},
+    "artifact": {"$ref": "#/$defs/artifact"},
+    "sources": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "propositions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/proposition"}
+    },
+    "rules": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/rule"}
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/conflict"}
+    },
+    "grants": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/grant"}
+    },
+    "actions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/action"}
+    },
+    "metadata": {"type": "object"}
+  },
+  "$defs": {
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "statement", "status"],
+      "properties": {
+        "owner": {"type": "string"},
+        "statement": {"type": "string"},
+        "status": {"enum": ["confirmed", "unknown", "scenarios"]},
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "condition", "objective"],
+            "properties": {
+              "id": {"type": "string"},
+              "condition": {"type": "string"},
+              "objective": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "status", "locator", "sha256"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {
+          "enum": [
+            "case_document",
+            "legislation",
+            "precedent",
+            "official_act",
+            "doctrine",
+            "record",
+            "expert_report",
+            "other"
+          ]
+        },
+        "status": {"enum": ["verified", "unverified", "superseded", "divergent"]},
+        "locator": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+        "jurisdiction": {"type": "string"},
+        "valid_from": {"type": "string", "format": "date"},
+        "valid_until": {"type": "string", "format": "date"},
+        "accessed_at": {"type": "string", "format": "date"}
+      }
+    },
+    "proposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "statement", "status", "source_refs", "impact"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "kind": {
+          "enum": [
+            "fact",
+            "allegation",
+            "legal_source",
+            "persuasive_source",
+            "inference",
+            "premise",
+            "controversy",
+            "unknown",
+            "objective",
+            "conclusion"
+          ]
+        },
+        "statement": {"type": "string", "minLength": 1},
+        "status": {
+          "enum": [
+            "confirmed",
+            "verified",
+            "asserted",
+            "supported",
+            "assumed",
+            "disputed",
+            "unknown",
+            "derived",
+            "conditional"
+          ]
+        },
+        "source_refs": {"type": "array", "items": {"type": "string"}},
+        "depends_on": {"type": "array", "items": {"type": "string"}},
+        "impact": {"enum": ["low", "medium", "high", "decisive"]},
+        "decisive": {"type": "boolean"},
+        "owner": {"type": "string"},
+        "jurisdiction": {"type": "string"},
+        "valid_from": {"type": "string", "format": "date"},
+        "valid_until": {"type": "string", "format": "date"}
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposition", "statuses"],
+      "properties": {
+        "proposition": {"type": "string"},
+        "statuses": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "when", "unless", "then", "priority", "source_refs"],
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"enum": ["strict", "defeasible"]},
+        "when": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "unless": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "then": {"type": "string"},
+        "priority": {"type": "integer"},
+        "source_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right"],
+      "properties": {
+        "left": {"type": "string"},
+        "right": {"type": "string"}
+      }
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "grantee", "operation", "target", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "grantee": {"type": "string"},
+        "operation": {"type": "string"},
+        "target": {"type": "string"},
+        "status": {"enum": ["active", "revoked", "expired"]},
+        "valid_from": {"type": "string", "format": "date"},
+        "valid_until": {"type": "string", "format": "date"},
+        "limits": {"type": "object"}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "actor", "operation", "target", "state"],
+      "properties": {
+        "id": {"type": "string"},
+        "actor": {"type": "string"},
+        "operation": {"type": "string"},
+        "target": {"type": "string"},
+        "state": {"enum": ["proposed", "prepared", "authorized", "executed", "verified"]},
+        "grant_id": {"type": "string"},
+        "authority_owner": {"type": "string"}
+      }
+    }
+  }
+}

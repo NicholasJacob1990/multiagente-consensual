@@ -1,0 +1,460 @@
+{
+  "schema": "catalogo_origens_v1",
+  "plugin_version": "1.14.0",
+  "nota": "Hashes das fontes locais antes das adaptações de portabilidade. Backups, caches e recibos de sincronização foram excluídos.",
+  "arquivos": [
+    {
+      "origem": "minuta-juridica-fundamentada/SKILL.md",
+      "destino": "skills/minuta-juridica-fundamentada/SKILL.md",
+      "sha256_origem": "b5b715f8eaf1c78e81ddd477326dcee16213729714c04877fc58521220ad5b45",
+      "sha256_distribuido": "b5b715f8eaf1c78e81ddd477326dcee16213729714c04877fc58521220ad5b45",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/agents/openai.yaml",
+      "destino": "skills/minuta-juridica-fundamentada/agents/openai.yaml",
+      "sha256_origem": "c7ec40860955a3b431db560e662d1317e182ce0ee600d884821e363b92b042cf",
+      "sha256_distribuido": "c7ec40860955a3b431db560e662d1317e182ce0ee600d884821e363b92b042cf",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/composicao.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/composicao.md",
+      "sha256_origem": "3db24800570bc5880349080a594badb6e7204e8a9b02fa0db4cddff9e3ecf66b",
+      "sha256_distribuido": "3db24800570bc5880349080a594badb6e7204e8a9b02fa0db4cddff9e3ecf66b",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/estilo-forense.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/estilo-forense.md",
+      "sha256_origem": "036d0593f1c5daf35440c07cc637660844947e7ad44246b53d6139fdbcfee0c1",
+      "sha256_distribuido": "036d0593f1c5daf35440c07cc637660844947e7ad44246b53d6139fdbcfee0c1",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/parecer.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/parecer.md",
+      "sha256_origem": "d8d1d2710712ed9cae34528156720ef0a5aafb494e9550a8118ad28ebe6b5ede",
+      "sha256_distribuido": "d8d1d2710712ed9cae34528156720ef0a5aafb494e9550a8118ad28ebe6b5ede",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/perfil-parecer-genes.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/perfil-parecer-genes.md",
+      "sha256_origem": "b94ca46e3f6d01ed338e0f6efe344549ec6b5944e090a590c0c42fffd90f7102",
+      "sha256_distribuido": "a85f35db39c1fd121aa81c2bae6d680f0e403efc9959d63ce5acae1af72d1d59",
+      "adaptado": true
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/pesquisa-jurisbase.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/pesquisa-jurisbase.md",
+      "sha256_origem": "3065ff3f08a53a300987745103bf86461d21545e6da6ae8d5165526ca5478b5d",
+      "sha256_distribuido": "3065ff3f08a53a300987745103bf86461d21545e6da6ae8d5165526ca5478b5d",
+      "adaptado": false
+    },
+    {
+      "origem": "minuta-juridica-fundamentada/references/peticao.md",
+      "destino": "skills/minuta-juridica-fundamentada/references/peticao.md",
+      "sha256_origem": "c4b70985a8f91954d50a1902a0c59493c091feed7d6cbcb99218775cf2ca49c3",
+      "sha256_distribuido": "c4b70985a8f91954d50a1902a0c59493c091feed7d6cbcb99218775cf2ca49c3",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/SKILL.md",
+      "destino": "skills/analise-juridica-epistemica/SKILL.md",
+      "sha256_origem": "a6908539e50cfd3bc2388e9acf435b77be9e14086b583f8d67ecf2b0e3c5279b",
+      "sha256_distribuido": "a6908539e50cfd3bc2388e9acf435b77be9e14086b583f8d67ecf2b0e3c5279b",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/agents/openai.yaml",
+      "destino": "skills/analise-juridica-epistemica/agents/openai.yaml",
+      "sha256_origem": "0c19b11c3c01060e489372ef38a7641a7a8d7a9637f01234ec9e216988f12fb8",
+      "sha256_distribuido": "0c19b11c3c01060e489372ef38a7641a7a8d7a9637f01234ec9e216988f12fb8",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/arquitetura-neurossimbolica.md",
+      "destino": "skills/analise-juridica-epistemica/references/arquitetura-neurossimbolica.md",
+      "sha256_origem": "f529ae2bd899bb4f8589237d8b72349f8c0ae5bbb1415dfd6c110d27b85d43ac",
+      "sha256_distribuido": "f529ae2bd899bb4f8589237d8b72349f8c0ae5bbb1415dfd6c110d27b85d43ac",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/exemplo-grafo-minimo.json",
+      "destino": "skills/analise-juridica-epistemica/references/exemplo-grafo-minimo.json",
+      "sha256_origem": "63c70eaeb1eb9adc6926695880405244781fb12ec1655eaa785c0343c6c9807c",
+      "sha256_distribuido": "63c70eaeb1eb9adc6926695880405244781fb12ec1655eaa785c0343c6c9807c",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/integracao-multiagente.md",
+      "destino": "skills/analise-juridica-epistemica/references/integracao-multiagente.md",
+      "sha256_origem": "1add561ec10f53d58aa6b59e1ca0f0c5734f6370dfe4175ff680a52e94143511",
+      "sha256_distribuido": "1add561ec10f53d58aa6b59e1ca0f0c5734f6370dfe4175ff680a52e94143511",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/legal-epistemic-graph-v1.schema.json",
+      "destino": "skills/analise-juridica-epistemica/references/legal-epistemic-graph-v1.schema.json",
+      "sha256_origem": "74a3786f7c7bec0f30d597206f67056e8f4f23a0565e56c33db64c39b329f4bc",
+      "sha256_distribuido": "74a3786f7c7bec0f30d597206f67056e8f4f23a0565e56c33db64c39b329f4bc",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/modulos-avancados.md",
+      "destino": "skills/analise-juridica-epistemica/references/modulos-avancados.md",
+      "sha256_origem": "f97ac6316cd515620aedb2f185ff1430aed9c02f5fe5ab8d195f19e104b1291a",
+      "sha256_distribuido": "f97ac6316cd515620aedb2f185ff1430aed9c02f5fe5ab8d195f19e104b1291a",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/protocolo-epistemico.md",
+      "destino": "skills/analise-juridica-epistemica/references/protocolo-epistemico.md",
+      "sha256_origem": "5f04f57efa92a74f82b03445bb21982f206ee0c66eea75079acf1eeb376ba0bd",
+      "sha256_distribuido": "5f04f57efa92a74f82b03445bb21982f206ee0c66eea75079acf1eeb376ba0bd",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/references/rubrica-e-portoes.md",
+      "destino": "skills/analise-juridica-epistemica/references/rubrica-e-portoes.md",
+      "sha256_origem": "e695d1c44f0ae08b11a522c6ffb0aa502eb332fb9b39d42d63fc66d716799a37",
+      "sha256_distribuido": "e695d1c44f0ae08b11a522c6ffb0aa502eb332fb9b39d42d63fc66d716799a37",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/scripts/legal_analysis_controls.py",
+      "destino": "skills/analise-juridica-epistemica/scripts/legal_analysis_controls.py",
+      "sha256_origem": "53c3fb39ce41763d02fa398b40ac2494372f8474c6ba0691849e5708c108e7a0",
+      "sha256_distribuido": "53c3fb39ce41763d02fa398b40ac2494372f8474c6ba0691849e5708c108e7a0",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/scripts/legal_epistemic_gate.py",
+      "destino": "skills/analise-juridica-epistemica/scripts/legal_epistemic_gate.py",
+      "sha256_origem": "94f40f9d49b5b0ed75c39a8015583d2e170c193a0e10a827df714e40796ab78f",
+      "sha256_distribuido": "94f40f9d49b5b0ed75c39a8015583d2e170c193a0e10a827df714e40796ab78f",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/tests/test_legal_analysis_controls.py",
+      "destino": "skills/analise-juridica-epistemica/tests/test_legal_analysis_controls.py",
+      "sha256_origem": "8f48101da062eb933978a3744bda6b1a3585fbbcdd0f0d94b1e82e08f4b32715",
+      "sha256_distribuido": "8f48101da062eb933978a3744bda6b1a3585fbbcdd0f0d94b1e82e08f4b32715",
+      "adaptado": false
+    },
+    {
+      "origem": "analise-juridica-epistemica/tests/test_legal_epistemic_gate.py",
+      "destino": "skills/analise-juridica-epistemica/tests/test_legal_epistemic_gate.py",
+      "sha256_origem": "12e546f1fb613dabdc0cec293f351b9b860dfdac278f03dbab5c9cc2faebfe7a",
+      "sha256_distribuido": "12e546f1fb613dabdc0cec293f351b9b860dfdac278f03dbab5c9cc2faebfe7a",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/SKILL.md",
+      "destino": "skills/auditoria-juridica-de-minutas/SKILL.md",
+      "sha256_origem": "e751f5170b33b767abedfcbf3a10e315ead4c766cf357571365a4d1640073745",
+      "sha256_distribuido": "e751f5170b33b767abedfcbf3a10e315ead4c766cf357571365a4d1640073745",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/agents/openai.yaml",
+      "destino": "skills/auditoria-juridica-de-minutas/agents/openai.yaml",
+      "sha256_origem": "99b506d25cd60b2aeb2bfbeeeb87d5bb003a5251733332bbfb1de35d9164a2a7",
+      "sha256_distribuido": "99b506d25cd60b2aeb2bfbeeeb87d5bb003a5251733332bbfb1de35d9164a2a7",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/references/estilo-forense.md",
+      "destino": "skills/auditoria-juridica-de-minutas/references/estilo-forense.md",
+      "sha256_origem": "036d0593f1c5daf35440c07cc637660844947e7ad44246b53d6139fdbcfee0c1",
+      "sha256_distribuido": "036d0593f1c5daf35440c07cc637660844947e7ad44246b53d6139fdbcfee0c1",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/references/integracao.md",
+      "destino": "skills/auditoria-juridica-de-minutas/references/integracao.md",
+      "sha256_origem": "1860920a970636c22c1cc66dd2ce6c25e03480c5df9cd86c96ce703d264668d1",
+      "sha256_distribuido": "1860920a970636c22c1cc66dd2ce6c25e03480c5df9cd86c96ce703d264668d1",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/references/metodo-e-relatorio.md",
+      "destino": "skills/auditoria-juridica-de-minutas/references/metodo-e-relatorio.md",
+      "sha256_origem": "8d3d64eb978b35bb879be2b158d635487c8059bb70634deeea5ea5c7764f79fa",
+      "sha256_distribuido": "8d3d64eb978b35bb879be2b158d635487c8059bb70634deeea5ea5c7764f79fa",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/references/pesquisa-jurisbase.md",
+      "destino": "skills/auditoria-juridica-de-minutas/references/pesquisa-jurisbase.md",
+      "sha256_origem": "3065ff3f08a53a300987745103bf86461d21545e6da6ae8d5165526ca5478b5d",
+      "sha256_distribuido": "3065ff3f08a53a300987745103bf86461d21545e6da6ae8d5165526ca5478b5d",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/scripts/minuta_snapshot.py",
+      "destino": "skills/auditoria-juridica-de-minutas/scripts/minuta_snapshot.py",
+      "sha256_origem": "d5f006be85e0416bef83402bfbc0a712c18ef7b9dc89ec4fa5989176a016ebad",
+      "sha256_distribuido": "d5f006be85e0416bef83402bfbc0a712c18ef7b9dc89ec4fa5989176a016ebad",
+      "adaptado": false
+    },
+    {
+      "origem": "auditoria-juridica-de-minutas/scripts/test_minuta_snapshot.py",
+      "destino": "skills/auditoria-juridica-de-minutas/scripts/test_minuta_snapshot.py",
+      "sha256_origem": "7f55d0984e8cc627a004a1171f73ed6356a4ded906be25ce69bf962ccb46fdc9",
+      "sha256_distribuido": "7f55d0984e8cc627a004a1171f73ed6356a4ded906be25ce69bf962ccb46fdc9",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/.claude-plugin/marketplace.json",
+      "destino": "plugins/legal-br/.claude-plugin/marketplace.json",
+      "sha256_origem": "9db6d42a97fedbcc1724decb1a53c09abaab98dc7ae9e98caf129cba0211929a",
+      "sha256_distribuido": "368de9c19bacf0b8a96a67574472e37c4788e35a17c2c5871cd036c52136587c",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/.claude-plugin/plugin.json",
+      "destino": "plugins/legal-br/.claude-plugin/plugin.json",
+      "sha256_origem": "175391c297bff914daeed26c02b3d2ec60e6151f72a4217ed572ad556cf470cf",
+      "sha256_distribuido": "f005ccd0e04307c8ff5d6518ee709f835a59ca200f2368f0486512bbef578d95",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/README.md",
+      "destino": "plugins/legal-br/README.md",
+      "sha256_origem": "aa37b03f6e956571d26b4c7a5ad633d5a6465ad76ed97dd89657699f44957837",
+      "sha256_distribuido": "803521234f62aba7a9d75d254dfd04805c631e74288da68c403cfc37e0aa79db",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/agents/analista-juridico/AGENT.md",
+      "destino": "plugins/legal-br/agents/analista-juridico.md",
+      "sha256_origem": "d80b9a9055ee2b93ad49e7aa93b2705acaeb8d010486ddfac63eb478a1d28da1",
+      "sha256_distribuido": "d80b9a9055ee2b93ad49e7aa93b2705acaeb8d010486ddfac63eb478a1d28da1",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/hooks/hooks.json",
+      "destino": "plugins/legal-br/hooks/hooks.json",
+      "sha256_origem": "d4581d5f622a60a24464d8c5a1031ce114c2e8a5eee33f1998ed3b8c8f28fcdb",
+      "sha256_distribuido": "450e87db47e0e6703146146f7bf112d06e13ac827ef220bb828a5cc5ddb0550a",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/references/acervo-local.md",
+      "destino": "plugins/legal-br/references/acervo-local.md",
+      "sha256_origem": "a3054d5b4fa54781571cc3104f4af4ef1d0e6eed94051e09e167995dad9765f4",
+      "sha256_distribuido": "e4afa3b598b70f3022facb2a8ffcec6abb68e7a4dac331c068bb764a5c5be697",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/references/armadilhas-direito-br.md",
+      "destino": "plugins/legal-br/references/armadilhas-direito-br.md",
+      "sha256_origem": "fb720390cd2c4f9768b933f82c8baf7fd1c739f315739daad8c19832a963e565",
+      "sha256_distribuido": "fb720390cd2c4f9768b933f82c8baf7fd1c739f315739daad8c19832a963e565",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/references/fontes-web.md",
+      "destino": "plugins/legal-br/references/fontes-web.md",
+      "sha256_origem": "b27588d7a3d18c58352250aa8197f3163d66b4f1777ad5a17c5ad1b2ff35596d",
+      "sha256_distribuido": "b27588d7a3d18c58352250aa8197f3163d66b4f1777ad5a17c5ad1b2ff35596d",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/references/parecer-docx.md",
+      "destino": "plugins/legal-br/references/parecer-docx.md",
+      "sha256_origem": "f59c954b3847a5a4282b0afb15e17ec8c1fcaf48d44aeeae73b2eb3220ca3df6",
+      "sha256_distribuido": "5bb7a9640c0c8d0d301e997298623b2085afad313d663ae7e3d945cf90e1ecfc",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/references/pdf-para-md.md",
+      "destino": "plugins/legal-br/references/pdf-para-md.md",
+      "sha256_origem": "f11d2fdbc72d6bd0d2d5c13a750d56c9e12a55efe66e1d95f47ad9d1960a061f",
+      "sha256_distribuido": "f11d2fdbc72d6bd0d2d5c13a750d56c9e12a55efe66e1d95f47ad9d1960a061f",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/references/perfil-parecer-genes.md",
+      "destino": "plugins/legal-br/references/perfil-parecer-genes.md",
+      "sha256_origem": "b94ca46e3f6d01ed338e0f6efe344549ec6b5944e090a590c0c42fffd90f7102",
+      "sha256_distribuido": "a85f35db39c1fd121aa81c2bae6d680f0e403efc9959d63ce5acae1af72d1d59",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/references/verificacao-precedentes.md",
+      "destino": "plugins/legal-br/references/verificacao-precedentes.md",
+      "sha256_origem": "e315fd4346497c846178b5f1532b4860d4f9ebd0edc98a0a60d2528e5a72d590",
+      "sha256_distribuido": "e315fd4346497c846178b5f1532b4860d4f9ebd0edc98a0a60d2528e5a72d590",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/busca_acervo.py",
+      "destino": "plugins/legal-br/scripts/busca_acervo.py",
+      "sha256_origem": "9d80666187b0c42e93ada0caa8387055b025a0933d3aebc48dc8507b97df84ba",
+      "sha256_distribuido": "9d80666187b0c42e93ada0caa8387055b025a0933d3aebc48dc8507b97df84ba",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/busca_hibrida.py",
+      "destino": "plugins/legal-br/scripts/busca_hibrida.py",
+      "sha256_origem": "e2746ab65729cceb0cd9904b6b6e76ff936c27edbe946dccc0da981e84f9d44d",
+      "sha256_distribuido": "e2746ab65729cceb0cd9904b6b6e76ff936c27edbe946dccc0da981e84f9d44d",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/busca_hibrida_legacy.py",
+      "destino": "plugins/legal-br/scripts/busca_hibrida_legacy.py",
+      "sha256_origem": "c5df5571328af0b38b64230219f23f2b689a96a4036e0efa186a386435088a5b",
+      "sha256_distribuido": "5fb183819e9862ca061105d82cf7a9f05faf0f0a5d609f5753eb8d061ff057a9",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/scripts/fontes_externas.py",
+      "destino": "plugins/legal-br/scripts/fontes_externas.py",
+      "sha256_origem": "b437730b2dd24596985ea7c377600ba22524e5df81772dc373a002d553e0e407",
+      "sha256_distribuido": "b437730b2dd24596985ea7c377600ba22524e5df81772dc373a002d553e0e407",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/hibrido.py",
+      "destino": "plugins/legal-br/scripts/hibrido.py",
+      "sha256_origem": "18dd8852eac0ac70aebefffca77f5f37648b91f36b83a1c63887abd05d005894",
+      "sha256_distribuido": "18dd8852eac0ac70aebefffca77f5f37648b91f36b83a1c63887abd05d005894",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/indexar_bm25.py",
+      "destino": "plugins/legal-br/scripts/indexar_bm25.py",
+      "sha256_origem": "4624a91d60cb713010ea87a6139032cb1bcca546258b431e7bb389275292a744",
+      "sha256_distribuido": "4624a91d60cb713010ea87a6139032cb1bcca546258b431e7bb389275292a744",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/indexar_vetorial.py",
+      "destino": "plugins/legal-br/scripts/indexar_vetorial.py",
+      "sha256_origem": "a77b3623d1ad099fe1763be857c708d3b29cab3ee605c4d3af2a016dc8024598",
+      "sha256_distribuido": "62db8ddd181899dfe29d63b4f4689b5602b0bea41cf9b915edde88f0b149d4f1",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/scripts/indexar_vetorial_legacy.py",
+      "destino": "plugins/legal-br/scripts/indexar_vetorial_legacy.py",
+      "sha256_origem": "b9e236ec0223cc7b94138f74dee948159a65ccbbd3e3bcaa61cfd2adce1cd3cb",
+      "sha256_distribuido": "991cd544080925f9ee3c7eadfb9be9948f0b2e13cb1c034be0ae4b0ec3591412",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/scripts/jusbrasil_cookies_to_storage.py",
+      "destino": "plugins/legal-br/scripts/jusbrasil_cookies_to_storage.py",
+      "sha256_origem": "2d0fb488ddbdf8930ccaa4dbbaad93f27f2b9292cfd81c4ee12e1b948dd2f8ba",
+      "sha256_distribuido": "2d0fb488ddbdf8930ccaa4dbbaad93f27f2b9292cfd81c4ee12e1b948dd2f8ba",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/parecer_docx.py",
+      "destino": "plugins/legal-br/scripts/parecer_docx.py",
+      "sha256_origem": "7d5ca9f3c6bc25ca37beb9a4562f5862a74d1a8016cad86b3122d1ac872d12ee",
+      "sha256_distribuido": "7d5ca9f3c6bc25ca37beb9a4562f5862a74d1a8016cad86b3122d1ac872d12ee",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/parecer_genes_estilo.py",
+      "destino": "plugins/legal-br/scripts/parecer_genes_estilo.py",
+      "sha256_origem": "6220739e48b458ae3489ca20dbef161ab9572b944be0854ffa80185e3c6773d0",
+      "sha256_distribuido": "6220739e48b458ae3489ca20dbef161ab9572b944be0854ffa80185e3c6773d0",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/scripts/pdf_para_md.py",
+      "destino": "plugins/legal-br/scripts/pdf_para_md.py",
+      "sha256_origem": "c57e7db76a9229963e5fb0ab023767e658f5131b2061411cb2b4c9f914d9c9cc",
+      "sha256_distribuido": "c57e7db76a9229963e5fb0ab023767e658f5131b2061411cb2b4c9f914d9c9cc",
+      "adaptado": false
+    },
+    {
+      "origem": "legal-plugin-br/skills/briefing-reuniao/SKILL.md",
+      "destino": "plugins/legal-br/skills/briefing-reuniao/SKILL.md",
+      "sha256_origem": "fb5ac20b969bac1a688223a02ceb6046161cdd5787986f86b297d9e5f6a1cb90",
+      "sha256_distribuido": "a572180e250df82dd4cb672395979b5e74ff93b6f5b456227ba9e8a75409e7b9",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/busca-acervo/SKILL.md",
+      "destino": "plugins/legal-br/skills/busca-acervo/SKILL.md",
+      "sha256_origem": "948f975a1840ba08270dce0adbe51e10d1989e4f55f0ab04207c34e008f50dd7",
+      "sha256_distribuido": "55a0e6bfadb2e5c6f5c7902826798f2f1f45a75e76475c6f41e35d12910b53ee",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/compliance-check/SKILL.md",
+      "destino": "plugins/legal-br/skills/compliance-check/SKILL.md",
+      "sha256_origem": "066bb2d7d17416ad3faae6992c7b0e6c95a2dd38342256a6d522e9162a480236",
+      "sha256_distribuido": "09ed5038601000a66cf76ce02e3146111404b56a06d50636a14beb2c3ce7bd61",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/parecer/SKILL.md",
+      "destino": "plugins/legal-br/skills/parecer/SKILL.md",
+      "sha256_origem": "f2083138d36e1622596e5d2f0c139eb250518061185d57679c8a8b755d784588",
+      "sha256_distribuido": "2e0a81a30f04d491f9a366f84f2f716d89efaeafd1e7f708e43af886bfebdbf8",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/pesquisa-juridica/SKILL.md",
+      "destino": "plugins/legal-br/skills/pesquisa-juridica/SKILL.md",
+      "sha256_origem": "b00fcb121a1ef20412396612ce32fd248723759e0b196c86ceab037a7e752815",
+      "sha256_distribuido": "5d72326879be770fbfafb2dc68c6d91c8423257405082d8ab81381acef28185d",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/resposta-juridica/SKILL.md",
+      "destino": "plugins/legal-br/skills/resposta-juridica/SKILL.md",
+      "sha256_origem": "44c47c5873db8342c5917791786ed488ba043a294d5651da8add761019c98824",
+      "sha256_distribuido": "30f410d7ab5781e586c781756244ff15f738a96813ae8dc64d3186b87a48b5f3",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/revisar-contrato/SKILL.md",
+      "destino": "plugins/legal-br/skills/revisar-contrato/SKILL.md",
+      "sha256_origem": "96e1e280f947f7626369611209d35dd2d28e27b0d498b549c9b95b751265169c",
+      "sha256_distribuido": "6294af14cd599814e3900656879e83ed5cb874e6e9260a9d01cc599fd9ff2c68",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/risco-juridico/SKILL.md",
+      "destino": "plugins/legal-br/skills/risco-juridico/SKILL.md",
+      "sha256_origem": "e68e41f85e01935959e368f17530ff7ea8688ef39f2e71f4eb8da0a79aaa243f",
+      "sha256_distribuido": "d412848825c7e6bfb6f383586d751bbcf71d812ecd199ae87ebd814f9eb4201a",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/triagem-nda/SKILL.md",
+      "destino": "plugins/legal-br/skills/triagem-nda/SKILL.md",
+      "sha256_origem": "3d942d2e9118630681bcdc32568417599d4a9f56d2abe78452b3e864f8696af6",
+      "sha256_distribuido": "20caf80db76ed4353385bae88d3ac3dcba4742bd18f427a05481ea44baf2a341",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/skills/verificacao-fornecedor/SKILL.md",
+      "destino": "plugins/legal-br/skills/verificacao-fornecedor/SKILL.md",
+      "sha256_origem": "25c9c7780850806241bead169f7a7fa8e19bbc7ed8424f2a5ee8f50ae3bdf329",
+      "sha256_distribuido": "5e95afeb226985982c2ae8686f8c73395f2684c5114cd02a820afa8f73f31e47",
+      "adaptado": true
+    },
+    {
+      "origem": "legal-plugin-br/sync-legal-br.sh",
+      "destino": "plugins/legal-br/sync-legal-br.sh",
+      "sha256_origem": "bd0a5c733ffb9284e606330146ceaac2537fcd7711530381d6d7099c1f4b087b",
+      "sha256_distribuido": "cf70d2c641c86fb413dc0288555301eb210aeb2860c1098240899ce6a1337619",
+      "adaptado": true
+    },
+    {
+      "origem": "criada nesta distribuição",
+      "destino": "skills/pdf/SKILL.md",
+      "sha256_distribuido": "a5787755004f6de18414abde45d5c60afb8903d6532cf7ca6bb7cee2b978a6b1"
+    }
+  ]
+}

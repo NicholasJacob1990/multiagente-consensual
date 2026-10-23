@@ -1,0 +1,4 @@
+interface:
+  display_name: "Auditoria jurídica de minutas"
+  short_description: "Compara versões, fontes e riscos de minutas jurídicas"
+  default_prompt: "Use $auditoria-juridica-de-minutas para auditar esta minuta e compará-la com a versão anterior, verificando evidências, fundamentos e providências."

@@ -30,6 +30,39 @@ test("marketplaces apontam para o payload estável relativo", () => {
   assert.equal(documents.codex.plugins[0].policy.authentication, "ON_USE");
 });
 
+test("catálogo instalado resolve os dois plugins e distribui as skills jurídicas e PDF", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente catalogo "));
+  try {
+    const home = path.join(root, "home");
+    const installRoot = path.join(root, "marketplace");
+    const { spawnSync } = await import("node:child_process");
+    const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "cli.mjs");
+    const run = spawnSync(process.execPath, [cli, "install", "--all", "--json", "--home", home,
+      "--install-root", installRoot, "--skip-registries", "--skip-bridge"], { encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+    for (const [file, format] of [[".claude-plugin/marketplace.json", "claude"],
+      [".agents/plugins/marketplace.json", "codex"]]) {
+      const market = JSON.parse(fs.readFileSync(path.join(installRoot, file), "utf8"));
+      assert.deepEqual(market.plugins.map((p) => p.name), ["multiagente-consensual", "legal-br"]);
+      for (const plugin of market.plugins) {
+        const folder = path.resolve(installRoot, format === "claude" ? plugin.source : plugin.source.path);
+        const metadata = JSON.parse(fs.readFileSync(path.join(folder, `.${format}-plugin/plugin.json`), "utf8"));
+        assert.equal(metadata.name, plugin.name);
+        const skills = fs.readdirSync(path.join(folder, "skills"));
+        assert.equal(skills.length, plugin.name === "legal-br" ? 10 : 9);
+      }
+    }
+    for (const name of ["minuta-juridica-fundamentada", "analise-juridica-epistemica",
+      "auditoria-juridica-de-minutas", "pdf"]) {
+      for (const surface of [[".codex"], [".claude"], [".cursor"], [".config", "opencode"], [".agents"]]) {
+        assert.ok(fs.readFileSync(path.join(home, ...surface, "skills", name, "SKILL.md"), "utf8").startsWith("---"));
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("dry-run isolado não cria arquivos", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-npm-test-"));
   const home = path.join(root, "home");

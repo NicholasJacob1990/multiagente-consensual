@@ -27,6 +27,7 @@ const PAYLOAD_ROOTS = [
   "assets",
   "bin",
   "commands",
+  "plugins",
   "references",
   "scripts",
   "skills",
@@ -83,7 +84,7 @@ Opções:
   --install-root <dir>  alterar a raiz estável do marketplace
   --skip-registries     não registrar plugins no Codex/Claude Code
   --skip-bridge         não instalar o wrapper multiagent-bridge
-  --clean-managed       substituir as cinco skills gerenciadas após backup
+  --clean-managed       substituir as skills gerenciadas após backup
   --with-a2a            instalar servidores A2A, MCP e painel local
   --replace-a2a-mcp     substituir uma configuração a2a-mesh já existente
   --purge               remover também payload estável e estado no uninstall
@@ -376,8 +377,8 @@ function installStablePayload(context) {
   return pluginDestination;
 }
 
-export function marketplaceDocuments(pluginVersion) {
-  return {
+export function marketplaceDocuments(pluginVersion, pluginRoot = PACKAGE_ROOT) {
+  const documents = {
     claude: {
       name: MARKETPLACE_NAME,
       owner: { name: "Nicholas Jacob" },
@@ -410,11 +411,30 @@ export function marketplaceDocuments(pluginVersion) {
       ],
     },
   };
+  const legalManifest = path.join(pluginRoot, "plugins", "legal-br", ".claude-plugin", "plugin.json");
+  if (fs.existsSync(legalManifest)) {
+    const legal = readJson(legalManifest);
+    const source = `./plugins/${PLUGIN_NAME}/plugins/legal-br`;
+    documents.claude.plugins.push({
+      name: legal.name,
+      version: legal.version,
+      description: legal.description,
+      source,
+      author: legal.author,
+    });
+    documents.codex.plugins.push({
+      name: legal.name,
+      source: { source: "local", path: source },
+      policy: { installation: "AVAILABLE", authentication: "ON_USE" },
+      category: "Productivity",
+    });
+  }
+  return documents;
 }
 
 function createMarketplaces(context) {
   const pluginVersion = readJson(path.join(context.pluginRoot, ".codex-plugin", "plugin.json")).version;
-  const documents = marketplaceDocuments(pluginVersion);
+  const documents = marketplaceDocuments(pluginVersion, context.pluginRoot);
   if (!context.dryRun) {
     writeJsonAtomic(path.join(context.installRoot, ".claude-plugin", "marketplace.json"), documents.claude, 0o644);
     writeJsonAtomic(path.join(context.installRoot, ".agents", "plugins", "marketplace.json"), documents.codex, 0o644);
