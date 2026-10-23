@@ -184,7 +184,7 @@ def sync_managed_skills(shared_roots: tuple[Path, ...]) -> list[str]:
     Arquivos estranhos já existentes no diretório de destino são preservados;
     caches e metadados locais nunca são copiados. Assim, a sincronização é
     aditiva em relação às extensões do usuário e autoritativa apenas para os
-    cinco diretórios versionados pelo pacote.
+    diretórios versionados pelo pacote que contenham um SKILL.md.
     """
     synced: list[str] = []
     for source_dir in sorted(PLUGIN_SKILL_SOURCE.iterdir()):

@@ -4,15 +4,15 @@
     "name": "Nicholas Jacob"
   },
   "metadata": {
-    "description": "Plugins locais de colaboração e consenso multiagente",
-    "version": "1.10.2"
+    "description": "Multiagente Consensual, ferramentas jurídicas e PDF",
+    "version": "1.14.0"
   },
   "plugins": [
     {
       "name": "multiagente-consensual",
       "description": "Debate, consenso, loops de melhoria, ensemble, workflows e redação jurídica com redline DOCX.",
       "source": "./",
-      "version": "1.10.2",
+      "version": "1.14.0",
       "author": {
         "name": "Nicholas Jacob"
       },
@@ -23,6 +23,15 @@
         "debate",
         "cowork"
       ]
+    },
+    {
+      "name": "legal-br",
+      "description": "Pesquisa, pareceres e revisão jurídica no direito brasileiro.",
+      "source": "./plugins/legal-br",
+      "version": "1.0.1",
+      "author": {
+        "name": "Nicholas Jacob"
+      }
     }
   ]
 }

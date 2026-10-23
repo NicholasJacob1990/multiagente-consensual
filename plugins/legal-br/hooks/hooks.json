@@ -1,0 +1,17 @@
+{
+  "description": "Contexto opcional para arquivos jurídicos, sem decisão de permissão.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/legal_context.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

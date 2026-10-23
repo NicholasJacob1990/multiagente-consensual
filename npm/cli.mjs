@@ -27,6 +27,7 @@ const PAYLOAD_ROOTS = [
   "assets",
   "bin",
   "commands",
+  "plugins",
   "references",
   "scripts",
   "skills",
@@ -83,6 +84,7 @@ Opções:
   --install-root <dir>  alterar a raiz estável do marketplace
   --skip-registries     não registrar plugins no Codex/Claude Code
   --skip-bridge         não instalar o wrapper multiagent-bridge
+  --clean-managed       substituir as skills gerenciadas após backup
   --with-a2a            instalar servidores A2A, MCP e painel local
   --replace-a2a-mcp     substituir uma configuração a2a-mesh já existente
   --purge               remover também payload estável e estado no uninstall
@@ -106,6 +108,7 @@ export function parseArgs(argv) {
     installRoot: null,
     skipRegistries: false,
     skipBridge: false,
+    cleanManaged: false,
     withA2a: false,
     replaceA2aMcp: false,
     purge: false,
@@ -118,6 +121,7 @@ export function parseArgs(argv) {
     else if (value === "--launchd") args.launchd = true;
     else if (value === "--skip-registries") args.skipRegistries = true;
     else if (value === "--skip-bridge") args.skipBridge = true;
+    else if (value === "--clean-managed") args.cleanManaged = true;
     else if (value === "--with-a2a") args.withA2a = true;
     else if (value === "--replace-a2a-mcp") args.replaceA2aMcp = true;
     else if (value === "--purge") args.purge = true;
@@ -229,8 +233,23 @@ function run(binary, argv, context, options = {}) {
   return result;
 }
 
+function entryExists(entry) {
+  try {
+    fs.lstatSync(entry);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 function copyEntry(source, destination) {
-  if (!fs.existsSync(source)) return;
+  if (!entryExists(source)) return;
+  if (fs.lstatSync(source).isSymbolicLink()) {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.symlinkSync(fs.readlinkSync(source), destination);
+    return;
+  }
   fs.cpSync(source, destination, { recursive: true, force: true, preserveTimestamps: true });
 }
 
@@ -311,7 +330,7 @@ function hashTree(root) {
 }
 
 function backupManaged(home, targets, pluginRoot, stateRoot, dryRun) {
-  const existing = managedPaths(home, targets, pluginRoot).filter((item) => fs.existsSync(item));
+  const existing = managedPaths(home, targets, pluginRoot).filter(entryExists);
   if (existing.length === 0 || dryRun) return { path: null, entries: existing.length };
   const root = path.join(stateRoot, nowToken());
   const entries = [];
@@ -323,6 +342,21 @@ function backupManaged(home, targets, pluginRoot, stateRoot, dryRun) {
   });
   writeJsonAtomic(path.join(root, "manifest.json"), { createdAt: new Date().toISOString(), entries });
   return { path: root, entries: existing.length };
+}
+
+function replaceManagedSkills(context, targets, backup) {
+  const roots = [path.join(context.home, ".codex", "skills")];
+  for (const target of targets) {
+    if (SKILL_DIRS[target]) roots.push(path.join(context.home, ...SKILL_DIRS[target]));
+  }
+  const existing = [...new Set(roots)].flatMap((root) =>
+    skillNames(context.pluginRoot).map((name) => path.join(root, name)),
+  ).filter(entryExists);
+  if (!context.dryRun) {
+    if (existing.length && !backup.path) throw new Error("substituição de skills exige backup concluído");
+    for (const target of existing) fs.rmSync(target, { recursive: true, force: true });
+  }
+  return existing;
 }
 
 function installStablePayload(context) {
@@ -343,8 +377,8 @@ function installStablePayload(context) {
   return pluginDestination;
 }
 
-export function marketplaceDocuments(pluginVersion) {
-  return {
+export function marketplaceDocuments(pluginVersion, pluginRoot = PACKAGE_ROOT) {
+  const documents = {
     claude: {
       name: MARKETPLACE_NAME,
       owner: { name: "Nicholas Jacob" },
@@ -377,11 +411,30 @@ export function marketplaceDocuments(pluginVersion) {
       ],
     },
   };
+  const legalManifest = path.join(pluginRoot, "plugins", "legal-br", ".claude-plugin", "plugin.json");
+  if (fs.existsSync(legalManifest)) {
+    const legal = readJson(legalManifest);
+    const source = `./plugins/${PLUGIN_NAME}/plugins/legal-br`;
+    documents.claude.plugins.push({
+      name: legal.name,
+      version: legal.version,
+      description: legal.description,
+      source,
+      author: legal.author,
+    });
+    documents.codex.plugins.push({
+      name: legal.name,
+      source: { source: "local", path: source },
+      policy: { installation: "AVAILABLE", authentication: "ON_USE" },
+      category: "Productivity",
+    });
+  }
+  return documents;
 }
 
 function createMarketplaces(context) {
   const pluginVersion = readJson(path.join(context.pluginRoot, ".codex-plugin", "plugin.json")).version;
-  const documents = marketplaceDocuments(pluginVersion);
+  const documents = marketplaceDocuments(pluginVersion, context.pluginRoot);
   if (!context.dryRun) {
     writeJsonAtomic(path.join(context.installRoot, ".claude-plugin", "marketplace.json"), documents.claude, 0o644);
     writeJsonAtomic(path.join(context.installRoot, ".agents", "plugins", "marketplace.json"), documents.codex, 0o644);
@@ -547,6 +600,22 @@ function snapshotManagedFiles(context, targets) {
   return { files: hashes, trees };
 }
 
+function validateSourcePayload(context) {
+  const files = ["package.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "assets/multiagent-manifest.json"];
+  const versions = files.map((file) => {
+    const document = readJson(path.join(context.pluginRoot, file));
+    return [file, document.version ?? document.plugin_version];
+  });
+  if (versions.some(([, version]) => !version || version !== versions[0][1])) {
+    throw new Error(`versões divergentes no pacote: ${JSON.stringify(versions)}`);
+  }
+  const python = pythonBinary(context.env);
+  if (!python) throw new Error("Python 3 é necessário para validar o pacote antes da instalação");
+  run(python, [path.join(context.pluginRoot, "scripts", "manifest_lint.py"), "--manifest",
+    path.join(context.pluginRoot, "assets", "multiagent-manifest.json"), "validate"], context);
+  return { version: versions[0][1], validation: context.dryRun ? "planned" : "passed" };
+}
+
 function installOrUpdate(args, targets) {
   const stateRoot = path.join(args.home, ".local", "state", PLUGIN_NAME);
   const backupRoot = path.join(args.home, ".local", "state", `${PLUGIN_NAME}-backups`);
@@ -561,10 +630,13 @@ function installOrUpdate(args, targets) {
     stateRoot,
     backupRoot,
   };
+  // Recusar payload/rota incompatível antes de criar backup ou alterar qualquer superfície.
+  const sourcePayload = validateSourcePayload(context);
   const backup = backupManaged(args.home, targets, PACKAGE_ROOT, backupRoot, args.dryRun);
   const stablePlugin = installStablePayload(context);
   context.pluginRoot = args.dryRun ? PACKAGE_ROOT : stablePlugin;
   const pluginVersion = createMarketplaces(context);
+  const replacedSkillPaths = args.cleanManaged ? replaceManagedSkills(context, targets, backup) : [];
   synchronizeSurfaces(context, targets);
   const registrations = {};
   if (!args.skipRegistries && targets.includes("codex")) registrations.codex = registerCodex(context);
@@ -577,6 +649,9 @@ function installOrUpdate(args, targets) {
     schema: "multiagente_npm_install_v1",
     npmVersion: readJson(path.join(PACKAGE_ROOT, "package.json")).version,
     pluginVersion,
+    sourcePayload,
+    skillSyncMode: args.cleanManaged ? "replace-managed" : "additive",
+    replacedSkillPaths,
     installedAt: new Date().toISOString(),
     home: args.home,
     installRoot: args.installRoot,

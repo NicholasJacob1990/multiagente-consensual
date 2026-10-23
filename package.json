@@ -1,6 +1,6 @@
 {
   "name": "@nicholasjacob90/multiagente-consensual",
-  "version": "1.10.2",
+  "version": "1.14.0",
   "description": "Instalador portátil das skills, comandos e rotas do Multiagente Consensual para CLIs locais.",
   "type": "module",
   "bin": {
@@ -21,7 +21,8 @@
     "skills/**/*.sh",
     "skills/**/*.yaml",
     "skills/**/*.yml",
-    "README.md"
+    "README.md",
+    "plugins/legal-br/"
   ],
   "scripts": {
     "test": "node --test npm/test/*.test.mjs",

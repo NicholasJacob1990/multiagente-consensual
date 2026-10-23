@@ -1,0 +1,56 @@
+{
+  "schema_version": "legal_epistemic_graph_v1",
+  "graph_id": "consulta-001",
+  "as_of": "2026-09-21",
+  "mode": "analysis",
+  "objective": {
+    "owner": "consulente",
+    "statement": "obter cumprimento preservando a relação contratual",
+    "status": "confirmed"
+  },
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "case_document",
+      "status": "verified",
+      "locator": "contrato.pdf:clausula-8",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "propositions": [
+    {
+      "id": "P1",
+      "kind": "fact",
+      "statement": "A obrigação venceu sem cumprimento",
+      "status": "confirmed",
+      "source_refs": ["S1"],
+      "impact": "decisive"
+    },
+    {
+      "id": "C1",
+      "kind": "conclusion",
+      "statement": "A medida de cobrança é juridicamente sustentada",
+      "status": "unknown",
+      "source_refs": [],
+      "depends_on": [],
+      "impact": "decisive",
+      "decisive": true
+    }
+  ],
+  "rules": [
+    {
+      "id": "R1",
+      "kind": "strict",
+      "when": [
+        {"proposition": "P1", "statuses": ["confirmed"]}
+      ],
+      "unless": [],
+      "then": "C1",
+      "priority": 100,
+      "source_refs": ["S1"]
+    }
+  ],
+  "conflicts": [],
+  "grants": [],
+  "actions": []
+}

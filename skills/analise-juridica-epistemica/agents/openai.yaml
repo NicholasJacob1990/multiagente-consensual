@@ -1,0 +1,4 @@
+interface:
+  display_name: "Análise Jurídica Epistêmica"
+  short_description: "Análise jurídica com premissas e limites visíveis"
+  default_prompt: "Use $analise-juridica-epistemica para analisar esta questão jurídica com fontes, premissas, incertezas e decisões humanas explícitas."

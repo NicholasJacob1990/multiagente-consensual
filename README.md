@@ -4,7 +4,15 @@ Plugin portátil para Claude Cowork, Claude Code e Codex. Ele empacota os contra
 `consenso`, `loop-debate-agentes`, `redacao-juridica-consensual` e `workflow-agentes` sem remover as
 instalações independentes existentes.
 
-O manual completo atualizado acompanha o pacote em `assets/Manual-completo-comandos-multiagente.pdf`.
+O manual dos comandos acompanha o pacote em `assets/Manual-completo-comandos-multiagente.pdf`.
+
+## Skills jurídicas, plugin Legal BR e PDF
+
+O [catálogo jurídico e PDF](docs/catalogo-juridico-pdf.md) reúne as nove skills do plugin
+principal, incluindo minuta fundamentada, análise epistêmica, auditoria documental e PDF,
+e o plugin [Legal BR](plugins/legal-br/), com dez skills jurídicas próprias. O marketplace
+disponibiliza os dois plugins; o Legal BR pode ser selecionado separadamente. A instalação
+pelo checkout inclui o catálogo desta versão sem depender de sua publicação no NPM.
 
 
 ### Visão completa do painel
@@ -146,6 +154,13 @@ Antes de sobrescrever arquivos gerenciados, o instalador preserva cópias em
 desinstalador remove somente arquivos cujo hash ainda coincide com o registrado e preserva arquivos
 modificados pelo usuário. `uninstall --all --purge` também apaga o payload estável e o estado, mas
 não apaga credenciais, sessões nem os backups preservados nessa raiz separada.
+
+Para reinstalar as cinco skills do pacote com conteúdo exato, use
+`multiagente-consensual install --all --clean-managed`. Após o backup, essa opção
+substitui somente os diretórios dessas skills e recria os links nas superfícies
+selecionadas. Arquivos extras e extensões dentro desses diretórios permanecem no
+backup; as demais skills não são alteradas. Sem essa opção, a sincronização continua
+aditiva. O estado da instalação registra o modo e os caminhos substituídos.
 
 ## Sincronização entre CLIs
 

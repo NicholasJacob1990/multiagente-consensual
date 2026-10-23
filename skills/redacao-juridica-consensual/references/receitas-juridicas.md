@@ -15,6 +15,8 @@ overlays somente por pedido explícito ou proposta confirmada.
 7. Overlay ensemble jurídico
 8. Overlay pacote processual
 9. Desambiguação e exemplos
+10. Overlay emendas jurídicas
+11. Triagem de minuta concorrente
 
 ## 1. Resolução, persistência e precedência
 
@@ -209,3 +211,78 @@ Use o perfil de recurso para elaborar a apelação; faça até 12 versões.
 Use ensemble N×N: todos devem produzir a própria contestação e revisar todas as demais.
 Produza um pacote com parecer, recurso e minuta de decisão, com aprovação separada por documento.
 ```
+
+## 10. Overlay `emendas_juridicas`
+
+Ativar, em **qualquer receita** (`parecer_consensual`, `peticao_consensual`, `recurso_consensual`,
+`minuta_decisoria`) e em outros trabalhos jurídicos (contrato, nota técnica, informação), quando o
+usuário pedir que os agentes "devolvam só as melhorias em que concordam", "emendas consensuais" ou
+"rodada de emendas" sobre minuta já madura. Aplica o modo `emendas_consensuais_v2` do motor
+(`../loop-debate-agentes/references/emendas-consensuais.md`) com estes deltas:
+
+```yaml
+estrategia_da_equipe:
+  tipo: emendas_consensuais
+  contrato: emendas_consensuais_v2
+  tipo_documento: derivado da receita (tabela abaixo)
+  regra: unanimidade
+  rodada_de_debate: 1
+  adesao_ao_conjunto: true
+  exigir_fonte_literal_para: [correcao, fonte]
+  fontes: [adendo de fontes literais, pasta de fontes do run, autos]
+  max_palavras_por_paragrafo: do perfil, se houver (GENES: 120)
+  trechos_travados: travados.json
+  registro_achados: achados.json
+  pre_auditoria: scripts/pre_auditoria_parecer.py --perfil <perfil da casa ou generico>
+  redline: scripts/md_redline.py (ou word_redline.py se o canônico for DOCX)
+  auditoria_final: {familia_diferente_dos_votantes: true, pacote: scripts/pacote_auditoria.py}
+```
+
+| Receita ou trabalho | `tipo_documento` | O que costuma ser `correcao_necessaria` |
+|---|---|---|
+| `parecer_consensual`, nota técnica, informação | `parecer` | ilegalidade, contradição interna, competência ou rito errado, conclusão sem suporte |
+| `peticao_consensual`, `recurso_consensual`, contestação, memorial | `peca` | cabimento, tempestividade, legitimidade, preparo, pedido incongruente, fundamento normativo errado, precedente mal atribuído |
+| `minuta_decisoria`, voto, acórdão, decisão administrativa | `decisao` | nulidade, fundamentação deficiente (CPC, art. 489, § 1º), incongruência entre fundamentação e dispositivo, competência |
+| contrato e outros | `generico` | cláusula nula, contradição entre cláusulas, obrigação inexequível |
+
+Documento sem parágrafos numerados, como a maioria das petições, é lido com numeração implícita (cada
+linha de texto, em ordem). As dependências declaradas apontam para esses números.
+
+Sequência de um ciclo:
+
+1. pré-auditoria da versão congelada (vista atual, sem texto excluído);
+2. adendo com `extrair_adendo.py`;
+3. propostas cegas;
+4. `emendas.py validar --tipo-documento <tipo> --fontes <adendo> <pasta>`;
+5. cédula e votos cegos, com `--votantes` igual à equipe confirmada;
+6. apuração e, se houver, a rodada única de debate;
+7. `emendas.py aplicar --max-palavras`;
+8. adesão ao conjunto (`conjunto` e `confirmar`);
+9. pré-auditoria com `--anterior`;
+10. redline validado nos dois sentidos;
+11. atualização de `achados.py`;
+12. auditoria final por outra família.
+
+O dissenso e as objeções materiais sem consenso vão ao usuário com os votos e os motivos de cada
+cadeira. Emenda de mérito (`correcao`, `fonte`) sem trecho literal localizado nas fontes é recusada
+antes do voto: consenso de modelos não supre fonte. Na peça de parte, a estratégia (o que alegar, o que
+pedir, o que arriscar) é decisão do usuário: emenda classificada como `risco_estrategico` só entra com
+a aprovação dele, ainda que as cadeiras concordem.
+
+## 11. Triagem de minuta concorrente
+
+Quando houver outra minuta sobre o mesmo caso (de colega, de outro agente ou versão anterior
+paralela) e o usuário pedir para aproveitar o que ela tem de melhor:
+
+1. Ler a minuta concorrente **inteira**, não por amostragem, e listar cada trecho candidato:
+   fundamento, dispositivo, precedente, recomendação prática ou formulação.
+2. Classificar cada candidato contra a minuta própria: `já coberto`, `coberto em parte` ou
+   `novo`. Afirmar que algo "não consta" só depois de buscar no texto integral da própria minuta.
+3. Conferir na fonte primária todo dispositivo ou precedente que entraria. A minuta concorrente não
+   é fonte; erro dela não deve migrar para cá.
+4. Incorporar os aprovados no estilo da casa (perfil aplicável), sem colar parágrafos inteiros, e
+   respeitar os limites de extensão e os trechos travados.
+5. Registrar no run uma tabela `trecho | origem | decisão | motivo` e mostrar ao usuário o que
+   ficou de fora e por quê.
+6. Rodar a varredura de repetição e contradição sobre os parágrafos tocados
+   (`pre_auditoria_parecer.py --anterior`).

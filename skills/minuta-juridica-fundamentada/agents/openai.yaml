@@ -1,0 +1,4 @@
+interface:
+  display_name: "Minuta Jurídica Fundamentada"
+  short_description: "Produzir pareceres e petições com revisão jurídica"
+  default_prompt: "Use $minuta-juridica-fundamentada para redigir a minuta de parecer ou petição a partir dos documentos e do objetivo informados."

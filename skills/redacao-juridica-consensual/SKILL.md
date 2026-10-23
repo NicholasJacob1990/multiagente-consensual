@@ -207,4 +207,17 @@ Use ensemble N×N profundo com Claude Opus 5, Codex e Kimi. Dê a todos o mesmo 
 Forme um colegiado com Claude, Codex e Grok em modo opinion of the court. Cada modelo apresenta posição inicial, participa de dois ciclos de crítica, réplica e revisão e adere separadamente ao dispositivo e a cada fundamento essencial. Publique a opinião da maioria, votos concorrentes e dissidentes. Se houver maioria somente no resultado, não declare ratio unificada; revise a minuta ou registre o dissenso. Submeta o pacote exato aos gates jurídicos e à auditoria cega.
 
 Claude redige e corrige a minuta; Codex e Grok criticam. Ative o controle de alterações do Word. A cada revisão, preserve a versão limpa e gere um comparativo incremental. Depois de todas as rodadas e loops, publique somente `minuta-final-limpa.docx` como canônico aprovado e `minuta-final-com-alteracoes.docx` como comparação rastreável da primeira minuta com a final. Se eu alterar o redline no Word, trate o resultado como nova versão e refaça consenso e auditoria.
+
+Gemini, Codex e Claude leem a v30 do parecer, debatem e devolvem só as melhorias em que todos concordam; não toquem no § 5 nem na assinatura, e o que não fechar venha para mim.
 ```
+
+## Usar as ferramentas determinísticas
+
+Antes de gastar uma cadeira com o que um script verifica, use os scripts de `scripts/` (todos leem o Markdown numerado, simples ou com os marcadores GENES):
+
+- `pre_auditoria_parecer.py` (qualquer trabalho jurídico, apesar do nome): numeração, limite de palavras, fecho, remissões internas, marcadores soltos, conclusão e assinatura do perfil, julgado repetido, frases quase iguais, trechos travados, previsões sem cautela e páginas do PDF; com `--anterior`, os parágrafos a varrer, as remissões quebradas por renumeração, as palavras de alcance acrescentadas ou retiradas, as ressalvas perdidas e as frases sem correspondente. Rodar antes de cada auditoria e depois de cada rodada de correções.
+- `extrair_adendo.py`: texto integral, nas fontes, de cada artigo citado; lista o que não foi localizado.
+- `pacote_auditoria.py`: pacote com SHA-256 que o auditor tem de repetir; modo só com as diferenças para rodadas intermediárias.
+- `md_redline.py`: DOCX com controle de alterações entre duas versões em Markdown, sem Word, com autor configurável e validação nos dois sentidos. Para canônico DOCX, continuar com `word_redline.py`.
+
+Para os agentes devolverem só as melhorias em que concordam — em parecer, petição, recurso, minuta decisória ou outro trabalho —, use o overlay `emendas_juridicas` (`references/receitas-juridicas.md`, seção 10), que aplica o modo `emendas_consensuais_v2` do motor com o `tipo_documento` da receita. Os scripts leem também documentos sem parágrafos numerados, como a maioria das petições. O portão de texto integral, a varredura depois de inserções e os trechos travados estão em `references/verificacao-e-integridade.md`, seção 4.

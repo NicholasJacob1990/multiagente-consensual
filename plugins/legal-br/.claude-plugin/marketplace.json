@@ -1,0 +1,17 @@
+{
+  "name": "legal-br-plugins",
+  "owner": {
+    "name": "Nicholas Jacob"
+  },
+  "metadata": {
+    "description": "Skills jurídicas para direito brasileiro",
+    "version": "1.0.1"
+  },
+  "plugins": [
+    {
+      "name": "legal-br",
+      "description": "Hub jurídico brasileiro: revisão de contratos, pareceres, pesquisa jurídica, triagem de NDA, avaliação de risco",
+      "source": "./"
+    }
+  ]
+}

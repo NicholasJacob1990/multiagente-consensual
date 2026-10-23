@@ -1,0 +1,9 @@
+{
+  "name": "legal-br",
+  "version": "1.0.1",
+  "description": "Pesquisa, pareceres, revisão contratual e compliance no direito brasileiro.",
+  "author": {
+    "name": "Nicholas Jacob"
+  },
+  "skills": "./skills/"
+}
