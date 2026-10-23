@@ -109,6 +109,19 @@ resumo, ementa, dossiê ou memória. Ler o artigo inteiro na fonte primária; o 
 ocorreu de o dossiê resumir um parágrafo sem os incisos e de a minuta afirmar, por isso, que ele não
 os tinha. Afirmação de inexistência que o texto integral desmente reprova a versão.
 
+**Níveis de acesso à fonte.** Distinguir: fonte integral conferida; reprodução literal recebida
+(permite conferir a fidelidade da afirmação, não declarar acesso atual ao original); mera remissão; e
+ausência no material recebido. Nenhuma das três últimas prova, sozinha, que o dispositivo foi
+inventado; nenhuma sustenta, sozinha, emenda de mérito. Quando o usuário fechar as fontes, respeitar o
+fechamento e dizer o que ficou sem conferência. A identificação é específica: nome do documento e/ou ID
+SEI ou folha dos autos, versão ou data e dispositivo ou localizador. Quando o conteúdo de uma fonte
+mudar sem mudar o nome do arquivo, o hash muda, e todo auditor recebe o adendo atualizado.
+
+**Vista atual do documento.** Em DOCX com controle de alterações, avaliar o texto com as alterações
+aceitas; texto excluído é histórico, não cláusula vigente. Crítica que depende de trecho excluído é
+rejeitada contra a vista atual e preservada só como histórico. Conferir que o derivado (DOCX, PDF)
+corresponde ao canônico; igualdade de texto não prova a renderização.
+
 **Pré-auditoria antes de cada auditoria por modelo.** Rodar `scripts/pre_auditoria_parecer.py`
 (com `--perfil` quando houver). Ele bloqueia numeração quebrada, parágrafo acima do limite, fecho
 ausente, remissão a parágrafo inexistente ou ao próprio parágrafo, marcador solto fora da
@@ -122,7 +135,14 @@ norma com a mesma função em outro parágrafo) e contradição (outro parágraf
 contrário, ou dê a mesma consequência a hipóteses que o texto distingue). Rodar a pré-auditoria com
 `--anterior <versão anterior>`: ela lista os parágrafos novos e alterados, que são os que exigem
 leitura, e acusa remissões que deixaram de apontar para o parágrafo certo depois da renumeração.
-Renumerar sempre por script, com o mapa antigo → novo aplicado às remissões, e nunca à mão.
+Renumerar sempre por script, com o mapa antigo → novo aplicado às remissões, e nunca à mão. Com
+`--anterior`, a pré-auditoria aponta também palavras de alcance acrescentadas ou retiradas, ressalvas
+perdidas e frases da versão anterior sem correspondente: reformulação legítima ou conteúdo que
+evaporou, a classificar no portão de integridade.
+
+**Achados entre rodadas.** Registrar os achados de cada auditoria em `achados.py` (motor). Achado
+resolvido não é reaberto pela mera repetição da crítica: exige regressão, fonte nova ou falha
+identificada na solução. "Sem novas melhorias materiais" é resultado válido de uma auditoria.
 
 **Trechos travados.** Texto ditado ou aprovado expressamente pelo usuário (metodologia,
 conclusões que ele fixou, fecho, assinatura) vai para um `travados.json`

@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Pré-auditoria determinística de parecer ou minuta em Markdown numerado.
+"""Pré-auditoria determinística de qualquer trabalho jurídico em Markdown: parecer, petição, recurso, decisão.
 
 Roda antes de qualquer auditoria por modelo e depois de cada rodada de
 emendas. Pega o que é mecânico — numeração, tamanho dos parágrafos, fecho,
 remissões internas, marcadores soltos, assinatura, repetição de precedente,
 frases quase iguais, trechos travados e remissões quebradas por renumeração —
-para que os auditores gastem a atenção no mérito.
+para que os auditores gastem a atenção no mérito. Com ``--anterior``, aponta ainda
+palavras de alcance acrescentadas ou retiradas ("até", "sempre", "somente", "deverá"...),
+ressalvas que sumiram e frases da versão anterior sem correspondente na nova.
+
+Documento sem parágrafos numerados (comum em petições) é lido com numeração
+implícita; nesse caso a sequência numérica e as remissões internas não são
+cobradas. Requisitos de forma de uma casa (fecho, rótulos, assinatura) entram
+como perfil em ``PERFIS``.
 
 Saída: relatório em texto (stdout) e, opcionalmente, JSON. Código de saída 1
 quando houver achado bloqueante, 0 quando não houver e 2 em erro de uso.
@@ -101,6 +108,14 @@ CERTEZA_RE = re.compile(
 PREVISAO_RE = re.compile(r"\b\d+\s+dias|\b\d{1,2} de [a-zç]+ de \d{4}", re.IGNORECASE)
 PREVISAO_VERBO_RE = re.compile(r"\b(ser[áa]|ocorrer[áa]|terminar[áa]|ultrapassar[áa]|exigir[áa]|levar[áa])\b", re.IGNORECASE)
 CAUTELA_RE = re.compile(r"estimativ|cerca de|aproximad|\bpode\b|\bpoder[áa]\b|tende|provável|a depender|se executad", re.IGNORECASE)
+ALCANCE_TERMOS = (
+    "até", "sempre", "nunca", "exclusivamente", "somente", "apenas", "necessariamente", "obrigatoriamente",
+    "não pode", "não poderá", "deve", "devem", "deverá", "deverão", "pode", "podem", "poderá", "poderão",
+    "vedado", "vedada", "facultativo", "facultativa", "no mínimo", "no máximo", "todos", "todas", "qualquer",
+    "nenhum", "nenhuma", "cerca de", "aproximadamente", "estimativa", "em regra", "imediatamente",
+)
+RESSALVA_TERMOS = ("salvo", "exceto", "ressalvad", "desde que", "sem prejuízo", "a menos que", "quando couber",
+                   "observad", "se houver", "no que couber")
 FRASE_RE = re.compile(r"(?<=[.;])\s+(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ\"“(])")
 
 
@@ -128,6 +143,8 @@ def _blocos_assinatura(doc: pm.Documento, fecho: str | None) -> set[int]:
 
 
 def checar_numeracao(doc: pm.Documento) -> list[Achado]:
+    if doc.numeracao == "implicita":
+        return [Achado("info", "numeracao", None, "documento sem parágrafos numerados: numeração implícita usada só para localizar")]
     nums = [b.numero for b in doc.paragrafos]
     if not nums:
         return [Achado("bloqueante", "numeracao", None, "nenhum parágrafo numerado encontrado")]
@@ -278,11 +295,60 @@ def checar_travados(doc: pm.Documento, travados: list[dict]) -> list[Achado]:
     return out
 
 
+def _conta(termo: str, texto: str) -> int:
+    t = re.escape(termo)
+    padrao = rf"(?<!\w){t}\w*" if termo.endswith("ad") else rf"(?<!\w){t}(?!\w)"
+    return len(re.findall(padrao, texto.lower()))
+
+
+def _ngramas(palavras_: list[str], n: int = 4) -> set[tuple[str, ...]]:
+    return {tuple(palavras_[i:i + n]) for i in range(len(palavras_) - n + 1)}
+
+
+def _palavras_norm(texto: str) -> list[str]:
+    return re.findall(r"\w+", pm.sem_negrito(texto).lower())
+
+
+def checar_alcance(antigo: str, novo: str, numero: int) -> list[Achado]:
+    out = []
+    mudancas = []
+    for termo in ALCANCE_TERMOS:
+        a, b = _conta(termo, antigo), _conta(termo, novo)
+        if a != b:
+            mudancas.append(f"«{termo}» {'acrescentado' if b > a else 'retirado'}")
+    if mudancas:
+        out.append(Achado("alerta", "alcance", numero, "mudança de alcance a conferir no mérito: " + ", ".join(mudancas)))
+    perdidas = [t for t in RESSALVA_TERMOS if _conta(t, novo) < _conta(t, antigo)]
+    if perdidas:
+        out.append(Achado("alerta", "ressalva", numero, f"ressalva possivelmente perdida ({', '.join(perdidas)}): conferir se a "
+                                                        "reescrita manteve a condição ou exceção"))
+    return out
+
+
+def checar_cobertura(anterior: pm.Documento, doc: pm.Documento, numeros_antigos: list[int], limiar: float = 0.5) -> list[Achado]:
+    """Frases da versão anterior cujo conteúdo não reaparece na nova (4-gramas): reformuladas ou evaporadas."""
+    novos = _ngramas(_palavras_norm(" ".join(b.texto for b in doc.paragrafos)))
+    antigos = anterior.por_numero()
+    out = []
+    for n in numeros_antigos:
+        for f in _frases(antigos.get(n, "")):
+            ws = _palavras_norm(f)
+            if len(ws) < 8:
+                continue
+            gs = _ngramas(ws)
+            cobertura = len(gs & novos) / len(gs)
+            if cobertura < limiar:
+                out.append(Achado("alerta", "cobertura", n, f"frase do antigo parágrafo {n} com {cobertura:.0%} de correspondência "
+                                                            f"na nova versão — reformulada ou evaporou: «{f[:90]}…»"))
+    return out
+
+
 def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento) -> list[Achado]:
     mapa = pm.alinhar_paragrafos(anterior, doc)
     inverso = {v: k for k, v in mapa.items()}
     antigos = anterior.por_numero()
     out = []
+    alterados_antigos: list[int] = []
     mudou = any(k != v for k, v in mapa.items())
     for b in doc.paragrafos:
         velho = inverso.get(b.numero)
@@ -291,6 +357,8 @@ def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento) -> list[Achado
             continue
         if antigos[velho] != b.texto:
             out.append(Achado("info", "rescan", b.numero, f"parágrafo alterado (era o {velho}): varrer contra repetição e contradição"))
+            out += checar_alcance(antigos[velho], b.texto, b.numero)
+            alterados_antigos.append(velho)
         if not mudou:
             continue
         rem_velhas = [n for _, ns in pm.remissoes(antigos[velho]) for n in ns]
@@ -301,6 +369,10 @@ def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento) -> list[Achado
                 "bloqueante", "renumeracao", b.numero,
                 f"remissões {rem_novas} deveriam ser {esperadas} após a renumeração (eram {rem_velhas} no parágrafo {velho})",
             ))
+    suprimidos = [n for n in antigos if n not in mapa]
+    for n in suprimidos:
+        out.append(Achado("info", "rescan", None, f"parágrafo {n} da versão anterior sem correspondente na nova"))
+    out += checar_cobertura(anterior, doc, alterados_antigos + suprimidos)
     return out
 
 

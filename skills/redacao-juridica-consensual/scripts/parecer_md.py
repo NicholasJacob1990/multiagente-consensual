@@ -1,4 +1,4 @@
-"""Leitura comum de minutas jurídicas em Markdown com parágrafos numerados.
+"""Leitura comum de minutas jurídicas em Markdown: parecer, petição, recurso, decisão ou outro trabalho.
 
 Aceita dois formatos:
 
@@ -6,7 +6,9 @@ Aceita dois formatos:
 - Markdown GENES (o de ``build_estilo_v2.py``): além dos anteriores, linhas
   ``@CAB``, ``@EMENTA``, ``@DATA``, ``@ASS``, ``@ASS+``, ``@ASN`` e ``@ASN+``.
 
-Cada linha não vazia é um bloco. Os scripts de pré-auditoria, emendas,
+Cada linha não vazia é um bloco. Documento sem nenhum parágrafo ``N.`` (comum em
+petições) recebe numeração implícita: cada linha de texto vira um parágrafo, em
+ordem, e ``Documento.numeracao`` passa a ``"implicita"``. Os scripts de pré-auditoria, emendas,
 pacote de auditoria e redline usam este módulo para enxergar a minuta do
 mesmo modo.
 """
@@ -46,6 +48,7 @@ class Bloco:
 class Documento:
     blocos: list[Bloco] = field(default_factory=list)
     bruto: str = ""
+    numeracao: str = "explicita"  # explicita | implicita
 
     @property
     def paragrafos(self) -> list[Bloco]:
@@ -93,6 +96,13 @@ def parse(texto: str) -> Documento:
             doc.blocos.append(Bloco(i, "titulo", m.group(2)))
             continue
         doc.blocos.append(Bloco(i, "texto", s))
+    if not any(b.tipo == "par" for b in doc.blocos):
+        n = 0
+        for b in doc.blocos:
+            if b.tipo == "texto":
+                n += 1
+                b.tipo, b.numero = "par", n
+        doc.numeracao = "implicita" if n else "explicita"
     return doc
 
 

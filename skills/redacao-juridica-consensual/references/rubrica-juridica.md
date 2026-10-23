@@ -63,6 +63,14 @@ A aprovação conjunta não produz uma nota compensatória do pacote. Todos os i
 
 ## Controles por tipo
 
+Em qualquer tipo (parecer, peça, decisão, contrato):
+
+- para cada ato material, identifique quem instrui, quem opina, quem decide, em que etapa e quando essa competência se esgota; separe análise técnica, decisão, homologação, deliberação societária ou judicial e investidura ou cumprimento, inclusive nas redações substitutivas e nos pedidos;
+- confira as palavras que mudam o alcance de uma frase — "até", "sempre", "somente", "exclusivamente", "deve", "pode", "não pode", "no mínimo" — e as ressalvas ("salvo", "desde que", "sem prejuízo"): uma troca pequena no diff pode criar teto, obrigação ou exceção sem fundamento;
+- prazos máximos não são duração; etapas condicionais não integram todo percurso; atividades paralelas não se somam sem encadeamento;
+- separe exigência jurídica de convenção editorial; preferência de estilo sem ganho demonstrável não reprova a versão nem justifica nova versão de mérito;
+- não transponha a solução particular de um caso para outro como verdade permanente.
+
 ### Parecer
 
 - responde a todas as questões da consulta;
