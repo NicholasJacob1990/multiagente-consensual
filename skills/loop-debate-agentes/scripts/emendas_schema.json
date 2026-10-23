@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "emendas_consensuais_v1",
+  "title": "Contratos de entrada do modo emendas_consensuais_v1",
+  "$defs": {
+    "lote_propostas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["autor", "hash_minuta", "propostas"],
+      "properties": {
+        "autor": {"type": "string", "description": "Identificador da cadeira; não aparece na cédula."},
+        "hash_minuta": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 da minuta lida; propostas sobre outra versão são recusadas."},
+        "propostas": {"type": "array", "maxItems": 15, "items": {"$ref": "#/$defs/proposta"}}
+      }
+    },
+    "proposta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trecho", "proposta", "tipo", "fundamento"],
+      "properties": {
+        "paragrafo": {"type": "integer", "minimum": 1},
+        "trecho": {"type": "string", "minLength": 1, "description": "Cópia literal e única do trecho a substituir, dentro de um só parágrafo."},
+        "proposta": {"type": "string", "description": "Texto que substitui integralmente o trecho. Vazio = supressão."},
+        "tipo": {"enum": ["correcao", "precisao", "fonte", "remissao", "redacao", "corte", "acrescimo"]},
+        "fundamento": {"type": "string", "minLength": 1, "description": "Por que a emenda melhora o texto, em uma ou duas frases."},
+        "fonte_ref": {"type": "string", "description": "Ex.: Lei nº 13.303/2016, art. 20."},
+        "fonte_literal": {"type": "string", "description": "Trecho literal da fonte. Obrigatório nos tipos correcao e fonte."},
+        "impacto": {"enum": ["nenhum", "muda_classificacao", "muda_conclusao"], "description": "Efeito sobre a classificação do apontamento ou a conclusão."}
+      }
+    },
+    "lote_votos": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["votante", "hash_minuta", "votos"],
+      "properties": {
+        "votante": {"type": "string"},
+        "hash_minuta": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "votos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "voto", "motivo"],
+            "properties": {
+              "id": {"type": "string"},
+              "voto": {"enum": ["aceitar", "ajustar", "rejeitar"]},
+              "ajuste": {"type": "string", "description": "Só com voto ajustar: redação que substitui integralmente o trecho atual."},
+              "motivo": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

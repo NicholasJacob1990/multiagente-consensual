@@ -1,6 +1,6 @@
 ---
 name: loop-debate-agentes
-description: "Criar ou melhorar um ou vários artefatos relacionados num ciclo iterativo em linguagem natural, com até 20 versões completas por artefato: um agente redige, outros debatem e avaliam, revisores autorizados podem publicar candidatas ou novas versões canônicas controladas, ou N produtores geram candidatos que passam por revisão cruzada N×N. Permite escolher modelos para qualquer papel, publicação compartilhada, prototipação paralela, perfis de domínio, ensemble profundo, decisor, auditoria cega e formação colegiada seriatim, per curiam ou opinion of the court, por votação global, analítica ou híbrida. Usar com /loop-debate-agentes, $loop-debate-agentes, /consenso, ensemble_nxn, protótipo multiagente, decisão colegiada, case-by-case, issue-by-issue, redação multi-LLM, pacote multi-artefato ou melhoria até nota-alvo."
+description: "Criar ou melhorar um ou vários artefatos relacionados num ciclo iterativo em linguagem natural, com até 20 versões completas por artefato: um agente redige, outros debatem e avaliam, revisores autorizados podem publicar candidatas ou novas versões canônicas controladas, ou N produtores geram candidatos que passam por revisão cruzada N×N. Permite escolher modelos para qualquer papel, publicação compartilhada, prototipação paralela, perfis de domínio, ensemble profundo, emendas consensuais (os agentes devolvem só as melhorias em que concordam), decisor, auditoria cega e formação colegiada seriatim, per curiam ou opinion of the court, por votação global, analítica ou híbrida. Usar com /loop-debate-agentes, $loop-debate-agentes, /consenso, ensemble_nxn, protótipo multiagente, decisão colegiada, case-by-case, issue-by-issue, redação multi-LLM, pacote multi-artefato ou melhoria até nota-alvo."
 ---
 
 # Loop Debate de Agentes
@@ -86,6 +86,7 @@ Exemplos:
 
 Antes de executar, ler [references/protocolo.md](references/protocolo.md). Ele define a configuração persistida, as garantias de independência e a compatibilidade com runs antigos. Quando `perfil = ensemble_nxn_v1`, ler também [references/ensemble-nxn.md](references/ensemble-nxn.md) integralmente antes da confirmação.
 Quando `formacao_decisao_colegiada` estiver ativa, ler também [references/decisao-colegiada.md](references/decisao-colegiada.md) integralmente.
+Quando `estrategia_da_equipe.tipo = emendas_consensuais`, ler [references/emendas-consensuais.md](references/emendas-consensuais.md) integralmente antes da confirmação. Antes de qualquer rodada com pacote grande, cadeira de créditos incertos ou nota-alvo, ler [references/custo-e-creditos.md](references/custo-e-creditos.md).
 
 ## Resolver os papéis
 
@@ -205,6 +206,8 @@ Estimativa máxima: chamadas e artefatos por tentativa
 
 “Ensemble N×N” resolve `perfil = ensemble_nxn_v1` e `estrategia_da_equipe.tipo = ensemble_nxn`. “Deep ensemble” ou “ensemble profundo” resolve profundidade `profundo`, com 2 ciclos completos e ao menos 6 rodadas globais por tentativa. “Máximo recomendado” resolve 6 ciclos e 18 rodadas globais. Em casos excepcionais confirmados, o motor pode estender gradualmente até 12 ciclos e 36 rodadas globais por tentativa. Cada cadeira pode emitir uma crítica, uma réplica e uma revisão por ciclo confirmado.
 
+“Emendas consensuais”, “só as melhorias em que concordam”, “rodada de emendas” ou “o que todos aceitariam mudar” resolvem `estrategia_da_equipe.tipo = emendas_consensuais` com o contrato `emendas_consensuais_v1` e regra `unanimidade`, salvo regra diversa pedida pelo usuário. A prévia informa proponentes, votantes, regra, trechos travados e auditor final de outra família.
+
 ## Executar o ciclo principal
 
 Aplicar `adaptive_output_v1` a todas as cadeiras. Não impor teto global de tokens nem transformar metas de concisão em truncamento duro. Cada manifestação pode terminar antes do teto quando estiver completa; redator, consolidador e geradores de candidatas podem usar até o limite efetivo oferecido pelo modelo na rota escolhida. Como os CLIs não expõem um controle uniforme de `max_output_tokens`, registrar `native_route_ceiling` quando esse for o único controle disponível, sem inventar um número.
@@ -258,6 +261,10 @@ Estimar chamadas por tentativa como `N gerações + C × (N² críticas + N rép
 Permitir produtores e revisores diferentes, desde que ambos os conjuntos tenham N cadeiras para uma matriz N×N. Se os tamanhos forem diferentes, registrar `ensemble_nxm`, informar a matriz real e nunca rotulá-la N×N. Não substituir cadeira indisponível; pausar ou reduzir somente conforme política previamente confirmada.
 
 Para código com exatamente Claude, Codex e Gemini, o executor pode usar o MCP A2A Mesh como adaptador. Para documentos, outros CLIs/modelos ou rastreabilidade integral, usar a orquestração direta. Em qualquer adaptador, aplicar o contrato de [references/ensemble-nxn.md](references/ensemble-nxn.md); uma síntese devolvida pelo A2A é apenas candidata e precisa dos gates locais.
+
+## Executar o modo Emendas consensuais
+
+Usar em minuta madura, quando a melhoria esperada é pontual. O redator não reescreve: proponentes enviam emendas literais às cegas, `scripts/emendas.py` as valida (trecho único, trecho travado, fonte literal localizada, conflito), os votantes votam às cegas numa cédula sem autoria e só entram as emendas que atingirem a regra, com no máximo uma rodada de ajuste. O script aplica as aprovadas sobre a minuta congelada, recusa o resultado que estoure o limite de palavras e entrega o dissenso ao humano. A versão resultante passa pela pré-auditoria do domínio, pelo redline e pela auditoria cega final de outra família. Fluxo, contratos e limites em [references/emendas-consensuais.md](references/emendas-consensuais.md); esquemas em `scripts/emendas_schema.json`.
 
 ## Configurar a autoria das correções
 
