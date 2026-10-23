@@ -206,7 +206,7 @@ Estimativa máxima: chamadas e artefatos por tentativa
 
 “Ensemble N×N” resolve `perfil = ensemble_nxn_v1` e `estrategia_da_equipe.tipo = ensemble_nxn`. “Deep ensemble” ou “ensemble profundo” resolve profundidade `profundo`, com 2 ciclos completos e ao menos 6 rodadas globais por tentativa. “Máximo recomendado” resolve 6 ciclos e 18 rodadas globais. Em casos excepcionais confirmados, o motor pode estender gradualmente até 12 ciclos e 36 rodadas globais por tentativa. Cada cadeira pode emitir uma crítica, uma réplica e uma revisão por ciclo confirmado.
 
-“Emendas consensuais”, “só as melhorias em que concordam”, “rodada de emendas” ou “o que todos aceitariam mudar” resolvem `estrategia_da_equipe.tipo = emendas_consensuais` com o contrato `emendas_consensuais_v1` e regra `unanimidade`, salvo regra diversa pedida pelo usuário. A prévia informa proponentes, votantes, regra, trechos travados e auditor final de outra família.
+“Emendas consensuais”, “só as melhorias em que concordam”, “rodada de emendas” ou “o que todos aceitariam mudar” resolvem `estrategia_da_equipe.tipo = emendas_consensuais` com o contrato `emendas_consensuais_v1` e regra `unanimidade`, salvo regra diversa pedida pelo usuário. A prévia informa tipo de documento, proponentes, votantes exigidos, regra, trechos travados e auditor final de outra família.
 
 ## Executar o ciclo principal
 
@@ -264,7 +264,16 @@ Para código com exatamente Claude, Codex e Gemini, o executor pode usar o MCP A
 
 ## Executar o modo Emendas consensuais
 
-Usar em minuta madura, quando a melhoria esperada é pontual. O redator não reescreve: proponentes enviam emendas literais às cegas, `scripts/emendas.py` as valida (trecho único, trecho travado, fonte literal localizada, conflito), os votantes votam às cegas numa cédula sem autoria e só entram as emendas que atingirem a regra, com no máximo uma rodada de ajuste. O script aplica as aprovadas sobre a minuta congelada, recusa o resultado que estoure o limite de palavras e entrega o dissenso ao humano. A versão resultante passa pela pré-auditoria do domínio, pelo redline e pela auditoria cega final de outra família. Fluxo, contratos e limites em [references/emendas-consensuais.md](references/emendas-consensuais.md); esquemas em `scripts/emendas_schema.json`.
+Usar em minuta madura de qualquer tipo, quando a melhoria esperada é pontual. O redator não reescreve.
+
+1. Os proponentes enviam emendas literais às cegas, cada uma com redação exata, classificação do conjunto do tipo de documento, fonte, nível de acesso à fonte e dependências.
+2. `scripts/emendas.py` valida as emendas: trecho único, trecho travado, fonte literal localizada, justificativa da correção necessária e conflitos.
+3. Os votantes exigidos votam às cegas numa cédula sem autoria. Silêncio conta como abstenção.
+4. Uma única rodada de debate mostra os motivos anônimos. Mudar de posição exige razão nova.
+5. Só entram as emendas que atingirem a regra com a mesma redação e a mesma classificação, e só depois da adesão ao conjunto aplicado.
+6. O script recusa resultado com dependência não atendida ou parágrafo acima do limite. Reserva ao humano o risco estratégico e entrega o dissenso.
+7. `scripts/achados.py` guarda o estado dos achados entre rodadas e barra reaberturas sem razão nova.
+8. A versão resultante passa pela pré-auditoria do domínio, pelo redline e pela auditoria cega final de outra família. Fluxo, contratos e limites em [references/emendas-consensuais.md](references/emendas-consensuais.md); esquemas em `scripts/emendas_schema.json`.
 
 ## Configurar a autoria das correções
 

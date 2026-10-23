@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "emendas_consensuais_v1",
   "title": "Contratos de entrada do modo emendas_consensuais_v1",
+  "description": "Vale para parecer, petição, recurso, minuta decisória ou outro trabalho. O conjunto de classificações depende de --tipo-documento: parecer (correcao_necessaria, obrigacao_incidente, recomendacao_facultativa, providencia_externa, redacional); peca (correcao_necessaria, reforco_argumentativo, risco_estrategico, providencia_externa, redacional); decisao (correcao_necessaria, aperfeicoamento_fundamentacao, recomendacao_facultativa, providencia_externa, redacional); generico (correcao_necessaria, aperfeicoamento_material, recomendacao_facultativa, providencia_externa, redacional).",
   "$defs": {
     "lote_propostas": {
       "type": "object",
@@ -16,16 +17,20 @@
     "proposta": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["trecho", "proposta", "tipo", "fundamento"],
+      "required": ["trecho", "proposta", "tipo", "classificacao", "fundamento"],
       "properties": {
-        "paragrafo": {"type": "integer", "minimum": 1},
-        "trecho": {"type": "string", "minLength": 1, "description": "Cópia literal e única do trecho a substituir, dentro de um só parágrafo."},
+        "paragrafo": {"type": "integer", "minimum": 1, "description": "Número do parágrafo; em documento sem numeração, a ordem implícita das linhas de texto."},
+        "trecho": {"type": "string", "minLength": 1, "description": "Cópia literal e única do trecho a substituir, dentro de um só parágrafo, na vista atual do documento."},
         "proposta": {"type": "string", "description": "Texto que substitui integralmente o trecho. Vazio = supressão."},
         "tipo": {"enum": ["correcao", "precisao", "fonte", "remissao", "redacao", "corte", "acrescimo"]},
+        "classificacao": {"type": "string", "description": "Uma das classificações do tipo de documento. Aceitar a emenda é aderir também a ela."},
+        "justificativa_obrigatoriedade": {"type": "string", "description": "Obrigatória em correcao_necessaria: defeito concreto, norma, precedente ou contradição que o demonstra, efeito sobre validade, admissibilidade ou eficácia, e por que a aplicação direta da norma não basta."},
         "fundamento": {"type": "string", "minLength": 1, "description": "Por que a emenda melhora o texto, em uma ou duas frases."},
-        "fonte_ref": {"type": "string", "description": "Ex.: Lei nº 13.303/2016, art. 20."},
+        "fonte_ref": {"type": "string", "description": "Documento (nome e/ou ID SEI, autos, versão ou data) e dispositivo ou localizador."},
         "fonte_literal": {"type": "string", "description": "Trecho literal da fonte. Obrigatório nos tipos correcao e fonte."},
-        "impacto": {"enum": ["nenhum", "muda_classificacao", "muda_conclusao"], "description": "Efeito sobre a classificação do apontamento ou a conclusão."}
+        "nivel_fonte": {"enum": ["integral_conferida", "reproducao_literal", "remissao", "ausente_no_dossie"], "description": "Como a fonte foi acessada. Remissão ou ausência no dossiê não sustenta emenda de mérito — e também não prova que o dispositivo foi inventado."},
+        "dependencias": {"type": "array", "items": {"type": "integer"}, "description": "Parágrafos que precisam acompanhar a emenda (conclusão, pedido, dispositivo, formulário, remissão). A aplicação é recusada se nenhum deles for emendado."},
+        "impacto": {"enum": ["nenhum", "muda_classificacao", "muda_conclusao"]}
       }
     },
     "lote_votos": {
@@ -33,7 +38,7 @@
       "additionalProperties": false,
       "required": ["votante", "hash_minuta", "votos"],
       "properties": {
-        "votante": {"type": "string"},
+        "votante": {"type": "string", "description": "Deve estar entre as cadeiras exigidas (--votantes). Cadeira exigida sem lote conta como abstenção."},
         "hash_minuta": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "votos": {
           "type": "array",
@@ -43,12 +48,44 @@
             "required": ["id", "voto", "motivo"],
             "properties": {
               "id": {"type": "string"},
-              "voto": {"enum": ["aceitar", "ajustar", "rejeitar"]},
-              "ajuste": {"type": "string", "description": "Só com voto ajustar: redação que substitui integralmente o trecho atual."},
+              "voto": {"enum": ["aceitar", "ajustar", "rejeitar"], "description": "Na rodada de debate, só aceitar ou rejeitar."},
+              "ajuste": {"type": "string", "description": "Com voto ajustar: redação que substitui integralmente o trecho atual."},
+              "classificacao": {"type": "string", "description": "Com voto ajustar: classificação alternativa."},
+              "razao_nova": {"type": "string", "description": "Na rodada de debate, obrigatória para mudar a posição da rodada anterior."},
               "motivo": {"type": "string"}
             }
           }
         }
+      }
+    },
+    "lote_conjunto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["votante", "hash_minuta", "hash_resultado", "adesao"],
+      "properties": {
+        "votante": {"type": "string"},
+        "hash_minuta": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "hash_resultado": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "adesao": {"enum": ["aceito", "conflito"]},
+        "conflitos": {"type": "array", "items": {"type": "object", "required": ["ids", "motivo"],
+                      "properties": {"ids": {"type": "array", "items": {"type": "string"}}, "motivo": {"type": "string"}}}}
+      }
+    },
+    "achado": {
+      "type": "object",
+      "description": "Entrada de achados.py registrar (registro_achados_v1).",
+      "required": ["descricao"],
+      "properties": {
+        "id": {"type": "string"},
+        "chave": {"type": "string", "description": "Identificador estável escolhido pelo auditor, para reconhecer o achado após renumeração."},
+        "descricao": {"type": "string"},
+        "trecho": {"type": "string"},
+        "paragrafo": {"type": "integer"},
+        "material": {"type": "boolean", "description": "false para preferência editorial, que não impede o encerramento."},
+        "classificacao": {"type": "string"},
+        "por": {"type": "string"},
+        "reabertura": {"type": "object", "required": ["motivo", "explicacao"],
+                       "properties": {"motivo": {"enum": ["regressao", "fonte_nova", "falha_identificada"]}, "explicacao": {"type": "string"}}}
       }
     }
   }

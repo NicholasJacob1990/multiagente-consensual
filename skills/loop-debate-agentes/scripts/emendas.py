@@ -3,19 +3,24 @@
 
 Os agentes leem a mesma minuta congelada, propõem emendas pontuais às cegas,
 votam às cegas nas emendas uns dos outros e só entram no texto as emendas
-aprovadas pela regra escolhida. O script não julga mérito: valida, apura e
-aplica. Cada subcomando grava JSON para o seguinte e recusa material de outra
-versão da minuta (hash divergente).
+aprovadas pela regra escolhida. Votar ``aceitar`` é aderir, ao mesmo tempo, ao
+diagnóstico, à redação exata e à classificação da emenda. O script não julga
+mérito: valida, apura e aplica. Cada subcomando grava JSON para o seguinte e
+recusa material de outra versão da minuta (hash divergente).
 
 Fluxo::
 
     emendas.py validar  --minuta v.md --propostas gemini.json codex.json [--fontes fontes/] --saida validadas.json
     emendas.py cedula   --validadas validadas.json --saida cedula.md
-    emendas.py apurar   --validadas validadas.json --votos voto_gemini.json voto_codex.json --saida apuracao.json
-    emendas.py segunda-rodada --apuracao apuracao.json --saida validadas2.json   # só se houver ajustes divergentes
-    emendas.py aplicar  --minuta v.md --apuracao apuracao.json --saida v_next.md --relatorio emendas.md
+    emendas.py apurar   --validadas validadas.json --votos voto_*.json --votantes gemini,codex,claude --saida apuracao.json
+    emendas.py segunda-rodada --apuracao apuracao.json --saida validadas2.json   # debate: dissenso e ajustes divergentes
+    emendas.py aplicar  --minuta v.md --apuracao apuracao.json [apuracao2.json] --saida v_next.md --relatorio emendas.md
+    emendas.py conjunto --minuta-base v.md --minuta-nova v_next.md --apuracao apuracao.json --saida cedula_conjunto.md
+    emendas.py confirmar --minuta-base v.md --minuta-nova v_next.md --votos conj_*.json --votantes gemini,codex,claude --saida confirmacao.json
 
-Contratos de entrada: ``emendas_schema.json``.
+A versão nova só substitui a base depois de ``confirmar`` aprovar a adesão ao
+conjunto: duas emendas aceitáveis isoladamente podem conflitar quando
+combinadas. Contratos de entrada: ``emendas_schema.json``.
 """
 
 from __future__ import annotations
@@ -34,8 +39,22 @@ from typing import Any
 
 CONTRATO = "emendas_consensuais_v1"
 TIPOS = ("correcao", "precisao", "fonte", "remissao", "redacao", "corte", "acrescimo")
+# Classificações por tipo de trabalho jurídico. "correcao_necessaria" e "redacional" existem em todos: a primeira exige
+# justificativa de obrigatoriedade; a segunda não conta como melhoria material. A receita do domínio escolhe o conjunto.
+CLASSIFICACOES_POR_TIPO = {
+    "generico": ("correcao_necessaria", "aperfeicoamento_material", "recomendacao_facultativa", "providencia_externa", "redacional"),
+    "parecer": ("correcao_necessaria", "obrigacao_incidente", "recomendacao_facultativa", "providencia_externa", "redacional"),
+    "peca": ("correcao_necessaria", "reforco_argumentativo", "risco_estrategico", "providencia_externa", "redacional"),
+    "decisao": ("correcao_necessaria", "aperfeicoamento_fundamentacao", "recomendacao_facultativa", "providencia_externa", "redacional"),
+}
+CLASSIFICACOES = CLASSIFICACOES_POR_TIPO["generico"]
+NIVEIS_FONTE = ("integral_conferida", "reproducao_literal", "remissao", "ausente_no_dossie")
+NIVEIS_SUFICIENTES = ("integral_conferida", "reproducao_literal")
 VOTOS = ("aceitar", "ajustar", "rejeitar")
 PAR_RE = re.compile(r"^(\d+)\. ", re.M)
+APROVADAS = ("aprovada", "aprovada_com_ajuste")
+# classificações que, mesmo aprovadas pelas cadeiras, só entram com autorização expressa do usuário (estratégia da parte)
+RESERVADAS_AO_HUMANO = ("risco_estrategico",)
 
 
 # ---------------------------------------------------------------- utilidades
@@ -62,12 +81,30 @@ def normalizar(texto: str) -> str:
 
 
 def limites_paragrafos(minuta: str) -> list[tuple[int, int, int]]:
-    """(número, início, fim) de cada parágrafo numerado ``N. texto``, uma linha por parágrafo."""
+    """(número, início, fim) de cada parágrafo, uma linha por parágrafo.
+
+    Usa a numeração ``N. texto`` quando o documento a tem (parecer, voto, muitas petições). Sem ela, numera
+    implicitamente, em ordem, as linhas de texto que não são títulos nem marcadores de cabeçalho e assinatura.
+    """
     out = []
     for m in PAR_RE.finditer(minuta):
         fim = minuta.find("\n", m.start())
         out.append((int(m.group(1)), m.start(), len(minuta) if fim < 0 else fim))
+    if out:
+        return out
+    pos, n = 0, 0
+    for linha in minuta.split("\n"):
+        s = linha.strip()
+        if s and not s.startswith(("#", "@")):
+            n += 1
+            ini = pos + linha.index(s[0])
+            out.append((n, ini, pos + len(linha)))
+        pos += len(linha) + 1
     return out
+
+
+def corpo_paragrafo(minuta: str, ini: int, fim: int) -> str:
+    return PAR_RE.sub("", minuta[ini:fim], count=1)
 
 
 def paragrafo_em(limites: list[tuple[int, int, int]], pos: int) -> tuple[int, int, int] | None:
@@ -104,12 +141,42 @@ def regra_atingida(sim: int, total: int, regra: str) -> bool:
     raise SystemExit(f"regra desconhecida: {regra}")
 
 
+def separar_votantes(lotes: list[dict], hash_minuta: str, exigidos: list[str] | None,
+                     campo_hash: str = "hash_minuta", hash_extra: tuple[str, str] | None = None) -> tuple[list[str], dict[str, dict], list[dict]]:
+    """Lotes válidos por votante, recusados e lista de votantes que contam no quórum.
+
+    Com ``exigidos``, o quórum é a lista configurada: cadeira que não respondeu, respondeu sobre outra
+    versão ou mandou lote vazio conta como abstenção, nunca como adesão.
+    """
+    validos: dict[str, dict] = {}
+    recusados = []
+    for lote in lotes:
+        nome = lote.get("votante", "?")
+        if lote.get(campo_hash) != hash_minuta:
+            recusados.append({"votante": nome, "motivo": f"{campo_hash} divergente: voto sobre outra versão"})
+        elif hash_extra and lote.get(hash_extra[0]) != hash_extra[1]:
+            recusados.append({"votante": nome, "motivo": f"{hash_extra[0]} divergente: voto sobre outro resultado"})
+        elif nome in validos:
+            recusados.append({"votante": nome, "motivo": "votante repetido"})
+        elif exigidos is not None and nome not in exigidos:
+            recusados.append({"votante": nome, "motivo": "votante não previsto na configuração"})
+        else:
+            validos[nome] = lote
+    quorum = list(exigidos) if exigidos is not None else list(validos)
+    return quorum, validos, recusados
+
+
 # ---------------------------------------------------------------- validar
 
 def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, fontes: str | None = None,
-            max_palavras: int | None = None, exigir_fonte: tuple[str, ...] = ("correcao", "fonte")) -> dict:
+            max_palavras: int | None = None, exigir_fonte: tuple[str, ...] = ("correcao", "fonte"),
+            tipo_documento: str = "generico") -> dict:
+    if tipo_documento not in CLASSIFICACOES_POR_TIPO:
+        raise SystemExit(f"tipo de documento desconhecido: {tipo_documento}; use {', '.join(CLASSIFICACOES_POR_TIPO)}")
+    classificacoes = CLASSIFICACOES_POR_TIPO[tipo_documento]
     hash_minuta = sha256_texto(minuta)
     limites = limites_paragrafos(minuta)
+    existentes = {n for n, _, _ in limites}
     travas = []
     for t in travados or []:
         i = minuta.find(t["texto"])
@@ -126,10 +193,11 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
         for p in lote.get("propostas", []):
             emendas.append({**p, "autores": [autor]})
 
-    # convergência: a mesma emenda proposta por mais de um autor vira uma só
+    # convergência: a mesma emenda (trecho, redação e classificação) proposta por mais de um autor vira uma só
     unicas: list[dict] = []
     for e in emendas:
-        igual = next((u for u in unicas if u["trecho"] == e["trecho"] and normalizar(u["proposta"]) == normalizar(e["proposta"])), None)
+        igual = next((u for u in unicas if u["trecho"] == e["trecho"] and normalizar(u["proposta"]) == normalizar(e["proposta"])
+                      and u.get("classificacao") == e.get("classificacao")), None)
         if igual:
             igual["autores"] += [a for a in e["autores"] if a not in igual["autores"]]
         else:
@@ -141,6 +209,13 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
         trecho = e.get("trecho", "")
         if e.get("tipo") not in TIPOS:
             motivos.append(f"tipo inválido: {e.get('tipo')!r}")
+        if e.get("classificacao") not in classificacoes:
+            motivos.append(f"classificação ausente ou inválida para {tipo_documento}: {e.get('classificacao')!r} "
+                           f"(use {', '.join(classificacoes)})")
+        elif e["classificacao"] == "correcao_necessaria" and not str(e.get("justificativa_obrigatoriedade", "")).strip():
+            motivos.append("correção necessária sem justificativa de obrigatoriedade: o defeito concreto, a norma, o precedente "
+                           "ou a contradição que o demonstra, o efeito sobre validade, admissibilidade ou eficácia, e por que a "
+                           "aplicação direta da norma não basta")
         ocorrencias = minuta.count(trecho) if trecho else 0
         if ocorrencias != 1:
             motivos.append("trecho não localizado literalmente na minuta" if ocorrencias == 0
@@ -156,17 +231,29 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
                     motivos.append(f"trecho está no parágrafo {lim[0]}, não no {e['paragrafo']}")
                 e["paragrafo"] = lim[0]
                 novo_par = minuta[lim[1]:ini] + e["proposta"] + minuta[e["fim"]:lim[2]]
-                e["palavras_resultantes"] = palavras(PAR_RE.sub("", novo_par, count=1))
+                e["palavras_resultantes"] = palavras(corpo_paragrafo(novo_par, 0, len(novo_par)))
                 if max_palavras and e["palavras_resultantes"] > max_palavras:
                     # outra emenda do mesmo parágrafo pode compensar; o limite é conferido de novo ao aplicar
                     alertas.append(f"isolada, deixa o parágrafo com {e['palavras_resultantes']} palavras (máximo {max_palavras})")
             for a, b, rotulo in travas:
                 if ini < b and a < e["fim"]:
                     motivos.append(f'trecho travado "{rotulo}"')
+        deps = e.get("dependencias") or []
+        if not all(isinstance(d, int) for d in deps):
+            motivos.append("dependências devem ser números de parágrafo")
+        elif [d for d in deps if d not in existentes]:
+            motivos.append(f"dependência em parágrafo inexistente: {[d for d in deps if d not in existentes]}")
+        e["dependencias"] = [d for d in deps if isinstance(d, int) and d != e.get("paragrafo")]
         e["delta_palavras"] = palavras(e.get("proposta", "")) - palavras(trecho)
+        nivel = e.get("nivel_fonte")
+        if nivel is not None and nivel not in NIVEIS_FONTE:
+            motivos.append(f"nível de fonte inválido: {nivel!r}")
         if e.get("tipo") in exigir_fonte:
             literal = e.get("fonte_literal", "").strip()
-            if not literal:
+            if nivel in ("remissao", "ausente_no_dossie"):
+                # fonte só citada por remissão, ou ausente do material, não sustenta emenda de mérito — e também não prova invenção
+                motivos.append(f"fonte com nível '{nivel}': não sustenta emenda de mérito; conferir a fonte integral e repropor")
+            elif not literal:
                 motivos.append("emenda de mérito sem fonte literal")
             elif fontes is not None and normalizar(literal) not in fontes:
                 motivos.append("fonte literal não localizada nas fontes fornecidas")
@@ -189,6 +276,9 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
     return {
         "contrato": CONTRATO,
         "hash_minuta": hash_minuta,
+        "rodada": 1,
+        "tipo_documento": tipo_documento,
+        "classificacoes": list(classificacoes),
         "lotes_recusados": lotes_recusados,
         "emendas": unicas,
     }
@@ -197,30 +287,38 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
 # ---------------------------------------------------------------- cédula
 
 def cedula(validadas: dict, semente: str | None = None, permitir_ajuste: bool | None = None) -> str:
+    rodada = validadas.get("rodada", 1)
     if permitir_ajuste is None:
-        permitir_ajuste = validadas.get("rodada", 1) < 2  # a segunda rodada só escolhe entre variantes
+        permitir_ajuste = rodada < 2  # a rodada de debate só escolhe entre variantes
     emendas = [e for e in validadas["emendas"] if e["status"] == "valida"]
     ordem = list(emendas)
     random.Random(semente or validadas["hash_minuta"]).shuffle(ordem)
     ordem.sort(key=lambda e: e.get("paragrafo") or 0)  # embaralha empates e mantém a leitura em ordem de parágrafo
     votos_permitidos = " | ".join(VOTOS if permitir_ajuste else ("aceitar", "rejeitar"))
     linhas = [
-        f"# Cédula de votação — {CONTRATO}",
+        f"# Cédula de votação — {CONTRATO} — rodada {rodada}",
         "",
         f"HASH_MINUTA: {validadas['hash_minuta']}",
         "",
         "Vote em cada emenda abaixo sem saber quem a propôs. Leia a minuta integral e confira o fundamento na fonte "
-        "antes de votar. Rejeite a emenda que piore o texto, introduza erro, dependa de fonte não conferida ou exceda o "
-        "suporte. "
-        + ("Use \"ajustar\" só quando concordar com a ideia e tiver redação melhor para o mesmo trecho; o ajuste "
-           "substitui integralmente o trecho atual." if permitir_ajuste else
-           "Esta é a rodada final: as variantes de um mesmo trecho concorrem entre si e entra no máximo uma; "
-           "aceite somente as que você subscreveria."),
-        "",
+        "antes de votar. \"aceitar\" significa aderir ao diagnóstico, à redação exata e à classificação; concordar só "
+        "com o diagnóstico não basta. Rejeite a emenda que piore o texto, introduza erro, dependa de fonte não conferida, "
+        "exceda o suporte ou esteja mal classificada. ",
     ]
+    if permitir_ajuste:
+        linhas[-1] += ("Use \"ajustar\" quando concordar com o diagnóstico e tiver redação ou classificação melhor: o campo "
+                       "\"ajuste\" substitui integralmente o trecho atual e o campo \"classificacao\" troca a classificação.")
+    else:
+        linhas[-1] += ("Esta é a rodada de debate: abaixo de cada emenda estão os motivos da rodada anterior, sem autoria. "
+                       "As variantes de um mesmo trecho concorrem entre si e entra no máximo uma. Para mudar a posição que "
+                       "você tomou na rodada anterior, preencha \"razao_nova\" com o argumento ou a fonte que o convenceu; "
+                       "mudança sem razão nova conta como abstenção.")
+    if validadas.get("classificacoes"):
+        linhas += ["", f"Classificações admitidas ({validadas.get('tipo_documento', 'generico')}): {', '.join(validadas['classificacoes'])}."]
+    linhas.append("")
     for e in ordem:
         linhas += [
-            f"## {e['id']} — parágrafo {e.get('paragrafo', '—')} — {e['tipo']}"
+            f"## {e['id']} — parágrafo {e.get('paragrafo', '—')} — {e['tipo']} — {e.get('classificacao', 's/classificação')}"
             + (f" — conflita com outras do grupo {e['grupo_conflito']}" if e.get("grupo_conflito") else ""),
             "",
             f"**Trecho atual:** {e['trecho']}",
@@ -229,19 +327,27 @@ def cedula(validadas: dict, semente: str | None = None, permitir_ajuste: bool | 
             "",
             f"**Fundamento:** {e.get('fundamento', '')}",
         ]
+        if e.get("justificativa_obrigatoriedade"):
+            linhas.append(f"\n**Por que é obrigatória:** {e['justificativa_obrigatoriedade']}")
         if e.get("fonte_literal"):
-            linhas.append(f"\n**Fonte literal ({e.get('fonte_ref', 's/ref.')}):** {e['fonte_literal']}")
-        linhas += [f"\n**Variação de palavras:** {e['delta_palavras']:+d}", ""]
+            linhas.append(f"\n**Fonte literal ({e.get('fonte_ref', 's/ref.')}; {e.get('nivel_fonte', 'nível não informado')}):** {e['fonte_literal']}")
+        if e.get("dependencias"):
+            linhas.append(f"\n**Depende de ajuste nos parágrafos:** {', '.join(map(str, e['dependencias']))}")
+        linhas.append(f"\n**Variação de palavras:** {e['delta_palavras']:+d}")
+        if e.get("motivos_anteriores"):
+            linhas += ["", "**Motivos da rodada anterior:**", *[f"- {m}" for m in e["motivos_anteriores"]]]
+        linhas.append("")
+    extra = {"ajuste": "", "classificacao": ""} if permitir_ajuste else {"razao_nova": ""}
     modelo = {
         "votante": "<seu identificador>",
         "hash_minuta": validadas["hash_minuta"],
-        "votos": [{"id": e["id"], "voto": "aceitar", "motivo": "...", **({"ajuste": ""} if permitir_ajuste else {})} for e in ordem],
+        "votos": [{"id": e["id"], "voto": "aceitar", "motivo": "...", **extra} for e in ordem],
     }
     linhas += [
         "## Resposta",
         "",
         f"Responda só com o JSON abaixo, com um voto por emenda ({votos_permitidos}) e motivo curto em cada um. "
-        "O campo hash_minuta deve repetir exatamente o hash acima.",
+        "O campo hash_minuta deve repetir exatamente o hash acima. Emenda sem voto conta como abstenção.",
         "",
         "```json",
         json.dumps(modelo, ensure_ascii=False, indent=2),
@@ -252,59 +358,78 @@ def cedula(validadas: dict, semente: str | None = None, permitir_ajuste: bool | 
 
 # ---------------------------------------------------------------- apurar
 
-def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade") -> dict:
+def _posicao(voto: str) -> str:
+    return {"aceitar": "favor", "ajustar": "favor", "rejeitar": "contra"}.get(voto, "abstencao")
+
+
+def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade", exigidos: list[str] | None = None) -> dict:
     hash_minuta = validadas["hash_minuta"]
-    votantes, recusados = [], []
-    for lote in lotes_votos:
-        nome = lote.get("votante", "?")
-        if lote.get("hash_minuta") != hash_minuta:
-            recusados.append({"votante": nome, "motivo": "hash_minuta divergente"})
-        elif nome in [v["votante"] for v in votantes]:
-            recusados.append({"votante": nome, "motivo": "votante repetido"})
-        else:
-            votantes.append(lote)
-    total = len(votantes)
+    rodada = validadas.get("rodada", 1)
+    quorum, validos, recusados = separar_votantes(lotes_votos, hash_minuta, exigidos)
+    total = len(quorum)
     resultado = []
     for e in validadas["emendas"]:
         r = {k: e[k] for k in e if k not in ("status", "motivos_invalidade", "alertas")}
         if e["status"] != "valida":
             resultado.append({**r, "decisao": "invalida", "motivos": e["motivos_invalidade"], "votos": []})
             continue
+        classe = e.get("classificacao")
         votos = []
-        for lote in votantes:
-            v = next((v for v in lote.get("votos", []) if v.get("id") == e["id"]), None)
-            if v is None or v.get("voto") not in VOTOS:
-                v = {"id": e["id"], "voto": "abstencao", "motivo": "sem voto válido"}
-            votos.append({"votante": lote["votante"], **{k: v.get(k) for k in ("voto", "ajuste", "motivo") if v.get(k) is not None}})
-        aceitar = sum(v["voto"] == "aceitar" for v in votos)
-        ajustes = [v["ajuste"].strip() for v in votos if v["voto"] == "ajustar" and v.get("ajuste", "").strip()]
-        ajustar = sum(v["voto"] == "ajustar" for v in votos)
-        favor = aceitar + ajustar
+        for nome in quorum:
+            lote = validos.get(nome)
+            v = next((v for v in (lote or {}).get("votos", []) if v.get("id") == e["id"]), None)
+            if lote is None:
+                v = {"voto": "abstencao", "motivo": "cadeira não respondeu ou respondeu sobre outra versão"}
+            elif v is None or v.get("voto") not in VOTOS:
+                v = {"voto": "abstencao", "motivo": "sem voto válido"}
+            elif (v["voto"] == "ajustar" and v.get("classificacao")
+                  and v["classificacao"] not in (validadas.get("classificacoes") or CLASSIFICACOES)):
+                v = {"voto": "abstencao", "motivo": f"classificação de ajuste inválida: {v['classificacao']!r}"}
+            elif rodada >= 2 and v["voto"] == "ajustar":
+                v = {"voto": "abstencao", "motivo": "ajuste não é admitido na rodada de debate"}
+            elif rodada >= 2:
+                antes = e.get("posicoes_anteriores", {}).get(nome)
+                if antes in ("favor", "contra") and _posicao(v["voto"]) != antes and not str(v.get("razao_nova", "")).strip():
+                    v = {"voto": "abstencao", "motivo": f"mudou de posição ({antes} → {_posicao(v['voto'])}) sem razão nova"}
+            votos.append({"votante": nome, **{k: v.get(k) for k in ("voto", "ajuste", "classificacao", "motivo", "razao_nova")
+                                              if v.get(k) not in (None, "")}})
+        # cada variante (texto + classificação) precisa atingir a regra por si: quem aceitou a original não aderiu ao ajuste
+        original = (normalizar(e["proposta"]), classe)
+        contagem: dict[tuple[str, Any], int] = {original: 0}
+        textos: dict[tuple[str, Any], dict] = {original: {"texto": e["proposta"], "classificacao": classe}}
+        for v in votos:
+            if v["voto"] == "aceitar":
+                contagem[original] += 1
+            elif v["voto"] == "ajustar":
+                texto = (v.get("ajuste") or e["proposta"]).strip()
+                cl = v.get("classificacao") or classe
+                chave = (normalizar(texto), cl)
+                contagem[chave] = contagem.get(chave, 0) + 1
+                textos.setdefault(chave, {"texto": texto, "classificacao": cl})
+        favor = sum(v["voto"] in ("aceitar", "ajustar") for v in votos)
         r["votos"] = votos
-        r["placar"] = {"aceitar": aceitar, "ajustar": ajustar, "rejeitar": sum(v["voto"] == "rejeitar" for v in votos),
+        r["placar"] = {"aceitar": sum(v["voto"] == "aceitar" for v in votos), "ajustar": sum(v["voto"] == "ajustar" for v in votos),
+                       "rejeitar": sum(v["voto"] == "rejeitar" for v in votos),
                        "abstencao": sum(v["voto"] == "abstencao" for v in votos), "votantes": total}
-        # cada texto precisa atingir a regra por si: quem aceitou a redação original não aderiu ao ajuste
-        por_ajuste: dict[str, list[str]] = {}
-        for a in ajustes:
-            por_ajuste.setdefault(normalizar(a), []).append(a)
-        ajuste_vencedor = next((v[0] for v in por_ajuste.values() if regra_atingida(len(v), total, regra)), None)
-        if regra_atingida(aceitar, total, regra):
-            r["decisao"], r["texto_aprovado"] = "aprovada", e["proposta"]
-        elif ajuste_vencedor is not None:
-            r["decisao"], r["texto_aprovado"] = "aprovada_com_ajuste", ajuste_vencedor
+        vencedora = next((k for k, n in contagem.items() if regra_atingida(n, total, regra)), None)
+        if vencedora is not None:
+            r["decisao"] = "aprovada" if vencedora == original else "aprovada_com_ajuste"
+            r["texto_aprovado"] = textos[vencedora]["texto"]
+            r["classificacao_aprovada"] = textos[vencedora]["classificacao"]
         elif regra_atingida(favor, total, regra):
             r["decisao"] = "segunda_rodada"
-            r["variantes"] = [e["proposta"]] + list(dict.fromkeys(ajustes))
         elif favor == 0:
             r["decisao"] = "rejeitada"
         else:
             r["decisao"] = "dissenso"
+        if r["decisao"] in ("segunda_rodada", "dissenso"):
+            r["variantes"] = list(textos.values())
         resultado.append(r)
 
     # no grupo de conflito, entra só a aprovada com mais aceites; empate vai ao humano
     grupos: dict[str, list[dict]] = {}
     for r in resultado:
-        if r.get("grupo_conflito") and r["decisao"] in ("aprovada", "aprovada_com_ajuste"):
+        if r.get("grupo_conflito") and r["decisao"] in APROVADAS:
             grupos.setdefault(r["grupo_conflito"], []).append(r)
     for g, rs in grupos.items():
         if len(rs) < 2:
@@ -315,9 +440,9 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade")
             r["decisao"] = "dissenso" if empate else "preterida"
             r["motivo_decisao"] = f"conflito no grupo {g}" + (" com empate" if empate else f" com {rs[0]['id']}, mais votada")
             r.pop("texto_aprovado", None)
+            r.pop("classificacao_aprovada", None)
     # sem consenso próprio e vencida por concorrente aprovada no mesmo trecho: não sobe ao humano
-    vencedoras = {r["grupo_conflito"]: r["id"] for r in resultado
-                  if r.get("grupo_conflito") and r["decisao"] in ("aprovada", "aprovada_com_ajuste")}
+    vencedoras = {r["grupo_conflito"]: r["id"] for r in resultado if r.get("grupo_conflito") and r["decisao"] in APROVADAS}
     for r in resultado:
         g = r.get("grupo_conflito")
         if g in vencedoras and r["decisao"] in ("dissenso", "segunda_rodada") and "motivo_decisao" not in r:
@@ -328,63 +453,117 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade")
         "contrato": CONTRATO,
         "hash_minuta": hash_minuta,
         "regra": regra,
-        "rodada": validadas.get("rodada", 1),
-        "votantes": [v["votante"] for v in votantes],
+        "rodada": rodada,
+        "tipo_documento": validadas.get("tipo_documento", "generico"),
+        "classificacoes": validadas.get("classificacoes"),
+        "votantes": quorum,
+        "votantes_responderam": [n for n in quorum if n in validos],
         "votantes_recusados": recusados,
         "emendas": resultado,
     }
 
 
-def segunda_rodada(apuracao: dict) -> dict:
-    """Converte as emendas com ajustes divergentes em variantes concorrentes, votadas só com aceitar/rejeitar."""
+def segunda_rodada(apuracao: dict, semente: str | None = None) -> dict:
+    """Rodada única de debate: dissenso e ajustes divergentes voltam como variantes concorrentes.
+
+    Cada votante vê os motivos da rodada anterior, sem autoria, e vota só aceitar ou rejeitar. Mudar a posição
+    anterior exige ``razao_nova``; sem ela, o voto conta como abstenção.
+    """
     if apuracao.get("rodada", 1) >= 2:
-        raise SystemExit("o modo admite uma única rodada de ajuste; o que não fechou vai ao humano como dissenso")
+        raise SystemExit("o modo admite uma única rodada de debate; o que não fechou vai ao humano como dissenso")
     emendas = []
     for r in apuracao["emendas"]:
-        if r["decisao"] != "segunda_rodada":
+        if r["decisao"] not in ("segunda_rodada", "dissenso"):
             continue
-        for k, texto in enumerate(r["variantes"]):
+        motivos = [v["motivo"] for v in r.get("votos", []) if v.get("motivo") and v["voto"] != "abstencao"]
+        random.Random(semente or apuracao["hash_minuta"] + r["id"]).shuffle(motivos)
+        for k, var in enumerate(r["variantes"]):
+            chave = (normalizar(var["texto"]), var["classificacao"])
+            posicoes = {}
+            for v in r.get("votos", []):
+                if v["voto"] == "rejeitar":
+                    posicoes[v["votante"]] = "contra"
+                elif v["voto"] == "aceitar" and k == 0:
+                    posicoes[v["votante"]] = "favor"
+                elif v["voto"] == "ajustar" and (normalizar((v.get("ajuste") or r["proposta"]).strip()),
+                                                 v.get("classificacao") or r.get("classificacao")) == chave:
+                    posicoes[v["votante"]] = "favor"
             emendas.append({
                 "id": f"{r['id']}{chr(ord('a') + k)}",
                 "origem": r["id"],
                 "autores": r.get("autores", []) if k == 0 else ["ajuste"],
                 "paragrafo": r.get("paragrafo"),
                 "tipo": r["tipo"],
+                "classificacao": var["classificacao"],
+                "justificativa_obrigatoriedade": r.get("justificativa_obrigatoriedade", ""),
                 "trecho": r["trecho"],
-                "proposta": texto,
+                "proposta": var["texto"],
                 "fundamento": r.get("fundamento", ""),
                 "fonte_literal": r.get("fonte_literal", ""),
                 "fonte_ref": r.get("fonte_ref", ""),
+                "nivel_fonte": r.get("nivel_fonte"),
+                "dependencias": r.get("dependencias", []),
                 "inicio": r["inicio"],
                 "fim": r["fim"],
-                "delta_palavras": palavras(texto) - palavras(r["trecho"]),
+                "delta_palavras": palavras(var["texto"]) - palavras(r["trecho"]),
                 "grupo_conflito": f"R{r['id']}",
+                "posicoes_anteriores": posicoes,
+                "motivos_anteriores": motivos,
                 "status": "valida",
                 "motivos_invalidade": [],
             })
-    return {"contrato": CONTRATO, "hash_minuta": apuracao["hash_minuta"], "rodada": 2, "lotes_recusados": [], "emendas": emendas}
+    return {"contrato": CONTRATO, "hash_minuta": apuracao["hash_minuta"], "rodada": 2, "lotes_recusados": [],
+            "tipo_documento": apuracao.get("tipo_documento", "generico"), "classificacoes": apuracao.get("classificacoes"),
+            "emendas": emendas}
 
 
 # ---------------------------------------------------------------- aplicar
 
-def aplicar(minuta: str, apuracoes: list[dict], max_palavras: int | None = None) -> tuple[str, list[dict]]:
+def _classe(r: dict) -> str | None:
+    return r.get("classificacao_aprovada") or r.get("classificacao")
+
+
+def aprovadas_de(apuracoes: list[dict], excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] | None = ()) -> list[dict]:
+    """Aprovadas a aplicar. Com ``autorizadas=None``, inclui também as reservadas ao humano."""
+    out = []
+    for ap in apuracoes:
+        for r in ap["emendas"]:
+            if r["decisao"] not in APROVADAS or r["id"] in excluir or r.get("origem") in excluir:
+                continue
+            if autorizadas is not None and _classe(r) in RESERVADAS_AO_HUMANO and r["id"] not in autorizadas:
+                continue
+            out.append(r)
+    return sorted(out, key=lambda r: r["inicio"])
+
+
+def aguardando_humano(apuracoes: list[dict], autorizadas: tuple[str, ...] = ()) -> list[dict]:
+    return [r for ap in apuracoes for r in ap["emendas"]
+            if r["decisao"] in APROVADAS and _classe(r) in RESERVADAS_AO_HUMANO and r["id"] not in autorizadas]
+
+
+def aplicar(minuta: str, apuracoes: list[dict], max_palavras: int | None = None,
+            excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] = ()) -> tuple[str, list[dict]]:
     hash_minuta = sha256_texto(minuta)
-    aprovadas = []
     for ap in apuracoes:
         if ap["hash_minuta"] != hash_minuta:
             raise SystemExit("a apuração foi feita sobre outra versão da minuta")
-        aprovadas += [r for r in ap["emendas"] if r["decisao"] in ("aprovada", "aprovada_com_ajuste")]
-    aprovadas.sort(key=lambda r: r["inicio"])
+    aprovadas = aprovadas_de(apuracoes, excluir, autorizadas)
     for a, b in zip(aprovadas, aprovadas[1:]):
         if b["inicio"] < a["fim"]:
             raise SystemExit(f"emendas aprovadas sobrepostas: {a['id']} e {b['id']}")
+    tocados = {r["paragrafo"] for r in aprovadas}
+    pendentes = [(r["id"], d) for r in aprovadas for d in r.get("dependencias", []) if d not in tocados]
+    if pendentes:
+        raise SystemExit("aplicação recusada; dependências não atendidas: "
+                         + ", ".join(f"{i} exige ajuste no parágrafo {d}" for i, d in pendentes)
+                         + ". Votar a emenda dependente ou levar ao humano.")
     texto = minuta
     for r in reversed(aprovadas):
         assert texto[r["inicio"]:r["fim"]] == r["trecho"], r["id"]
         texto = texto[:r["inicio"]] + r["texto_aprovado"] + texto[r["fim"]:]
     if max_palavras:
-        excesso = [(n, palavras(texto[i:f].split(". ", 1)[1])) for n, i, f in limites_paragrafos(texto)
-                   if palavras(texto[i:f].split(". ", 1)[1]) > max_palavras]
+        excesso = [(n, palavras(corpo_paragrafo(texto, i, f))) for n, i, f in limites_paragrafos(texto)
+                   if palavras(corpo_paragrafo(texto, i, f)) > max_palavras]
         if excesso:
             raise SystemExit("aplicação recusada; parágrafos acima do limite: "
                              + ", ".join(f"{n} ({q} palavras)" for n, q in excesso)
@@ -392,58 +571,143 @@ def aplicar(minuta: str, apuracoes: list[dict], max_palavras: int | None = None)
     return texto, aprovadas
 
 
-def relatorio(minuta_path: str, saida_path: str, hash_antes: str, hash_depois: str, apuracoes: list[dict]) -> str:
+def materiais(aplicadas: list[dict]) -> list[dict]:
+    return [r for r in aplicadas if (r.get("classificacao_aprovada") or r.get("classificacao")) != "redacional"]
+
+
+def relatorio(minuta_path: str, saida_path: str, hash_antes: str, hash_depois: str, apuracoes: list[dict],
+              excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] = ()) -> str:
     def votos_txt(r: dict) -> str:
-        return "; ".join(f"{v['votante']}: {v['voto']}" + (f" — {v['motivo']}" if v.get("motivo") else "") for v in r.get("votos", []))
+        return "; ".join(f"{v['votante']}: {v['voto']}" + (f" — {v['motivo']}" if v.get("motivo") else "")
+                         + (f" (razão nova: {v['razao_nova']})" if v.get("razao_nova") else "") for v in r.get("votos", []))
 
     todas = {}
-    for ap in apuracoes:  # a segunda rodada prevalece sobre a primeira para a mesma emenda de origem
+    for ap in apuracoes:  # a rodada de debate prevalece sobre a primeira para a mesma emenda de origem
         for r in ap["emendas"]:
             todas[r["id"]] = r
     origem_resolvida = {r.get("origem") for r in todas.values() if r.get("origem")}
+    aplicadas = aprovadas_de(apuracoes, excluir, autorizadas)
+    reservadas = {r["id"] for r in aguardando_humano(apuracoes, autorizadas)}
     regra = apuracoes[-1]["regra"]
     linhas = [
         f"# Relatório de emendas — {CONTRATO}",
         "",
         f"- Minuta de entrada: `{minuta_path}` (sha256 `{hash_antes}`)",
         f"- Minuta de saída: `{saida_path}` (sha256 `{hash_depois}`)",
-        f"- Regra de aprovação: {regra}; votantes: {', '.join(apuracoes[0]['votantes'])}",
+        f"- Regra de aprovação: {regra}; cadeiras exigidas: {', '.join(apuracoes[0]['votantes'])}",
     ]
     for ap in apuracoes:
+        faltaram = [n for n in ap["votantes"] if n not in ap.get("votantes_responderam", ap["votantes"])]
+        if faltaram:
+            linhas.append(f"- Rodada {ap.get('rodada', 1)}: sem resposta válida de {', '.join(faltaram)} (contadas como abstenção)")
         for v in ap.get("votantes_recusados", []):
             linhas.append(f"- Voto recusado de {v['votante']}: {v['motivo']}")
+    if excluir:
+        linhas.append(f"- Excluídas da aplicação por conflito no conjunto: {', '.join(excluir)}")
+    if not materiais(aplicadas):
+        linhas.append("- **Resultado: sem novas melhorias materiais consensuais.** Se os portões estiverem fechados, "
+                      "encerrar sem nova versão de mérito.")
+    linhas.append("- Adesão ao conjunto: pendente. Rodar `emendas.py conjunto` e `emendas.py confirmar` antes de adotar a saída.")
     secoes = [
-        ("Aplicadas", ("aprovada", "aprovada_com_ajuste")),
+        ("Aplicadas", APROVADAS),
+        ("Aprovadas pelas cadeiras, reservadas à decisão humana", APROVADAS),
         ("Dissenso — decisão humana", ("dissenso", "segunda_rodada")),
         ("Preteridas por emenda concorrente mais votada", ("preterida",)),
         ("Rejeitadas", ("rejeitada",)),
         ("Inválidas", ("invalida",)),
     ]
+    ids_aplicadas = {r["id"] for r in aplicadas}
     for titulo, decisoes in secoes:
-        itens = [r for r in todas.values() if r["decisao"] in decisoes and not (r["decisao"] == "segunda_rodada" and r["id"] in origem_resolvida)]
+        itens = [r for r in todas.values() if r["decisao"] in decisoes
+                 and not (r["decisao"] in ("segunda_rodada", "dissenso") and r["id"] in origem_resolvida)
+                 and (titulo != "Aplicadas" or r["id"] in ids_aplicadas)
+                 and (not titulo.startswith("Aprovadas pelas") or r["id"] in reservadas)]
         linhas += ["", f"## {titulo} ({len(itens)})"]
         for r in sorted(itens, key=lambda r: (r.get("paragrafo") or 0, r["id"])):
-            linhas += ["", f"### {r['id']} — parágrafo {r.get('paragrafo', '—')} — {r.get('tipo')} — proposta por {', '.join(r.get('autores', []))}"]
+            classe = r.get("classificacao_aprovada") or r.get("classificacao")
+            linhas += ["", f"### {r['id']} — parágrafo {r.get('paragrafo', '—')} — {r.get('tipo')} — {classe} — proposta por {', '.join(r.get('autores', []))}"]
             linhas.append(f"- Antes: {r['trecho']}")
-            if r["decisao"] in ("aprovada", "aprovada_com_ajuste"):
+            if r["decisao"] in APROVADAS:
                 linhas.append(f"- Depois: {r['texto_aprovado']}" + (" (com ajuste)" if r["decisao"] == "aprovada_com_ajuste" else ""))
             else:
                 linhas.append(f"- Proposta: {r['proposta']}")
-            if r.get("variantes"):
-                linhas += [f"- Variante {chr(ord('a') + k)}: {t}" for k, t in enumerate(r["variantes"])]
+            if r.get("variantes") and r["decisao"] != "invalida":
+                linhas += [f"- Variante {chr(ord('a') + k)} ({v['classificacao']}): {v['texto']}" for k, v in enumerate(r["variantes"])]
             if r.get("fundamento"):
                 linhas.append(f"- Fundamento: {r['fundamento']}")
+            if r.get("dependencias"):
+                linhas.append(f"- Dependências: parágrafos {', '.join(map(str, r['dependencias']))}")
             if r.get("motivos"):
                 linhas.append(f"- Motivo da invalidade: {'; '.join(r['motivos'])}")
             if r.get("motivo_decisao"):
                 linhas.append(f"- Decisão: {r['motivo_decisao']}")
             if r.get("votos"):
                 linhas.append(f"- Votos: {votos_txt(r)}")
-    linhas += ["", "Próximos passos: rodar a pré-auditoria na minuta de saída, gerar o redline contra a de entrada e enviar à auditoria cega final por outra família de modelo."]
+    linhas += ["", "Próximos passos: adesão ao conjunto, pré-auditoria na minuta de saída com --anterior, redline contra a de "
+               "entrada e auditoria cega final por outra família de modelo."]
     return "\n".join(linhas) + "\n"
 
 
+# ---------------------------------------------------------------- adesão ao conjunto
+
+def cedula_conjunto(minuta_base: str, texto_novo: str, aplicadas: list[dict]) -> str:
+    hb, hn = sha256_texto(minuta_base), sha256_texto(texto_novo)
+    linhas = [
+        f"# Adesão ao conjunto de emendas — {CONTRATO}",
+        "",
+        f"HASH_MINUTA: {hb}",
+        f"HASH_RESULTADO: {hn}",
+        "",
+        "Cada emenda abaixo já foi aprovada isoladamente. Verifique agora o conjunto aplicado: emendas aceitáveis "
+        "uma a uma podem se contradizer quando combinadas, mudar o alcance de outro parágrafo ou deixar a conclusão, "
+        "o formulário ou uma remissão incompatíveis. Responda \"aceito\" se subscreve o conjunto exato, ou \"conflito\" "
+        "indicando as emendas envolvidas e o motivo.",
+        "",
+    ]
+    for r in aplicadas:
+        linhas += [f"## {r['id']} — parágrafo {r['paragrafo']} — {r.get('classificacao_aprovada') or r.get('classificacao')}",
+                   "", f"**Antes:** {r['trecho']}", "", f"**Depois:** {r['texto_aprovado']}", ""]
+    modelo = {"votante": "<seu identificador>", "hash_minuta": hb, "hash_resultado": hn, "adesao": "aceito",
+              "conflitos": [{"ids": ["E01", "E02"], "motivo": "..."}]}
+    linhas += ["## Resposta", "", "Responda só com o JSON abaixo; com \"aceito\", deixe \"conflitos\" vazio.", "",
+               "```json", json.dumps(modelo, ensure_ascii=False, indent=2), "```"]
+    return "\n".join(linhas) + "\n"
+
+
+def confirmar(minuta_base: str, texto_novo: str, lotes: list[dict], regra: str = "unanimidade",
+              exigidos: list[str] | None = None) -> dict:
+    hb, hn = sha256_texto(minuta_base), sha256_texto(texto_novo)
+    quorum, validos, recusados = separar_votantes(lotes, hb, exigidos, hash_extra=("hash_resultado", hn))
+    adesoes, conflitos, abstencoes = [], [], []
+    for nome in quorum:
+        lote = validos.get(nome)
+        if lote is None or lote.get("adesao") not in ("aceito", "conflito"):
+            abstencoes.append(nome)
+        elif lote["adesao"] == "aceito":
+            adesoes.append(nome)
+        else:
+            for c in lote.get("conflitos") or [{"ids": [], "motivo": "conflito sem indicação"}]:
+                conflitos.append({"votante": nome, "ids": c.get("ids", []), "motivo": c.get("motivo", "")})
+    aprovado = regra_atingida(len(adesoes), len(quorum), regra) and not conflitos
+    return {
+        "contrato": CONTRATO,
+        "hash_minuta": hb,
+        "hash_resultado": hn,
+        "regra": regra,
+        "conjunto_aprovado": aprovado,
+        "adesoes": adesoes,
+        "abstencoes": abstencoes,
+        "conflitos": conflitos,
+        "votantes_recusados": recusados,
+        "ids_em_conflito": sorted({i for c in conflitos for i in c["ids"]}),
+    }
+
+
 # ---------------------------------------------------------------- CLI
+
+def _lista(valor: str | None) -> list[str] | None:
+    return [v.strip() for v in valor.split(",") if v.strip()] if valor else None
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -456,6 +720,8 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--fontes", type=Path, nargs="*", help="pastas ou arquivos onde conferir a fonte literal")
     v.add_argument("--max-palavras", type=int)
     v.add_argument("--exigir-fonte", default="correcao,fonte", help="tipos que exigem fonte literal (vírgulas; vazio desliga)")
+    v.add_argument("--tipo-documento", default="generico", choices=sorted(CLASSIFICACOES_POR_TIPO),
+                   help="define o conjunto de classificações: parecer, peca (petição, recurso), decisao ou generico")
     v.add_argument("--saida", type=Path, required=True)
 
     c = sub.add_parser("cedula")
@@ -465,7 +731,8 @@ def main(argv: list[str] | None = None) -> int:
 
     a = sub.add_parser("apurar")
     a.add_argument("--validadas", type=Path, required=True)
-    a.add_argument("--votos", type=Path, nargs="+", required=True)
+    a.add_argument("--votos", type=Path, nargs="*", default=[])
+    a.add_argument("--votantes", required=True, help="cadeiras exigidas, separadas por vírgula; quem não votar conta como abstenção")
     a.add_argument("--regra", default="unanimidade", help="unanimidade | maioria | qualificada:2/3")
     a.add_argument("--saida", type=Path, required=True)
 
@@ -475,10 +742,28 @@ def main(argv: list[str] | None = None) -> int:
 
     ap = sub.add_parser("aplicar")
     ap.add_argument("--minuta", type=Path, required=True)
-    ap.add_argument("--apuracao", type=Path, nargs="+", required=True, help="primeira rodada e, se houver, a segunda")
+    ap.add_argument("--apuracao", type=Path, nargs="+", required=True, help="primeira rodada e, se houver, a de debate")
     ap.add_argument("--saida", type=Path, required=True)
     ap.add_argument("--relatorio", type=Path, required=True)
     ap.add_argument("--max-palavras", type=int, help="limite por parágrafo, conferido no texto final")
+    ap.add_argument("--excluir", help="ids a deixar de fora (conflito apontado na adesão ao conjunto)")
+    ap.add_argument("--autorizadas", help="ids reservados ao humano (risco estratégico) que o usuário autorizou")
+
+    cj = sub.add_parser("conjunto")
+    cj.add_argument("--minuta-base", type=Path, required=True)
+    cj.add_argument("--minuta-nova", type=Path, required=True)
+    cj.add_argument("--apuracao", type=Path, nargs="+", required=True)
+    cj.add_argument("--excluir")
+    cj.add_argument("--autorizadas")
+    cj.add_argument("--saida", type=Path, required=True)
+
+    cf = sub.add_parser("confirmar")
+    cf.add_argument("--minuta-base", type=Path, required=True)
+    cf.add_argument("--minuta-nova", type=Path, required=True)
+    cf.add_argument("--votos", type=Path, nargs="*", default=[])
+    cf.add_argument("--votantes", required=True)
+    cf.add_argument("--regra", default="unanimidade")
+    cf.add_argument("--saida", type=Path, required=True)
 
     args = p.parse_args(argv)
 
@@ -487,44 +772,71 @@ def main(argv: list[str] | None = None) -> int:
         travados = ler_json(args.travados) if args.travados else None
         fontes = corpus_fontes(args.fontes) if args.fontes else None
         exigir = tuple(t for t in args.exigir_fonte.split(",") if t)
-        res = validar(minuta, [ler_json(f) for f in args.propostas], travados, fontes, args.max_palavras, exigir)
+        res = validar(minuta, [ler_json(f) for f in args.propostas], travados, fontes, args.max_palavras, exigir, args.tipo_documento)
         gravar_json(args.saida, res)
         n_val = sum(e["status"] == "valida" for e in res["emendas"])
         print(f"{n_val} válidas, {len(res['emendas']) - n_val} inválidas, {len(res['lotes_recusados'])} lotes recusados")
         for e in res["emendas"]:
             if e["status"] == "invalida":
                 print(f"  {e['id']} inválida: {'; '.join(e['motivos_invalidade'])}")
-            for a in e.get("alertas", []):
-                print(f"  {e['id']} alerta: {a}")
+            for al in e.get("alertas", []):
+                print(f"  {e['id']} alerta: {al}")
         return 0
     if args.cmd == "cedula":
-        validadas = ler_json(args.validadas)
-        args.saida.write_text(cedula(validadas, args.semente), encoding="utf-8")
+        args.saida.write_text(cedula(ler_json(args.validadas), args.semente), encoding="utf-8")
         print(f"cédula gravada em {args.saida}")
         return 0
     if args.cmd == "apurar":
-        res = apurar(ler_json(args.validadas), [ler_json(f) for f in args.votos], args.regra)
+        res = apurar(ler_json(args.validadas), [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes))
         gravar_json(args.saida, res)
         cont: dict[str, int] = {}
         for r in res["emendas"]:
             cont[r["decisao"]] = cont.get(r["decisao"], 0) + 1
-        print(", ".join(f"{k}: {n}" for k, n in sorted(cont.items())), "| votantes:", ", ".join(res["votantes"]) or "nenhum")
-        for v in res["votantes_recusados"]:
-            print(f"  voto recusado de {v['votante']}: {v['motivo']}")
+        print(", ".join(f"{k}: {n}" for k, n in sorted(cont.items())), "| responderam:",
+              ", ".join(res["votantes_responderam"]) or "nenhum", "de", ", ".join(res["votantes"]))
+        for rv in res["votantes_recusados"]:
+            print(f"  voto recusado de {rv['votante']}: {rv['motivo']}")
         return 0
     if args.cmd == "segunda-rodada":
         res = segunda_rodada(ler_json(args.apuracao))
         gravar_json(args.saida, res)
-        print(f"{len(res['emendas'])} variantes para a segunda rodada")
+        print(f"{len(res['emendas'])} variantes para a rodada de debate")
         return 0
     if args.cmd == "aplicar":
         minuta = args.minuta.read_text(encoding="utf-8")
         apuracoes = [ler_json(f) for f in args.apuracao]
-        texto, aplicadas = aplicar(minuta, apuracoes, args.max_palavras)
+        excluir = tuple(_lista(args.excluir) or ())
+        autorizadas = tuple(_lista(args.autorizadas) or ())
+        texto, aplicadas = aplicar(minuta, apuracoes, args.max_palavras, excluir, autorizadas)
         args.saida.write_text(texto, encoding="utf-8")
-        args.relatorio.write_text(relatorio(str(args.minuta), str(args.saida), sha256_texto(minuta), sha256_texto(texto), apuracoes), encoding="utf-8")
-        print(f"{len(aplicadas)} emendas aplicadas; sha256 da saída: {sha256_texto(texto)}")
+        args.relatorio.write_text(relatorio(str(args.minuta), str(args.saida), sha256_texto(minuta), sha256_texto(texto),
+                                            apuracoes, excluir, autorizadas), encoding="utf-8")
+        for r in aguardando_humano(apuracoes, autorizadas):
+            print(f"  {r['id']} aprovada pelas cadeiras, mas reservada à decisão do usuário ({_classe(r)}); use --autorizadas")
+        print(f"{len(aplicadas)} emendas aplicadas ({len(materiais(aplicadas))} materiais); sha256 da saída: {sha256_texto(texto)}")
+        if not materiais(aplicadas):
+            print("sem novas melhorias materiais consensuais")
         return 0
+    if args.cmd == "conjunto":
+        base = args.minuta_base.read_text(encoding="utf-8")
+        nova = args.minuta_nova.read_text(encoding="utf-8")
+        texto, aplicadas = aplicar(base, [ler_json(f) for f in args.apuracao], excluir=tuple(_lista(args.excluir) or ()),
+                                   autorizadas=tuple(_lista(args.autorizadas) or ()))
+        if texto != nova:
+            raise SystemExit("a minuta nova não corresponde à aplicação das emendas aprovadas sobre a base")
+        args.saida.write_text(cedula_conjunto(base, nova, aplicadas), encoding="utf-8")
+        print(f"cédula do conjunto gravada em {args.saida}")
+        return 0
+    if args.cmd == "confirmar":
+        res = confirmar(args.minuta_base.read_text(encoding="utf-8"), args.minuta_nova.read_text(encoding="utf-8"),
+                        [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes))
+        gravar_json(args.saida, res)
+        if res["conjunto_aprovado"]:
+            print("conjunto aprovado: a minuta nova pode substituir a base e seguir para a auditoria final")
+            return 0
+        print("conjunto não aprovado:", f"abstenções {res['abstencoes']}" if res["abstencoes"] else "",
+              f"conflitos em {res['ids_em_conflito']}" if res["conflitos"] else "")
+        return 1
     return 2
 
 

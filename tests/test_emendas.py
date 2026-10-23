@@ -31,7 +31,8 @@ FONTE = "Art. 20. É vedada a participação remunerada de membros da administra
 
 
 def prop(trecho, proposta, tipo="redacao", **kw):
-    return {"trecho": trecho, "proposta": proposta, "tipo": tipo, "fundamento": "melhora", **kw}
+    return {"trecho": trecho, "proposta": proposta, "tipo": tipo, "fundamento": "melhora",
+            "classificacao": "recomendacao_facultativa", **kw}
 
 
 def lote(m, autor, *props, hash_=None):
@@ -161,7 +162,8 @@ def test_cli_ponta_a_ponta_e_hash_da_minuta(tmp_path: Path) -> None:
     assert run("cedula", "--validadas", tmp_path / "val.json", "--saida", tmp_path / "ced.md") == 0
     ced = (tmp_path / "ced.md").read_text(encoding="utf-8")
     assert m.sha256_texto(MINUTA) in ced and "gemini" not in ced
-    assert run("apurar", "--validadas", tmp_path / "val.json", "--votos", tmp_path / "v1.json", "--saida", tmp_path / "ap.json") == 0
+    assert run("apurar", "--validadas", tmp_path / "val.json", "--votos", tmp_path / "v1.json", "--votantes", "codex",
+               "--saida", tmp_path / "ap.json") == 0
     assert run("aplicar", "--minuta", minuta, "--apuracao", tmp_path / "ap.json", "--saida", tmp_path / "v2.md",
                "--relatorio", tmp_path / "rel.md") == 0
     assert "A consulta versa" in (tmp_path / "v2.md").read_text(encoding="utf-8")

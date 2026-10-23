@@ -153,6 +153,19 @@ Quando houver duas ou mais consolidações finais cegas:
 
 Uma síntese é um terceiro artefato, não a soma automática das aprovações anteriores. Toda mudança invalida os gates herdados.
 
+## Consenso por alteração e por conjunto
+
+Na estratégia `emendas_consensuais` do loop, o objeto de consenso não é a versão inteira, mas cada alteração proposta e, depois, o conjunto aplicado:
+
+- a adesão a uma alteração cobre, ao mesmo tempo, o diagnóstico, a redação exata e a classificação; concordar só com o diagnóstico não é adesão;
+- silêncio, timeout, saída vazia, resposta sobre outra versão ou manifestação genérica ("concordo com as críticas") não contam como adesão; as cadeiras exigidas formam o quórum;
+- na rodada de debate, uma cadeira só muda de posição com razão nova identificada;
+- alterações aprovadas uma a uma só entram depois da adesão ao conjunto exato, porque podem se contradizer quando combinadas;
+- a aprovação das alterações não se transfere ao arquivo resultante: ele recebe novo hash e passa pelos gates e pela auditoria final configurados;
+- objeção material sem consenso é entregue separadamente como pendência e impede declarar o documento aprovado.
+
+A mecânica (validação, cédula, apuração, debate, aplicação e conjunto) está em `../loop-debate-agentes/references/emendas-consensuais.md` e `../loop-debate-agentes/scripts/emendas.py`.
+
 ## Decisor final opcional
 
 Se o usuário escolher um decisor, enviar a ele o mesmo hash, posições anonimizadas, dissensos, evidências e critérios depois do debate. O decisor resolve ponto por ponto as matérias interpretativas, estratégicas, de risco ou preferência e justifica a decisão.
