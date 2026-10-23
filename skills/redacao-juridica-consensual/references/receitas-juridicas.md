@@ -15,6 +15,8 @@ overlays somente por pedido explícito ou proposta confirmada.
 7. Overlay ensemble jurídico
 8. Overlay pacote processual
 9. Desambiguação e exemplos
+10. Overlay emendas jurídicas
+11. Triagem de minuta concorrente
 
 ## 1. Resolução, persistência e precedência
 
@@ -209,3 +211,60 @@ Use o perfil de recurso para elaborar a apelação; faça até 12 versões.
 Use ensemble N×N: todos devem produzir a própria contestação e revisar todas as demais.
 Produza um pacote com parecer, recurso e minuta de decisão, com aprovação separada por documento.
 ```
+
+## 10. Overlay `emendas_juridicas`
+
+Ativar quando o usuário pedir que os agentes "devolvam só as melhorias em que concordam",
+"emendas consensuais" ou "rodada de emendas" sobre minuta jurídica já madura. Aplica o modo
+`emendas_consensuais_v1` do motor (`../loop-debate-agentes/references/emendas-consensuais.md`)
+com estes deltas:
+
+```yaml
+estrategia_da_equipe:
+  tipo: emendas_consensuais
+  contrato: emendas_consensuais_v1
+  regra: unanimidade
+  exigir_fonte_literal_para: [correcao, fonte]
+  fontes: [adendo de fontes literais, pasta de fontes do run]
+  max_palavras_por_paragrafo: do perfil (GENES: 120)
+  trechos_travados: travados.json
+  pre_auditoria: scripts/pre_auditoria_parecer.py --perfil <perfil>
+  redline: scripts/md_redline.py (ou word_redline.py se o canônico for DOCX)
+  auditoria_final: {familia_diferente_dos_votantes: true, pacote: scripts/pacote_auditoria.py}
+```
+
+Sequência de um ciclo:
+
+1. pré-auditoria da versão congelada;
+2. adendo com `extrair_adendo.py`;
+3. propostas cegas;
+4. `emendas.py validar --fontes <adendo> <pasta>`;
+5. cédula e votos cegos;
+6. apuração e, se houver, a rodada única de ajuste;
+7. `emendas.py aplicar --max-palavras`;
+8. pré-auditoria com `--anterior`;
+9. redline validado nos dois sentidos;
+10. auditoria final por outra família.
+
+O dissenso vai ao usuário com os votos e os motivos de cada cadeira. Emenda de mérito (`correcao`,
+`fonte`) sem trecho literal localizado nas fontes é recusada antes do voto: consenso de modelos não
+supre fonte.
+
+## 11. Triagem de minuta concorrente
+
+Quando houver outra minuta sobre o mesmo caso (de colega, de outro agente ou versão anterior
+paralela) e o usuário pedir para aproveitar o que ela tem de melhor:
+
+1. Ler a minuta concorrente **inteira**, não por amostragem, e listar cada trecho candidato:
+   fundamento, dispositivo, precedente, recomendação prática ou formulação.
+2. Classificar cada candidato contra a minuta própria: `já coberto`, `coberto em parte` ou
+   `novo`. Afirmar que algo "não consta" só depois de buscar no texto integral da própria minuta.
+3. Conferir na fonte primária todo dispositivo ou precedente que entraria. A minuta concorrente não
+   é fonte; erro dela não deve migrar para cá.
+4. Incorporar os aprovados no estilo da casa (perfil aplicável), sem colar parágrafos inteiros, e
+   respeitar os limites de extensão e os trechos travados.
+5. Registrar no run uma tabela `trecho | origem | decisão | motivo` e mostrar ao usuário o que
+   ficou de fora e por quê.
+6. Rodar a varredura de repetição e contradição sobre os parágrafos tocados
+   (`pre_auditoria_parecer.py --anterior`).
+
