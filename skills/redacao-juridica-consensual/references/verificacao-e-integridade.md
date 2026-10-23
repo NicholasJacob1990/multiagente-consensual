@@ -149,4 +149,3 @@ conclusões que ele fixou, fecho, assinatura) vai para um `travados.json`
 (`[{"id": ..., "paragrafo": N, "texto": "..."}]`). A pré-auditoria reprova a versão em que um trecho
 travado mudou, e o modo de emendas recusa emenda sobre ele. Se um auditor objetar a trecho travado,
 a objeção é levada ao usuário como dissenso; o texto só muda com nova autorização dele.
-

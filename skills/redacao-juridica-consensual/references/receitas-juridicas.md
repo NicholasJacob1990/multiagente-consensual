@@ -286,4 +286,3 @@ paralela) e o usuário pedir para aproveitar o que ela tem de melhor:
    ficou de fora e por quê.
 6. Rodar a varredura de repetição e contradição sobre os parágrafos tocados
    (`pre_auditoria_parecer.py --anterior`).
-
