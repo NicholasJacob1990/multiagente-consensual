@@ -1,8 +1,24 @@
-# Modo `emendas_consensuais_v1`
+# Modo `emendas_consensuais_v2`
 
 Os agentes leem a minuta do redator, debatem e devolvem **só as melhorias em que concordam**. O modo é para minutas já maduras: a pergunta deixa de ser "qual a nota?" e passa a ser "que trechos, exatamente, todos subscreveriam mudar, com que redação e com que classificação?". O redator não reescreve o texto, e a minuta só muda pelas emendas que atingiram a regra de aprovação e pela adesão ao conjunto.
 
 O modo serve a qualquer artefato, e no domínio jurídico a qualquer trabalho: parecer, petição, contestação, recurso, minuta de decisão, voto, contrato. O tipo de documento só muda o conjunto de classificações (ver a tabela abaixo) e o perfil de forma usado na pré-auditoria.
+
+## Contrato v2 e compatibilidade
+
+O v2 exige justificativa estruturada, suporte de toda alteração material e revalidação das variantes. Recibos v1 precisam ser revalidados e novamente votados; runs congelados podem continuar na cópia antiga preservada, sem migração silenciosa.
+
+A justificativa é um objeto com quatro campos textuais não vazios: `defeito`, `suporte`, `consequencia`, `insuficiencia_aplicacao_direta`. Texto livre como “porque sim” não satisfaz a estrutura. A suficiência jurídica desses elementos continua sendo examinada pelos revisores.
+
+A materialidade independe de `tipo`: `precisao`, `acrescimo`, `corte`, `remissao` ou `redacao` não dispensam suporte quando a classificação for material. O suporte pode ser norma, documento, prova ou instrução recebida. `minuta_atual` comprova uma contradição interna pela própria base; uma fonte externa exige corpus recebido e passagem localizada. Presença literal não prova pertinência nem verdade.
+
+O contexto conserva a minuta e o hash do corpus. Na apuração, uma variante com suporte alterado exige `--fontes` com o mesmo corpus validado; novas fontes exigem novo pacote compartilhado e nova validação. Os requisitos são conferidos novamente sobre a variante final, incluindo classificação, justificativa e efeitos reservados. Redações e metadados diferentes não são somados como se fossem a mesma variante.
+
+Em todo tipo de trabalho, declarar `efeitos_reservados`: `renuncia_direito`, `concessao_negocial`, `reconhecimento_fato`, `mudanca_estrategia`, `acordo` ou `ato_externo`. Esses efeitos dependem de `--autorizadas`, independentemente da classificação. Sinais explícitos novos de renúncia, confissão e transação também criam uma reserva conservadora; a detecção lexical não substitui a revisão jurídica nem cobre todo efeito possível. A autorização pode provir de instrução já concedida pelo usuário, nunca da concordância dos modelos.
+
+`confirmar` exige `--apuracao`, além das mesmas `--autorizadas` e `--excluir` utilizadas na aplicação. O resultado é reconstituído antes da adesão: não se aprova texto acrescentado fora das emendas aprovadas e autorizadas.
+
+Documentos mistos, com narrativa e pedidos/listas numerados, recebem IDs globais de bloco. A numeração escrita é preservada; esses IDs não são tratados como números de parágrafo exibidos para conferir remissões.
 
 O modo é uma estratégia do motor, como o `ensemble_nxn_v1`. Não cria outro loop, outro canônico nem outra auditoria; cada rodada de emendas produz uma nova versão completa e conta no limite de versões do artefato.
 
@@ -16,7 +32,7 @@ Ativar quando o usuário pedir "emendas consensuais", "só as melhorias em que c
 {
   "estrategia_da_equipe": {
     "tipo": "emendas_consensuais",
-    "contrato": "emendas_consensuais_v1",
+    "contrato": "emendas_consensuais_v2",
     "tipo_documento": "parecer | peca | decisao | generico",
     "proponentes": ["gemini", "codex", "claude"],
     "votantes": ["gemini", "codex", "claude"],
@@ -55,7 +71,7 @@ Votar `aceitar` é aderir ao diagnóstico, à redação exata e à classificaç�
   - o efeito sobre validade, admissibilidade, eficácia ou congruência;
   - por que a aplicação direta da norma não resolve.
 
-  Sem isso, a emenda é inválida. O grau de exigência do corpo do texto deve ser o mesmo da conclusão, dos pedidos ou do dispositivo.
+  Os nomes dos quatro campos são os definidos no contrato v2 acima. Sem isso, a emenda é inválida. O grau de exigência do corpo do texto deve ser o mesmo da conclusão, dos pedidos ou do dispositivo.
 - `redacional` não conta como melhoria material. Se só restarem emendas redacionais, o resultado é **"sem novas melhorias materiais consensuais"**, um resultado válido: com os portões fechados, a revisão encerra sem nova versão de mérito.
 
 ## Fluxo
@@ -146,7 +162,7 @@ Divergências apenas editoriais ficam no relatório detalhado. Não apresentar e
 ## Garantias e limites
 
 - **Garantia de procedimento:** o script não julga mérito. Só entra texto que as cadeiras exigidas viram literalmente e aprovaram, pela regra, sobre a mesma versão, com a mesma classificação e no mesmo conjunto.
-- **Fonte:** consenso entre modelos não prova fato, fonte ou intenção. A exigência de fonte literal localizada é a barreira contra fundamento inventado. Nos tipos `redacao`, `corte` e `remissao`, ela é dispensada por padrão.
+- **Fonte:** consenso entre modelos não prova fato, fonte ou intenção. A exigência de fonte literal localizada é a barreira contra fundamento inventado. Mudança puramente `redacional` pode dispensá-la; alteração material exige suporte independentemente do tipo.
 - **Voto do proponente:** quem propõe pode votar na própria emenda. Na unanimidade, isso não basta para aprová-la. Na `maioria`, preferir ao menos três votantes.
 - **Alcance local:** emendas são locais. Mudança que exige mexer em vários parágrafos coordenados (renumeração, deslocamento de seção, nova tese) sai do modo e volta ao ciclo principal. Dependências declaradas cobrem o caso intermediário: um reparo que exige acompanhar a conclusão ou o pedido.
 - **Instruções do usuário:** limites editoriais e auditores escolhidos seguem as instruções atuais do usuário. A skill não restaura um limite que ele afastou, e um documento anexado também não.

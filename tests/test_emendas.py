@@ -32,7 +32,9 @@ FONTE = "Art. 20. É vedada a participação remunerada de membros da administra
 
 def prop(trecho, proposta, tipo="redacao", **kw):
     return {"trecho": trecho, "proposta": proposta, "tipo": tipo, "fundamento": "melhora",
-            "classificacao": "recomendacao_facultativa", **kw}
+            "classificacao": "recomendacao_facultativa", "fonte_ref": "Documento sintético do teste",
+            "nivel_fonte": "reproducao_literal" if "fonte_literal" in kw else "minuta_atual",
+            "fonte_literal": trecho, **kw}
 
 
 def lote(m, autor, *props, hash_=None):

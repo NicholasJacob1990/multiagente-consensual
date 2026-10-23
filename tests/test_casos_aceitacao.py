@@ -54,7 +54,14 @@ PETICAO = (
 
 def prop(trecho, proposta, classificacao="recomendacao_facultativa", tipo="redacao", **kw):
     return {"trecho": trecho, "proposta": proposta, "tipo": tipo, "classificacao": classificacao,
-            "fundamento": "melhora a precisão", **kw}
+            "fundamento": "melhora a precisão", "nivel_fonte": "minuta_atual",
+            "fonte_ref": "Minuta sintética do teste", "fonte_literal": trecho, **kw}
+
+
+def obrigatoriedade(defeito):
+    return {"defeito": defeito, "suporte": "Comando expressamente transcrito no material do teste.",
+            "consequencia": "Incoerência na orientação que o destinatário deve executar.",
+            "insuficiencia_aplicacao_direta": "A contradição entre comandos da minuta precisa de correção textual."}
 
 
 def lote(minuta, autor, *props):
@@ -100,7 +107,7 @@ def test_caso_01_achado_resolvido_nao_reaparece_sem_razao_nova() -> None:
 
 def test_caso_02_diagnostico_aceito_com_redacao_ou_classificacao_rejeitada_nao_e_consenso() -> None:
     val = em.validar(PARECER, [lote(PARECER, "gemini", prop("cinco dias úteis", "dez dias úteis", "correcao_necessaria",
-                                                            justificativa_obrigatoriedade="prazo legal é de dez dias"))],
+                                                            justificativa_obrigatoriedade=obrigatoriedade("prazo legal é de dez dias")))],
                      tipo_documento="parecer")
     ap = em.apurar(val, [
         votos(PARECER, "gemini", E01="aceitar"),
@@ -159,7 +166,7 @@ def test_caso_04_mesmo_arquivo_com_outro_conteudo_invalida_vinculacao(tmp_path: 
 def test_caso_06_fonte_so_por_remissao_nao_sustenta_merito_nem_prova_invencao() -> None:
     val = em.validar(PARECER, [lote(PARECER, "gemini",
                                     prop("cinco dias úteis", "dez dias úteis", "correcao_necessaria", tipo="correcao",
-                                         justificativa_obrigatoriedade="lei fixa dez dias", fonte_literal="dez dias",
+                                         justificativa_obrigatoriedade=obrigatoriedade("lei fixa dez dias"), fonte_literal="dez dias",
                                          nivel_fonte="remissao"))], tipo_documento="parecer")
     motivo = val["emendas"][0]["motivos_invalidade"][0]
     assert "remissao" in motivo and "não sustenta" in motivo and "invent" not in motivo
@@ -179,13 +186,13 @@ def test_caso_07_emendas_isoladas_que_conflitam_no_conjunto_nao_entram() -> None
     conj = [{"votante": n, "hash_minuta": hb, "hash_resultado": hn, "adesao": "aceito"} for n in ("gemini", "claude")]
     conj.append({"votante": "codex", "hash_minuta": hb, "hash_resultado": hn, "adesao": "conflito",
                  "conflitos": [{"ids": ["E01", "E02"], "motivo": "o § 1 tira da Junta o que a conclusão lhe atribui"}]})
-    res = em.confirmar(PARECER, novo, conj, exigidos=TRES)
+    res = em.confirmar(PARECER, novo, conj, exigidos=TRES, apuracoes=[ap])
     assert not res["conjunto_aprovado"] and res["ids_em_conflito"] == ["E01", "E02"]
     sem, _ = em.aplicar(PARECER, [ap], excluir=("E01", "E02"))
     assert sem == PARECER
     ok = [{"votante": n, "hash_minuta": hb, "hash_resultado": hn, "adesao": "aceito"} for n in TRES]
-    assert em.confirmar(PARECER, novo, ok, exigidos=TRES)["conjunto_aprovado"]
-    assert not em.confirmar(PARECER, novo, ok[:2], exigidos=TRES)["conjunto_aprovado"]  # silêncio não é adesão
+    assert em.confirmar(PARECER, novo, ok, exigidos=TRES, apuracoes=[ap])["conjunto_aprovado"]
+    assert not em.confirmar(PARECER, novo, ok[:2], exigidos=TRES, apuracoes=[ap])["conjunto_aprovado"]  # silêncio não é adesão
 
 
 # 8 e 9 -----------------------------------------------------------------------

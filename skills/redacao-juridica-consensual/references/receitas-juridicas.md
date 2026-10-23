@@ -217,13 +217,13 @@ Produza um pacote com parecer, recurso e minuta de decisão, com aprovação sep
 Ativar, em **qualquer receita** (`parecer_consensual`, `peticao_consensual`, `recurso_consensual`,
 `minuta_decisoria`) e em outros trabalhos jurídicos (contrato, nota técnica, informação), quando o
 usuário pedir que os agentes "devolvam só as melhorias em que concordam", "emendas consensuais" ou
-"rodada de emendas" sobre minuta já madura. Aplica o modo `emendas_consensuais_v1` do motor
+"rodada de emendas" sobre minuta já madura. Aplica o modo `emendas_consensuais_v2` do motor
 (`../loop-debate-agentes/references/emendas-consensuais.md`) com estes deltas:
 
 ```yaml
 estrategia_da_equipe:
   tipo: emendas_consensuais
-  contrato: emendas_consensuais_v1
+  contrato: emendas_consensuais_v2
   tipo_documento: derivado da receita (tabela abaixo)
   regra: unanimidade
   rodada_de_debate: 1

@@ -94,3 +94,35 @@ test("upgrade atualiza todas as superfícies e também o A2A quando solicitado",
   assert.equal(fs.existsSync(home), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("instalação recusa manifesto Kimi inconsistente antes de tocar os destinos", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-kimi-invalid-"));
+  try {
+    const source = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+    const payload = path.join(root, "source");
+    for (const relative of ["package.json", "npm/cli.mjs", ".claude-plugin/plugin.json",
+      ".codex-plugin/plugin.json", "assets/multiagent-manifest.json", "scripts/manifest_lint.py"]) {
+      const dest = path.join(payload, relative);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(source, relative), dest);
+    }
+    const manifestFile = path.join(payload, "assets", "multiagent-manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+    manifest.seats.kimi.allowed_models = ["kimi-code/k3"];
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+    const home = path.join(root, "home");
+    const installRoot = path.join(root, "marketplace");
+    const { spawnSync } = await import("node:child_process");
+    const result = spawnSync(process.execPath, [path.join(payload, "npm", "cli.mjs"), "install", "--all",
+      "--home", home, "--install-root", installRoot, "--skip-registries", "--skip-bridge", "--json"], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr + result.stdout, /Kimi/);
+    // O Python da Apple pode criar Library/Caches no HOME temporário.
+    for (const surface of [".agents", ".codex", ".claude", ".cursor", ".config", ".local", ".gemini"]) {
+      assert.equal(fs.existsSync(path.join(home, surface)), false, surface);
+    }
+    assert.equal(fs.existsSync(installRoot), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

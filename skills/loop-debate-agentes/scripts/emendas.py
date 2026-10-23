@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Motor mecânico do modo ``emendas_consensuais_v1``.
+"""Motor mecânico do modo ``emendas_consensuais_v2``.
 
 Os agentes leem a mesma minuta congelada, propõem emendas pontuais às cegas,
 votam às cegas nas emendas uns dos outros e só entram no texto as emendas
@@ -16,7 +16,7 @@ Fluxo::
     emendas.py segunda-rodada --apuracao apuracao.json --saida validadas2.json   # debate: dissenso e ajustes divergentes
     emendas.py aplicar  --minuta v.md --apuracao apuracao.json [apuracao2.json] --saida v_next.md --relatorio emendas.md
     emendas.py conjunto --minuta-base v.md --minuta-nova v_next.md --apuracao apuracao.json --saida cedula_conjunto.md
-    emendas.py confirmar --minuta-base v.md --minuta-nova v_next.md --votos conj_*.json --votantes gemini,codex,claude --saida confirmacao.json
+    emendas.py confirmar --minuta-base v.md --minuta-nova v_next.md --apuracao apuracao.json --votos conj_*.json --votantes gemini,codex,claude --saida confirmacao.json
 
 A versão nova só substitui a base depois de ``confirmar`` aprovar a adesão ao
 conjunto: duas emendas aceitáveis isoladamente podem conflitar quando
@@ -37,7 +37,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-CONTRATO = "emendas_consensuais_v1"
+CONTRATO = "emendas_consensuais_v2"
 TIPOS = ("correcao", "precisao", "fonte", "remissao", "redacao", "corte", "acrescimo")
 # Classificações por tipo de trabalho jurídico. "correcao_necessaria" e "redacional" existem em todos: a primeira exige
 # justificativa de obrigatoriedade; a segunda não conta como melhoria material. A receita do domínio escolhe o conjunto.
@@ -48,13 +48,17 @@ CLASSIFICACOES_POR_TIPO = {
     "decisao": ("correcao_necessaria", "aperfeicoamento_fundamentacao", "recomendacao_facultativa", "providencia_externa", "redacional"),
 }
 CLASSIFICACOES = CLASSIFICACOES_POR_TIPO["generico"]
-NIVEIS_FONTE = ("integral_conferida", "reproducao_literal", "remissao", "ausente_no_dossie")
-NIVEIS_SUFICIENTES = ("integral_conferida", "reproducao_literal")
+NIVEIS_FONTE = ("integral_conferida", "reproducao_literal", "minuta_atual", "remissao", "ausente_no_dossie")
+NIVEIS_SUFICIENTES = ("integral_conferida", "reproducao_literal", "minuta_atual")
 VOTOS = ("aceitar", "ajustar", "rejeitar")
 PAR_RE = re.compile(r"^(\d+)\. ", re.M)
 APROVADAS = ("aprovada", "aprovada_com_ajuste")
 # classificações que, mesmo aprovadas pelas cadeiras, só entram com autorização expressa do usuário (estratégia da parte)
 RESERVADAS_AO_HUMANO = ("risco_estrategico",)
+EFEITOS_RESERVADOS = ("renuncia_direito", "concessao_negocial", "reconhecimento_fato", "mudanca_estrategia", "acordo", "ato_externo")
+CAMPOS_JUSTIFICATIVA = ("defeito", "suporte", "consequencia", "insuficiencia_aplicacao_direta")
+CAMPOS_VARIANTE = ("tipo", "classificacao", "fundamento", "justificativa_obrigatoriedade",
+                   "fonte_ref", "fonte_literal", "nivel_fonte", "efeitos_reservados")
 
 
 # ---------------------------------------------------------------- utilidades
@@ -86,21 +90,119 @@ def limites_paragrafos(minuta: str) -> list[tuple[int, int, int]]:
     Usa a numeração ``N. texto`` quando o documento a tem (parecer, voto, muitas petições). Sem ela, numera
     implicitamente, em ordem, as linhas de texto que não são títulos nem marcadores de cabeçalho e assinatura.
     """
-    out = []
-    for m in PAR_RE.finditer(minuta):
-        fim = minuta.find("\n", m.start())
-        out.append((int(m.group(1)), m.start(), len(minuta) if fim < 0 else fim))
-    if out:
-        return out
-    pos, n = 0, 0
+    linhas = []
+    pos = 0
     for linha in minuta.split("\n"):
         s = linha.strip()
         if s and not s.startswith(("#", "@")):
-            n += 1
             ini = pos + linha.index(s[0])
-            out.append((n, ini, pos + len(linha)))
+            marca = PAR_RE.match(s)
+            linhas.append((int(marca.group(1)) if marca else None, ini, pos + len(linha)))
         pos += len(linha) + 1
-    return out
+    # Numeração de pedidos/listas não transforma a narrativa em conteúdo invisível.
+    explicita = bool(linhas) and all(n is not None for n, _, _ in linhas)
+    return [(n if explicita else i, ini, fim) for i, (n, ini, fim) in enumerate(linhas, 1)]
+
+
+def _suporte_hash(e: dict) -> str:
+    return sha256_texto(json.dumps({k: e.get(k) for k in ("fonte_ref", "fonte_literal", "nivel_fonte")},
+                                  sort_keys=True, ensure_ascii=False))
+
+
+def _suporte_conferido(e: dict, minuta: str, fontes: str | None) -> bool:
+    literal = e.get("fonte_literal")
+    if not isinstance(literal, str) or not literal.strip() or not str(e.get("fonte_ref", "")).strip():
+        return False
+    if e.get("nivel_fonte") == "minuta_atual":
+        return normalizar(literal) in normalizar(minuta)
+    return e.get("nivel_fonte") in NIVEIS_SUFICIENTES and fontes is not None and normalizar(literal) in fontes
+
+
+def _sem_acentos(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", texto.lower()) if unicodedata.category(c) != "Mn")
+
+
+def _sinais_reserva(texto: str) -> set[str]:
+    """Sinais conservadores de nova decisão; não pretende interpretar todo negócio jurídico."""
+    texto = _sem_acentos(texto)
+    padroes = {
+        "renuncia_direito": r"\b(?:renunci\w*|abre mao|abrir mao|perdoa\w*)\b[^.;\n]{0,100}",
+        "reconhecimento_fato": r"\b(?:confess\w*|reconhec\w*)\s+(?:o |a |os |as |um |uma )?(?:fato|divida|debito)\w*\b[^.;\n]{0,80}",
+        "acordo": r"\b(?:transig\w*|transacion\w*|celebr\w*\s+(?:o |um )?acordo)\b[^.;\n]{0,80}",
+    }
+    sinais = set()
+    for efeito, rx in padroes.items():
+        for m in re.finditer(rx, texto):
+            antes = texto[max(0, m.start() - 65):m.start()]
+            if re.search(r"\b(?:nao|jamais|sem|vedad[ao]|proibid[ao])(?:\s+\w+){0,4}\s*$", antes):
+                continue
+            sinais.add(efeito + ":" + m.group(0).strip())
+    return sinais
+
+
+def efeitos_reservados(e: dict) -> list[str]:
+    declarados = e.get("efeitos_reservados") or []
+    if not isinstance(declarados, list):
+        declarados = []  # O validador registra o erro; a detecção não aborta.
+    efeitos = {x for x in declarados if isinstance(x, str) and x in EFEITOS_RESERVADOS}
+    novos = _sinais_reserva(str(e.get("texto_aprovado", e.get("proposta", "")))) - _sinais_reserva(str(e.get("trecho", "")))
+    efeitos.update(s.split(":", 1)[0] for s in novos)
+    return sorted(efeitos)
+
+
+def _requisitos(e: dict, tipo_documento: str, minuta: str, fontes: str | None,
+                exigir_fonte: tuple[str, ...], suporte_anterior: str | None = None) -> list[str]:
+    motivos = []
+    for campo in ("trecho", "proposta"):
+        if not isinstance(e.get(campo), str):
+            motivos.append(f"{campo} deve ser texto")
+    if e.get("tipo") not in TIPOS:
+        motivos.append(f"tipo inválido: {e.get('tipo')!r}")
+    if e.get("classificacao") not in CLASSIFICACOES_POR_TIPO[tipo_documento]:
+        motivos.append(f"classificação ausente ou inválida para {tipo_documento}: {e.get('classificacao')!r}")
+    if e.get("classificacao") == "correcao_necessaria":
+        j = e.get("justificativa_obrigatoriedade")
+        if not isinstance(j, dict) or any(not isinstance(j.get(k), str) or not j[k].strip() for k in CAMPOS_JUSTIFICATIVA):
+            motivos.append("correção necessária sem justificativa de obrigatoriedade estruturada: " + ", ".join(CAMPOS_JUSTIFICATIVA))
+    if not isinstance(e.get("fundamento"), str) or not e["fundamento"].strip():
+        motivos.append("fundamento ausente")
+    declarados = e.get("efeitos_reservados", [])
+    if not isinstance(declarados, list) or any(x not in EFEITOS_RESERVADOS for x in declarados):
+        motivos.append("efeitos reservados inválidos")
+    nivel = e.get("nivel_fonte")
+    if nivel is not None and nivel not in NIVEIS_FONTE:
+        motivos.append(f"nível de fonte inválido: {nivel!r}")
+    # Materialidade é transversal: chamar mérito de 'redacao' não dispensa suporte.
+    precisa = e.get("classificacao") != "redacional" or e.get("tipo") in exigir_fonte or bool(efeitos_reservados(e))
+    if precisa:
+        literal = e.get("fonte_literal", "")
+        if nivel not in NIVEIS_SUFICIENTES:
+            motivos.append(f"fonte com nível '{nivel}': não sustenta emenda de mérito; conferir o suporte e repropor")
+        if not isinstance(literal, str) or not literal.strip() or not str(e.get("fonte_ref", "")).strip():
+            motivos.append("emenda de mérito sem fonte literal e referência específica")
+        elif nivel == "minuta_atual":
+            if normalizar(literal) not in normalizar(minuta):
+                motivos.append("fonte literal não localizada na minuta-base")
+        elif fontes is not None:
+            if normalizar(literal) not in fontes:
+                motivos.append("fonte literal não localizada nas fontes fornecidas")
+        elif suporte_anterior != _suporte_hash(e):
+            motivos.append("corpus de fontes não recebido; fornecer --fontes para conferir a fonte literal")
+    return motivos
+
+
+def _chave_variante(e: dict) -> str:
+    # A adesão é à redação e aos metadados exatos, sem fundir variantes só por caixa/espaços.
+    return json.dumps({"texto": e["proposta"], **{k: e.get(k) for k in CAMPOS_VARIANTE}}, sort_keys=True, ensure_ascii=False)
+
+
+def _contexto(registro: dict) -> dict:
+    ctx = registro.get("contexto_validacao")
+    if registro.get("contrato") != CONTRATO or not isinstance(ctx, dict):
+        raise SystemExit("recibo legado ou sem contexto: revalidar a minuta no contrato " + CONTRATO)
+    if sha256_texto(ctx.get("minuta", "")) != registro["hash_minuta"]:
+        raise SystemExit("contexto de validação pertence a outra minuta")
+    return ctx
 
 
 def corpo_paragrafo(minuta: str, ini: int, fim: int) -> str:
@@ -196,8 +298,7 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
     # convergência: a mesma emenda (trecho, redação e classificação) proposta por mais de um autor vira uma só
     unicas: list[dict] = []
     for e in emendas:
-        igual = next((u for u in unicas if u["trecho"] == e["trecho"] and normalizar(u["proposta"]) == normalizar(e["proposta"])
-                      and u.get("classificacao") == e.get("classificacao")), None)
+        igual = next((u for u in unicas if u["trecho"] == e["trecho"] and _chave_variante(u) == _chave_variante(e)), None)
         if igual:
             igual["autores"] += [a for a in e["autores"] if a not in igual["autores"]]
         else:
@@ -205,17 +306,9 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
 
     for n, e in enumerate(unicas, start=1):
         e["id"] = f"E{n:02d}"
-        motivos, alertas = [], []
-        trecho = e.get("trecho", "")
-        if e.get("tipo") not in TIPOS:
-            motivos.append(f"tipo inválido: {e.get('tipo')!r}")
-        if e.get("classificacao") not in classificacoes:
-            motivos.append(f"classificação ausente ou inválida para {tipo_documento}: {e.get('classificacao')!r} "
-                           f"(use {', '.join(classificacoes)})")
-        elif e["classificacao"] == "correcao_necessaria" and not str(e.get("justificativa_obrigatoriedade", "")).strip():
-            motivos.append("correção necessária sem justificativa de obrigatoriedade: o defeito concreto, a norma, o precedente "
-                           "ou a contradição que o demonstra, o efeito sobre validade, admissibilidade ou eficácia, e por que a "
-                           "aplicação direta da norma não basta")
+        motivos = _requisitos(e, tipo_documento, minuta, fontes, exigir_fonte)
+        alertas = []
+        trecho = e.get("trecho", "") if isinstance(e.get("trecho"), str) else ""
         ocorrencias = minuta.count(trecho) if trecho else 0
         if ocorrencias != 1:
             motivos.append("trecho não localizado literalmente na minuta" if ocorrencias == 0
@@ -224,13 +317,15 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
             ini = minuta.index(trecho)
             e["inicio"], e["fim"] = ini, ini + len(trecho)
             lim = paragrafo_em(limites, ini)
+            if lim is None:
+                motivos.append("trecho fora de um parágrafo de texto; cabeçalhos e títulos exigem revisão própria")
             if lim and e["fim"] > lim[2]:
                 motivos.append("trecho atravessa mais de um parágrafo")
             if lim:
                 if e.get("paragrafo") not in (None, lim[0]):
                     motivos.append(f"trecho está no parágrafo {lim[0]}, não no {e['paragrafo']}")
                 e["paragrafo"] = lim[0]
-                novo_par = minuta[lim[1]:ini] + e["proposta"] + minuta[e["fim"]:lim[2]]
+                novo_par = minuta[lim[1]:ini] + str(e["proposta"]) + minuta[e["fim"]:lim[2]]
                 e["palavras_resultantes"] = palavras(corpo_paragrafo(novo_par, 0, len(novo_par)))
                 if max_palavras and e["palavras_resultantes"] > max_palavras:
                     # outra emenda do mesmo parágrafo pode compensar; o limite é conferido de novo ao aplicar
@@ -244,20 +339,11 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
         elif [d for d in deps if d not in existentes]:
             motivos.append(f"dependência em parágrafo inexistente: {[d for d in deps if d not in existentes]}")
         e["dependencias"] = [d for d in deps if isinstance(d, int) and d != e.get("paragrafo")]
-        e["delta_palavras"] = palavras(e.get("proposta", "")) - palavras(trecho)
-        nivel = e.get("nivel_fonte")
-        if nivel is not None and nivel not in NIVEIS_FONTE:
-            motivos.append(f"nível de fonte inválido: {nivel!r}")
-        if e.get("tipo") in exigir_fonte:
-            literal = e.get("fonte_literal", "").strip()
-            if nivel in ("remissao", "ausente_no_dossie"):
-                # fonte só citada por remissão, ou ausente do material, não sustenta emenda de mérito — e também não prova invenção
-                motivos.append(f"fonte com nível '{nivel}': não sustenta emenda de mérito; conferir a fonte integral e repropor")
-            elif not literal:
-                motivos.append("emenda de mérito sem fonte literal")
-            elif fontes is not None and normalizar(literal) not in fontes:
-                motivos.append("fonte literal não localizada nas fontes fornecidas")
+        e["delta_palavras"] = palavras(str(e.get("proposta", ""))) - palavras(trecho)
+        e["efeitos_reservados"] = efeitos_reservados(e)
         e["status"] = "invalida" if motivos else "valida"
+        if not motivos and _suporte_conferido(e, minuta, fontes):
+            e["suporte_verificado"] = _suporte_hash(e)
         e["motivos_invalidade"] = motivos
         e["alertas"] = alertas
 
@@ -279,6 +365,9 @@ def validar(minuta: str, lotes: list[dict], travados: list[dict] | None = None, 
         "rodada": 1,
         "tipo_documento": tipo_documento,
         "classificacoes": list(classificacoes),
+        "contexto_validacao": {"minuta": minuta, "tipo_documento": tipo_documento,
+                               "exigir_fonte": list(exigir_fonte),
+                               "fontes_sha256": sha256_texto(fontes) if fontes is not None else None},
         "lotes_recusados": lotes_recusados,
         "emendas": unicas,
     }
@@ -307,7 +396,9 @@ def cedula(validadas: dict, semente: str | None = None, permitir_ajuste: bool | 
     ]
     if permitir_ajuste:
         linhas[-1] += ("Use \"ajustar\" quando concordar com o diagnóstico e tiver redação ou classificação melhor: o campo "
-                       "\"ajuste\" substitui integralmente o trecho atual e o campo \"classificacao\" troca a classificação.")
+                       "\"ajuste\" substitui integralmente o trecho atual e o campo \"classificacao\" troca a classificação. "
+                       "A variante deve fornecer sua justificativa estruturada, suporte e efeitos reservados quando alterados; "
+                       "todos serão revalidados antes da apuração.")
     else:
         linhas[-1] += ("Esta é a rodada de debate: abaixo de cada emenda estão os motivos da rodada anterior, sem autoria. "
                        "As variantes de um mesmo trecho concorrem entre si e entra no máximo uma. Para mudar a posição que "
@@ -333,6 +424,8 @@ def cedula(validadas: dict, semente: str | None = None, permitir_ajuste: bool | 
             linhas.append(f"\n**Fonte literal ({e.get('fonte_ref', 's/ref.')}; {e.get('nivel_fonte', 'nível não informado')}):** {e['fonte_literal']}")
         if e.get("dependencias"):
             linhas.append(f"\n**Depende de ajuste nos parágrafos:** {', '.join(map(str, e['dependencias']))}")
+        if efeitos_reservados(e):
+            linhas.append(f"\n**Decisões reservadas ao responsável:** {', '.join(efeitos_reservados(e))}; aprovação dos agentes não as autoriza.")
         linhas.append(f"\n**Variação de palavras:** {e['delta_palavras']:+d}")
         if e.get("motivos_anteriores"):
             linhas += ["", "**Motivos da rodada anterior:**", *[f"- {m}" for m in e["motivos_anteriores"]]]
@@ -362,7 +455,11 @@ def _posicao(voto: str) -> str:
     return {"aceitar": "favor", "ajustar": "favor", "rejeitar": "contra"}.get(voto, "abstencao")
 
 
-def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade", exigidos: list[str] | None = None) -> dict:
+def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade", exigidos: list[str] | None = None,
+           fontes: str | None = None) -> dict:
+    ctx = _contexto(validadas)
+    if fontes is not None and sha256_texto(fontes) != ctx.get("fontes_sha256"):
+        raise SystemExit("fontes divergentes: revalidar e compartilhar o novo pacote antes de votar")
     hash_minuta = validadas["hash_minuta"]
     rodada = validadas.get("rodada", 1)
     quorum, validos, recusados = separar_votantes(lotes_votos, hash_minuta, exigidos)
@@ -375,6 +472,7 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade",
             continue
         classe = e.get("classificacao")
         votos = []
+        candidatos = {}
         for nome in quorum:
             lote = validos.get(nome)
             v = next((v for v in (lote or {}).get("votos", []) if v.get("id") == e["id"]), None)
@@ -391,21 +489,37 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade",
                 antes = e.get("posicoes_anteriores", {}).get(nome)
                 if antes in ("favor", "contra") and _posicao(v["voto"]) != antes and not str(v.get("razao_nova", "")).strip():
                     v = {"voto": "abstencao", "motivo": f"mudou de posição ({antes} → {_posicao(v['voto'])}) sem razão nova"}
-            votos.append({"votante": nome, **{k: v.get(k) for k in ("voto", "ajuste", "classificacao", "motivo", "razao_nova")
+            if v["voto"] in ("aceitar", "ajustar"):
+                variante = {**e}
+                if v["voto"] == "ajustar":
+                    variante.update({k: v[k] for k in CAMPOS_VARIANTE if k in v
+                                     and not (k in ("tipo", "classificacao") and not v[k])})
+                    variante["proposta"] = v["ajuste"] if "ajuste" in v else e["proposta"]
+                falhas = _requisitos(variante, ctx["tipo_documento"], ctx["minuta"], fontes,
+                                      tuple(ctx["exigir_fonte"]), e.get("suporte_verificado"))
+                if falhas:
+                    v = {"voto": "abstencao", "motivo": "variante inválida: " + "; ".join(falhas)}
+                else:
+                    variante["efeitos_reservados"] = efeitos_reservados(variante)
+                    if _suporte_conferido(variante, ctx["minuta"], fontes) or e.get("suporte_verificado") == _suporte_hash(variante):
+                        variante["suporte_verificado"] = _suporte_hash(variante)
+                    else:
+                        variante.pop("suporte_verificado", None)
+                    candidatos[nome] = variante
+            votos.append({"votante": nome, **{k: v.get(k) for k in ("voto", "ajuste", "motivo", "razao_nova", *CAMPOS_VARIANTE)
                                               if v.get(k) not in (None, "")}})
         # cada variante (texto + classificação) precisa atingir a regra por si: quem aceitou a original não aderiu ao ajuste
-        original = (normalizar(e["proposta"]), classe)
-        contagem: dict[tuple[str, Any], int] = {original: 0}
-        textos: dict[tuple[str, Any], dict] = {original: {"texto": e["proposta"], "classificacao": classe}}
+        original = _chave_variante(e)
+        contagem = {original: 0}
+        textos = {original: {"texto": e["proposta"], **{k: e.get(k) for k in CAMPOS_VARIANTE},
+                             "suporte_verificado": e.get("suporte_verificado")}}
         for v in votos:
-            if v["voto"] == "aceitar":
-                contagem[original] += 1
-            elif v["voto"] == "ajustar":
-                texto = (v.get("ajuste") or e["proposta"]).strip()
-                cl = v.get("classificacao") or classe
-                chave = (normalizar(texto), cl)
+            if v["voto"] in ("aceitar", "ajustar"):
+                candidato = candidatos[v["votante"]]
+                chave = _chave_variante(candidato)
                 contagem[chave] = contagem.get(chave, 0) + 1
-                textos.setdefault(chave, {"texto": texto, "classificacao": cl})
+                textos.setdefault(chave, {"texto": candidato["proposta"], **{k: candidato.get(k) for k in CAMPOS_VARIANTE},
+                                          "suporte_verificado": candidato.get("suporte_verificado")})
         favor = sum(v["voto"] in ("aceitar", "ajustar") for v in votos)
         r["votos"] = votos
         r["placar"] = {"aceitar": sum(v["voto"] == "aceitar" for v in votos), "ajustar": sum(v["voto"] == "ajustar" for v in votos),
@@ -416,6 +530,10 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade",
             r["decisao"] = "aprovada" if vencedora == original else "aprovada_com_ajuste"
             r["texto_aprovado"] = textos[vencedora]["texto"]
             r["classificacao_aprovada"] = textos[vencedora]["classificacao"]
+            for campo in CAMPOS_VARIANTE:
+                if campo != "classificacao":
+                    r[campo] = textos[vencedora].get(campo)
+            r["suporte_verificado"] = textos[vencedora].get("suporte_verificado")
         elif regra_atingida(favor, total, regra):
             r["decisao"] = "segunda_rodada"
         elif favor == 0:
@@ -456,6 +574,7 @@ def apurar(validadas: dict, lotes_votos: list[dict], regra: str = "unanimidade",
         "rodada": rodada,
         "tipo_documento": validadas.get("tipo_documento", "generico"),
         "classificacoes": validadas.get("classificacoes"),
+        "contexto_validacao": ctx,
         "votantes": quorum,
         "votantes_responderam": [n for n in quorum if n in validos],
         "votantes_recusados": recusados,
@@ -469,6 +588,7 @@ def segunda_rodada(apuracao: dict, semente: str | None = None) -> dict:
     Cada votante vê os motivos da rodada anterior, sem autoria, e vota só aceitar ou rejeitar. Mudar a posição
     anterior exige ``razao_nova``; sem ela, o voto conta como abstenção.
     """
+    ctx = _contexto(apuracao)
     if apuracao.get("rodada", 1) >= 2:
         raise SystemExit("o modo admite uma única rodada de debate; o que não fechou vai ao humano como dissenso")
     emendas = []
@@ -478,30 +598,29 @@ def segunda_rodada(apuracao: dict, semente: str | None = None) -> dict:
         motivos = [v["motivo"] for v in r.get("votos", []) if v.get("motivo") and v["voto"] != "abstencao"]
         random.Random(semente or apuracao["hash_minuta"] + r["id"]).shuffle(motivos)
         for k, var in enumerate(r["variantes"]):
-            chave = (normalizar(var["texto"]), var["classificacao"])
+            chave = _chave_variante({**var, "proposta": var["texto"]})
             posicoes = {}
             for v in r.get("votos", []):
                 if v["voto"] == "rejeitar":
                     posicoes[v["votante"]] = "contra"
                 elif v["voto"] == "aceitar" and k == 0:
                     posicoes[v["votante"]] = "favor"
-                elif v["voto"] == "ajustar" and (normalizar((v.get("ajuste") or r["proposta"]).strip()),
-                                                 v.get("classificacao") or r.get("classificacao")) == chave:
-                    posicoes[v["votante"]] = "favor"
+                elif v["voto"] == "ajustar":
+                    candidato = {**r, **{c: v[c] for c in CAMPOS_VARIANTE if c in v
+                                        and not (c in ("tipo", "classificacao") and not v[c])},
+                                 "proposta": v["ajuste"] if "ajuste" in v else r["proposta"]}
+                    candidato["efeitos_reservados"] = efeitos_reservados(candidato)
+                    if _chave_variante(candidato) == chave:
+                        posicoes[v["votante"]] = "favor"
             emendas.append({
                 "id": f"{r['id']}{chr(ord('a') + k)}",
                 "origem": r["id"],
                 "autores": r.get("autores", []) if k == 0 else ["ajuste"],
                 "paragrafo": r.get("paragrafo"),
-                "tipo": r["tipo"],
-                "classificacao": var["classificacao"],
-                "justificativa_obrigatoriedade": r.get("justificativa_obrigatoriedade", ""),
+                **{c: var.get(c) for c in CAMPOS_VARIANTE},
                 "trecho": r["trecho"],
                 "proposta": var["texto"],
-                "fundamento": r.get("fundamento", ""),
-                "fonte_literal": r.get("fonte_literal", ""),
-                "fonte_ref": r.get("fonte_ref", ""),
-                "nivel_fonte": r.get("nivel_fonte"),
+                "suporte_verificado": var.get("suporte_verificado"),
                 "dependencias": r.get("dependencias", []),
                 "inicio": r["inicio"],
                 "fim": r["fim"],
@@ -514,6 +633,7 @@ def segunda_rodada(apuracao: dict, semente: str | None = None) -> dict:
             })
     return {"contrato": CONTRATO, "hash_minuta": apuracao["hash_minuta"], "rodada": 2, "lotes_recusados": [],
             "tipo_documento": apuracao.get("tipo_documento", "generico"), "classificacoes": apuracao.get("classificacoes"),
+            "contexto_validacao": ctx,
             "emendas": emendas}
 
 
@@ -523,6 +643,10 @@ def _classe(r: dict) -> str | None:
     return r.get("classificacao_aprovada") or r.get("classificacao")
 
 
+def _reservada(r: dict) -> bool:
+    return _classe(r) in RESERVADAS_AO_HUMANO or bool(efeitos_reservados(r))
+
+
 def aprovadas_de(apuracoes: list[dict], excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] | None = ()) -> list[dict]:
     """Aprovadas a aplicar. Com ``autorizadas=None``, inclui também as reservadas ao humano."""
     out = []
@@ -530,7 +654,7 @@ def aprovadas_de(apuracoes: list[dict], excluir: tuple[str, ...] = (), autorizad
         for r in ap["emendas"]:
             if r["decisao"] not in APROVADAS or r["id"] in excluir or r.get("origem") in excluir:
                 continue
-            if autorizadas is not None and _classe(r) in RESERVADAS_AO_HUMANO and r["id"] not in autorizadas:
+            if autorizadas is not None and _reservada(r) and r["id"] not in autorizadas:
                 continue
             out.append(r)
     return sorted(out, key=lambda r: r["inicio"])
@@ -538,15 +662,23 @@ def aprovadas_de(apuracoes: list[dict], excluir: tuple[str, ...] = (), autorizad
 
 def aguardando_humano(apuracoes: list[dict], autorizadas: tuple[str, ...] = ()) -> list[dict]:
     return [r for ap in apuracoes for r in ap["emendas"]
-            if r["decisao"] in APROVADAS and _classe(r) in RESERVADAS_AO_HUMANO and r["id"] not in autorizadas]
+            if r["decisao"] in APROVADAS and _reservada(r) and r["id"] not in autorizadas]
 
 
 def aplicar(minuta: str, apuracoes: list[dict], max_palavras: int | None = None,
             excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] = ()) -> tuple[str, list[dict]]:
     hash_minuta = sha256_texto(minuta)
     for ap in apuracoes:
+        ctx = _contexto(ap)
         if ap["hash_minuta"] != hash_minuta:
             raise SystemExit("a apuração foi feita sobre outra versão da minuta")
+        for r in ap["emendas"]:
+            if r["decisao"] in APROVADAS:
+                final = {**r, "proposta": r["texto_aprovado"], "classificacao": _classe(r)}
+                falhas = _requisitos(final, ctx["tipo_documento"], minuta, None,
+                                      tuple(ctx["exigir_fonte"]), r.get("suporte_verificado"))
+                if falhas:
+                    raise SystemExit("emenda final não validada: " + "; ".join(falhas))
     aprovadas = aprovadas_de(apuracoes, excluir, autorizadas)
     for a, b in zip(aprovadas, aprovadas[1:]):
         if b["inicio"] < a["fim"]:
@@ -675,7 +807,13 @@ def cedula_conjunto(minuta_base: str, texto_novo: str, aplicadas: list[dict]) ->
 
 
 def confirmar(minuta_base: str, texto_novo: str, lotes: list[dict], regra: str = "unanimidade",
-              exigidos: list[str] | None = None) -> dict:
+              exigidos: list[str] | None = None, apuracoes: list[dict] | None = None,
+              excluir: tuple[str, ...] = (), autorizadas: tuple[str, ...] = ()) -> dict:
+    if apuracoes is None:
+        raise SystemExit("a confirmação exige as apurações: reconstituir o conjunto e as autorizações antes de aprovar")
+    esperado, _ = aplicar(minuta_base, apuracoes, excluir=excluir, autorizadas=autorizadas)
+    if esperado != texto_novo:
+        raise SystemExit("resultado não corresponde às emendas aprovadas e autorizadas sobre a base")
     hb, hn = sha256_texto(minuta_base), sha256_texto(texto_novo)
     quorum, validos, recusados = separar_votantes(lotes, hb, exigidos, hash_extra=("hash_resultado", hn))
     adesoes, conflitos, abstencoes = [], [], []
@@ -719,7 +857,7 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--travados", type=Path)
     v.add_argument("--fontes", type=Path, nargs="*", help="pastas ou arquivos onde conferir a fonte literal")
     v.add_argument("--max-palavras", type=int)
-    v.add_argument("--exigir-fonte", default="correcao,fonte", help="tipos que exigem fonte literal (vírgulas; vazio desliga)")
+    v.add_argument("--exigir-fonte", default="correcao,fonte", help="tipos adicionais que exigem fonte; toda emenda material exige suporte")
     v.add_argument("--tipo-documento", default="generico", choices=sorted(CLASSIFICACOES_POR_TIPO),
                    help="define o conjunto de classificações: parecer, peca (petição, recurso), decisao ou generico")
     v.add_argument("--saida", type=Path, required=True)
@@ -734,6 +872,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--votos", type=Path, nargs="*", default=[])
     a.add_argument("--votantes", required=True, help="cadeiras exigidas, separadas por vírgula; quem não votar conta como abstenção")
     a.add_argument("--regra", default="unanimidade", help="unanimidade | maioria | qualificada:2/3")
+    a.add_argument("--fontes", type=Path, nargs="*", help="mesmo corpus validado, para conferir suporte novo de variantes")
     a.add_argument("--saida", type=Path, required=True)
 
     s = sub.add_parser("segunda-rodada")
@@ -747,7 +886,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--relatorio", type=Path, required=True)
     ap.add_argument("--max-palavras", type=int, help="limite por parágrafo, conferido no texto final")
     ap.add_argument("--excluir", help="ids a deixar de fora (conflito apontado na adesão ao conjunto)")
-    ap.add_argument("--autorizadas", help="ids reservados ao humano (risco estratégico) que o usuário autorizou")
+    ap.add_argument("--autorizadas", help="ids cujos efeitos reservados ou risco estratégico o usuário autorizou, em qualquer tipo")
 
     cj = sub.add_parser("conjunto")
     cj.add_argument("--minuta-base", type=Path, required=True)
@@ -760,6 +899,9 @@ def main(argv: list[str] | None = None) -> int:
     cf = sub.add_parser("confirmar")
     cf.add_argument("--minuta-base", type=Path, required=True)
     cf.add_argument("--minuta-nova", type=Path, required=True)
+    cf.add_argument("--apuracao", type=Path, nargs="+", required=True)
+    cf.add_argument("--excluir")
+    cf.add_argument("--autorizadas")
     cf.add_argument("--votos", type=Path, nargs="*", default=[])
     cf.add_argument("--votantes", required=True)
     cf.add_argument("--regra", default="unanimidade")
@@ -787,7 +929,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cédula gravada em {args.saida}")
         return 0
     if args.cmd == "apurar":
-        res = apurar(ler_json(args.validadas), [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes))
+        res = apurar(ler_json(args.validadas), [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes),
+                     corpus_fontes(args.fontes) if args.fontes else None)
         gravar_json(args.saida, res)
         cont: dict[str, int] = {}
         for r in res["emendas"]:
@@ -829,7 +972,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "confirmar":
         res = confirmar(args.minuta_base.read_text(encoding="utf-8"), args.minuta_nova.read_text(encoding="utf-8"),
-                        [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes))
+                        [ler_json(f) for f in args.votos], args.regra, _lista(args.votantes),
+                        [ler_json(f) for f in args.apuracao], tuple(_lista(args.excluir) or ()),
+                        tuple(_lista(args.autorizadas) or ()))
         gravar_json(args.saida, res)
         if res["conjunto_aprovado"]:
             print("conjunto aprovado: a minuta nova pode substituir a base e seguir para a auditoria final")

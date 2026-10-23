@@ -547,6 +547,22 @@ function snapshotManagedFiles(context, targets) {
   return { files: hashes, trees };
 }
 
+function validateSourcePayload(context) {
+  const files = ["package.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", "assets/multiagent-manifest.json"];
+  const versions = files.map((file) => {
+    const document = readJson(path.join(context.pluginRoot, file));
+    return [file, document.version ?? document.plugin_version];
+  });
+  if (versions.some(([, version]) => !version || version !== versions[0][1])) {
+    throw new Error(`versões divergentes no pacote: ${JSON.stringify(versions)}`);
+  }
+  const python = pythonBinary(context.env);
+  if (!python) throw new Error("Python 3 é necessário para validar o pacote antes da instalação");
+  run(python, [path.join(context.pluginRoot, "scripts", "manifest_lint.py"), "--manifest",
+    path.join(context.pluginRoot, "assets", "multiagent-manifest.json"), "validate"], context);
+  return { version: versions[0][1], validation: context.dryRun ? "planned" : "passed" };
+}
+
 function installOrUpdate(args, targets) {
   const stateRoot = path.join(args.home, ".local", "state", PLUGIN_NAME);
   const backupRoot = path.join(args.home, ".local", "state", `${PLUGIN_NAME}-backups`);
@@ -561,6 +577,8 @@ function installOrUpdate(args, targets) {
     stateRoot,
     backupRoot,
   };
+  // Recusar payload/rota incompatível antes de criar backup ou alterar qualquer superfície.
+  const sourcePayload = validateSourcePayload(context);
   const backup = backupManaged(args.home, targets, PACKAGE_ROOT, backupRoot, args.dryRun);
   const stablePlugin = installStablePayload(context);
   context.pluginRoot = args.dryRun ? PACKAGE_ROOT : stablePlugin;
@@ -577,6 +595,7 @@ function installOrUpdate(args, targets) {
     schema: "multiagente_npm_install_v1",
     npmVersion: readJson(path.join(PACKAGE_ROOT, "package.json")).version,
     pluginVersion,
+    sourcePayload,
     installedAt: new Date().toISOString(),
     home: args.home,
     installRoot: args.installRoot,

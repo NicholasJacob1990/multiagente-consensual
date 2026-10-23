@@ -143,8 +143,9 @@ def _blocos_assinatura(doc: pm.Documento, fecho: str | None) -> set[int]:
 
 
 def checar_numeracao(doc: pm.Documento) -> list[Achado]:
-    if doc.numeracao == "implicita":
-        return [Achado("info", "numeracao", None, "documento sem parágrafos numerados: numeração implícita usada só para localizar")]
+    if doc.numeracao != "explicita":
+        return [Achado("info", "numeracao", None,
+                       f"numeração {doc.numeracao}: IDs globais usados para localizar; números de listas/pedidos preservados")]
     nums = [b.numero for b in doc.paragrafos]
     if not nums:
         return [Achado("bloqueante", "numeracao", None, "nenhum parágrafo numerado encontrado")]
@@ -184,6 +185,8 @@ def checar_fecho(doc: pm.Documento, fecho: str | None) -> list[Achado]:
 
 
 def checar_remissoes(doc: pm.Documento) -> list[Achado]:
+    if doc.numeracao != "explicita":
+        return []  # IDs de bloco não são números de parágrafo exibidos no documento.
     existentes = {b.numero for b in doc.paragrafos}
     out = []
     for b in doc.paragrafos:
@@ -376,7 +379,7 @@ def checar_renumeracao(doc: pm.Documento, anterior: pm.Documento, revisadas: set
             out += checar_alcance(antigos[velho], b.texto, b.numero)
             out += checar_simbolos(antigos[velho], b.texto, b.numero)
             alterados_antigos.append(velho)
-        if not mudou:
+        if not mudou or doc.numeracao != "explicita" or anterior.numeracao != "explicita":
             continue
         rem_velhas = [n for _, ns in pm.remissoes(antigos[velho]) for n in ns]
         rem_novas = [n for _, ns in pm.remissoes(b.texto) for n in ns]

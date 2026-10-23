@@ -206,7 +206,7 @@ Estimativa máxima: chamadas e artefatos por tentativa
 
 “Ensemble N×N” resolve `perfil = ensemble_nxn_v1` e `estrategia_da_equipe.tipo = ensemble_nxn`. “Deep ensemble” ou “ensemble profundo” resolve profundidade `profundo`, com 2 ciclos completos e ao menos 6 rodadas globais por tentativa. “Máximo recomendado” resolve 6 ciclos e 18 rodadas globais. Em casos excepcionais confirmados, o motor pode estender gradualmente até 12 ciclos e 36 rodadas globais por tentativa. Cada cadeira pode emitir uma crítica, uma réplica e uma revisão por ciclo confirmado.
 
-“Emendas consensuais”, “só as melhorias em que concordam”, “rodada de emendas” ou “o que todos aceitariam mudar” resolvem `estrategia_da_equipe.tipo = emendas_consensuais` com o contrato `emendas_consensuais_v1` e regra `unanimidade`, salvo regra diversa pedida pelo usuário. A prévia informa tipo de documento, proponentes, votantes exigidos, regra, trechos travados e auditor final de outra família.
+“Emendas consensuais”, “só as melhorias em que concordam”, “rodada de emendas” ou “o que todos aceitariam mudar” resolvem `estrategia_da_equipe.tipo = emendas_consensuais` com o contrato `emendas_consensuais_v2` e regra `unanimidade`, salvo regra diversa pedida pelo usuário. A prévia informa tipo de documento, proponentes, votantes exigidos, regra, trechos travados e auditor final de outra família.
 
 ## Executar o ciclo principal
 

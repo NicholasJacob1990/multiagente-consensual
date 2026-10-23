@@ -6,9 +6,9 @@ Aceita dois formatos:
 - Markdown GENES (o de ``build_estilo_v2.py``): além dos anteriores, linhas
   ``@CAB``, ``@EMENTA``, ``@DATA``, ``@ASS``, ``@ASS+``, ``@ASN`` e ``@ASN+``.
 
-Cada linha não vazia é um bloco. Documento sem nenhum parágrafo ``N.`` (comum em
-petições) recebe numeração implícita: cada linha de texto vira um parágrafo, em
-ordem, e ``Documento.numeracao`` passa a ``"implicita"``. Os scripts de pré-auditoria, emendas,
+Cada linha não vazia é um bloco. Texto sem numeração recebe IDs implícitos; texto misto
+(narrativa sem número e pedidos/listas numerados) recebe IDs globais de bloco e preserva
+os números escritos nos itens. ``Documento.numeracao`` é ``"implicita"`` ou ``"mista"``. Os scripts de pré-auditoria, emendas,
 pacote de auditoria e redline usam este módulo para enxergar a minuta do
 mesmo modo.
 """
@@ -42,13 +42,14 @@ class Bloco:
     texto: str
     numero: int | None = None
     marca: str | None = None
+    numero_original: int | None = None
 
 
 @dataclass
 class Documento:
     blocos: list[Bloco] = field(default_factory=list)
     bruto: str = ""
-    numeracao: str = "explicita"  # explicita | implicita
+    numeracao: str = "explicita"  # explicita | implicita | mista
 
     @property
     def paragrafos(self) -> list[Bloco]:
@@ -96,13 +97,18 @@ def parse(texto: str) -> Documento:
             doc.blocos.append(Bloco(i, "titulo", m.group(2)))
             continue
         doc.blocos.append(Bloco(i, "texto", s))
-    if not any(b.tipo == "par" for b in doc.blocos):
+    tem_numero = any(b.tipo == "par" for b in doc.blocos)
+    tem_narrativa = any(b.tipo == "texto" for b in doc.blocos)
+    if tem_narrativa:
         n = 0
         for b in doc.blocos:
-            if b.tipo == "texto":
+            if b.tipo in ("texto", "par"):
                 n += 1
+                if b.tipo == "par":
+                    b.numero_original = b.numero
+                    b.texto = f"{b.numero}. {b.texto}"
                 b.tipo, b.numero = "par", n
-        doc.numeracao = "implicita" if n else "explicita"
+        doc.numeracao = "mista" if tem_numero else "implicita"
     return doc
 
 
