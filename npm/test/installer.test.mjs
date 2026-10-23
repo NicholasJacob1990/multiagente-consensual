@@ -126,3 +126,68 @@ test("instalação recusa manifesto Kimi inconsistente antes de tocar os destino
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("reinstalação limpa preserva extras no backup e sincroniza as seis CLIs", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multiagente-clean-test-"));
+  try {
+    const source = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+    const cli = path.join(source, "npm", "cli.mjs");
+    const home = path.join(root, "home");
+    const central = path.join(home, ".codex", "skills", "loop-debate-agentes");
+    const claude = path.join(home, ".claude", "skills", "loop-debate-agentes");
+    const cursor = path.join(home, ".cursor", "skills", "loop-debate-agentes");
+    const unrelated = path.join(home, ".agents", "skills", "minha-skill", "SKILL.md");
+    for (const dir of [central, claude, path.dirname(cursor), path.dirname(unrelated)]) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(central, "extensao-local.txt"), "preservar extensão");
+    fs.writeFileSync(path.join(claude, "SKILL.md"), "cópia antiga");
+    fs.symlinkSync(path.join(root, "destino-inexistente"), cursor);
+    fs.writeFileSync(unrelated, "skill do usuário");
+    const { spawnSync } = await import("node:child_process");
+    const argv = [cli, "install", "--all", "--json", "--home", home,
+      "--install-root", path.join(root, "marketplace"), "--skip-registries", "--skip-bridge"];
+    const dry = spawnSync(process.execPath, [...argv, "--clean-managed", "--dry-run"], { encoding: "utf8" });
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.equal(fs.readFileSync(path.join(central, "extensao-local.txt"), "utf8"), "preservar extensão");
+    assert.equal(fs.readlinkSync(cursor), path.join(root, "destino-inexistente"));
+    assert.equal(fs.existsSync(path.join(home, ".local", "state")), false);
+    const additive = spawnSync(process.execPath, argv, { encoding: "utf8" });
+    assert.equal(additive.status, 0, additive.stderr);
+    assert.equal(fs.existsSync(path.join(central, "extensao-local.txt")), true);
+    assert.equal(fs.readFileSync(path.join(claude, "SKILL.md"), "utf8"), "cópia antiga");
+    const clean = spawnSync(process.execPath, [...argv, "--clean-managed"], { encoding: "utf8" });
+    assert.equal(clean.status, 0, clean.stderr);
+    const report = JSON.parse(clean.stdout);
+    assert.equal(report.skillSyncMode, "replace-managed");
+    const manifest = JSON.parse(fs.readFileSync(path.join(report.backup.path, "manifest.json"), "utf8"));
+    const backed = (original) => path.join(report.backup.path, manifest.entries.find((entry) => entry.source === original).backup);
+    assert.equal(fs.readFileSync(path.join(backed(central), "extensao-local.txt"), "utf8"), "preservar extensão");
+    assert.equal(fs.readFileSync(path.join(backed(claude), "SKILL.md"), "utf8"), "cópia antiga");
+    assert.equal(fs.lstatSync(backed(cursor)).isSymbolicLink(), true);
+    assert.equal(fs.existsSync(path.join(central, "extensao-local.txt")), false);
+    assert.equal(fs.readFileSync(unrelated, "utf8"), "skill do usuário");
+    const tree = (directory) => {
+      const result = {};
+      function visit(current, relative = "") {
+        for (const item of fs.readdirSync(current, { withFileTypes: true })) {
+          if (["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store"].includes(item.name) || item.name.endsWith(".pyc")) continue;
+          const rel = path.join(relative, item.name);
+          if (item.isDirectory()) visit(path.join(current, item.name), rel);
+          else result[rel] = fs.readFileSync(path.join(current, item.name)).toString("base64");
+        }
+      }
+      visit(directory);
+      return result;
+    };
+    for (const name of fs.readdirSync(path.join(source, "skills"))) {
+      if (!fs.existsSync(path.join(source, "skills", name, "SKILL.md"))) continue;
+      const expected = tree(path.join(source, "skills", name));
+      for (const surface of [[".codex"], [".claude"], [".cursor"], [".config", "opencode"], [".agents"]]) {
+        assert.deepEqual(tree(path.join(home, ...surface, "skills", name)), expected, `${surface.join("/")}/${name}`);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

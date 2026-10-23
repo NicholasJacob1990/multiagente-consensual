@@ -83,6 +83,7 @@ Opções:
   --install-root <dir>  alterar a raiz estável do marketplace
   --skip-registries     não registrar plugins no Codex/Claude Code
   --skip-bridge         não instalar o wrapper multiagent-bridge
+  --clean-managed       substituir as cinco skills gerenciadas após backup
   --with-a2a            instalar servidores A2A, MCP e painel local
   --replace-a2a-mcp     substituir uma configuração a2a-mesh já existente
   --purge               remover também payload estável e estado no uninstall
@@ -106,6 +107,7 @@ export function parseArgs(argv) {
     installRoot: null,
     skipRegistries: false,
     skipBridge: false,
+    cleanManaged: false,
     withA2a: false,
     replaceA2aMcp: false,
     purge: false,
@@ -118,6 +120,7 @@ export function parseArgs(argv) {
     else if (value === "--launchd") args.launchd = true;
     else if (value === "--skip-registries") args.skipRegistries = true;
     else if (value === "--skip-bridge") args.skipBridge = true;
+    else if (value === "--clean-managed") args.cleanManaged = true;
     else if (value === "--with-a2a") args.withA2a = true;
     else if (value === "--replace-a2a-mcp") args.replaceA2aMcp = true;
     else if (value === "--purge") args.purge = true;
@@ -229,8 +232,23 @@ function run(binary, argv, context, options = {}) {
   return result;
 }
 
+function entryExists(entry) {
+  try {
+    fs.lstatSync(entry);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 function copyEntry(source, destination) {
-  if (!fs.existsSync(source)) return;
+  if (!entryExists(source)) return;
+  if (fs.lstatSync(source).isSymbolicLink()) {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.symlinkSync(fs.readlinkSync(source), destination);
+    return;
+  }
   fs.cpSync(source, destination, { recursive: true, force: true, preserveTimestamps: true });
 }
 
@@ -311,7 +329,7 @@ function hashTree(root) {
 }
 
 function backupManaged(home, targets, pluginRoot, stateRoot, dryRun) {
-  const existing = managedPaths(home, targets, pluginRoot).filter((item) => fs.existsSync(item));
+  const existing = managedPaths(home, targets, pluginRoot).filter(entryExists);
   if (existing.length === 0 || dryRun) return { path: null, entries: existing.length };
   const root = path.join(stateRoot, nowToken());
   const entries = [];
@@ -323,6 +341,21 @@ function backupManaged(home, targets, pluginRoot, stateRoot, dryRun) {
   });
   writeJsonAtomic(path.join(root, "manifest.json"), { createdAt: new Date().toISOString(), entries });
   return { path: root, entries: existing.length };
+}
+
+function replaceManagedSkills(context, targets, backup) {
+  const roots = [path.join(context.home, ".codex", "skills")];
+  for (const target of targets) {
+    if (SKILL_DIRS[target]) roots.push(path.join(context.home, ...SKILL_DIRS[target]));
+  }
+  const existing = [...new Set(roots)].flatMap((root) =>
+    skillNames(context.pluginRoot).map((name) => path.join(root, name)),
+  ).filter(entryExists);
+  if (!context.dryRun) {
+    if (existing.length && !backup.path) throw new Error("substituição de skills exige backup concluído");
+    for (const target of existing) fs.rmSync(target, { recursive: true, force: true });
+  }
+  return existing;
 }
 
 function installStablePayload(context) {
@@ -583,6 +616,7 @@ function installOrUpdate(args, targets) {
   const stablePlugin = installStablePayload(context);
   context.pluginRoot = args.dryRun ? PACKAGE_ROOT : stablePlugin;
   const pluginVersion = createMarketplaces(context);
+  const replacedSkillPaths = args.cleanManaged ? replaceManagedSkills(context, targets, backup) : [];
   synchronizeSurfaces(context, targets);
   const registrations = {};
   if (!args.skipRegistries && targets.includes("codex")) registrations.codex = registerCodex(context);
@@ -596,6 +630,8 @@ function installOrUpdate(args, targets) {
     npmVersion: readJson(path.join(PACKAGE_ROOT, "package.json")).version,
     pluginVersion,
     sourcePayload,
+    skillSyncMode: args.cleanManaged ? "replace-managed" : "additive",
+    replacedSkillPaths,
     installedAt: new Date().toISOString(),
     home: args.home,
     installRoot: args.installRoot,

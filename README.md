@@ -147,6 +147,13 @@ desinstalador remove somente arquivos cujo hash ainda coincide com o registrado 
 modificados pelo usuário. `uninstall --all --purge` também apaga o payload estável e o estado, mas
 não apaga credenciais, sessões nem os backups preservados nessa raiz separada.
 
+Para reinstalar as cinco skills do pacote com conteúdo exato, use
+`multiagente-consensual install --all --clean-managed`. Após o backup, essa opção
+substitui somente os diretórios dessas skills e recria os links nas superfícies
+selecionadas. Arquivos extras e extensões dentro desses diretórios permanecem no
+backup; as demais skills não são alteradas. Sem essa opção, a sincronização continua
+aditiva. O estado da instalação registra o modo e os caminhos substituídos.
+
 ## Sincronização entre CLIs
 
 Os 30 pontos de entrada públicos podem ser reparados sem excluir comandos particulares:
