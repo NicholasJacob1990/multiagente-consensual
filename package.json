@@ -1,6 +1,6 @@
 {
   "name": "@nicholasjacob90/multiagente-consensual",
-  "version": "1.14.0",
+  "version": "1.14.1",
   "description": "Instalador portátil das skills, comandos e rotas do Multiagente Consensual para CLIs locais.",
   "type": "module",
   "bin": {
@@ -29,7 +29,7 @@
     "prepack": "python3 scripts/manifest_lint.py --manifest assets/multiagent-manifest.json validate"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "os": [
     "darwin",

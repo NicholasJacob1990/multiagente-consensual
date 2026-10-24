@@ -1,5 +1,7 @@
 # Multiagente Consensual
 
+Requer **Node.js 22 ou superior** para o instalador e o runtime A2A.
+
 Plugin portátil para Claude Cowork, Claude Code e Codex. Ele empacota os contratos já usados por
 `consenso`, `loop-debate-agentes`, `redacao-juridica-consensual` e `workflow-agentes` sem remover as
 instalações independentes existentes.

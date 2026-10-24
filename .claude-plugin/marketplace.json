@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Multiagente Consensual, ferramentas jurídicas e PDF",
-    "version": "1.14.0"
+    "version": "1.14.1"
   },
   "plugins": [
     {
       "name": "multiagente-consensual",
       "description": "Debate, consenso, loops de melhoria, ensemble, workflows e redação jurídica com redline DOCX.",
       "source": "./",
-      "version": "1.14.0",
+      "version": "1.14.1",
       "author": {
         "name": "Nicholas Jacob"
       },

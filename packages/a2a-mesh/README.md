@@ -23,6 +23,9 @@ são distribuídos. As CLIs usam a autenticação já existente na máquina do u
 
 ## Instalação recomendada
 
+Requer **Node.js 22 ou superior**, conforme o requisito de `better-sqlite3`.
+O SDK MCP é fixado em `1.32.2` no manifesto e no lockfile.
+
 Use o instalador principal:
 
 ```bash

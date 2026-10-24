@@ -1,6 +1,6 @@
 {
   "name": "@nicholasjacob90/a2a-mesh",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Mesh A2A local, bridge MCP e painel web para nove agentes CLI, com seleção de equipe.",
   "type": "module",
   "bin": {
@@ -20,14 +20,14 @@
     "prepack": "npm test"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "os": [
     "darwin",
     "linux"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "better-sqlite3": "^13.0.2",
     "dotenv": "^17.4.2",
     "node-pty": "^1.1.0"
