@@ -67,9 +67,23 @@ Em qualquer tipo (parecer, peça, decisão, contrato):
 
 - para cada ato material, identifique quem instrui, quem opina, quem decide, em que etapa e quando essa competência se esgota; separe análise técnica, decisão, homologação, deliberação societária ou judicial e investidura ou cumprimento, inclusive nas redações substitutivas e nos pedidos;
 - confira as palavras que mudam o alcance de uma frase — "até", "sempre", "somente", "exclusivamente", "deve", "pode", "não pode", "no mínimo" — e as ressalvas ("salvo", "desde que", "sem prejuízo"): uma troca pequena no diff pode criar teto, obrigação ou exceção sem fundamento;
+- aplique os testes de alcance da reescrita (abaixo) a toda frase que mudou de ordem, foi dividida ou fundida;
 - prazos máximos não são duração; etapas condicionais não integram todo percurso; atividades paralelas não se somam sem encadeamento;
 - separe exigência jurídica de convenção editorial; preferência de estilo sem ganho demonstrável não reprova a versão nem justifica nova versão de mérito;
 - não transponha a solução particular de um caso para outro como verdade permanente.
+
+### Testes de alcance da reescrita
+
+Reescrita de forma pode mudar o conteúdo sem trocar nenhuma palavra de alcance. Conferir, contra o texto anterior:
+
+- **Sujeito composto:** ao dividir o período, todos os sujeitos continuam em todos os verbos? ("A Secretaria, com a Gerência de RH, instruirá, notificará e encaminhará" dividido em dois períodos com "A Secretaria" sozinha tira a Gerência de três atos.)
+- **Adjunto deslocado:** o adjunto movido continua ligado ao mesmo termo? ("notificados antes das providências, para manifestação no prazo" com "antes das providências" levado ao fim pode passar a reger o prazo e muda o marco da garantia.)
+- **Concordância do particípio ou do adjetivo:** na nova ordem, ele pode concordar só com o último nome? ("inabilitação por requisito ou vedação, apontada pelo Comitê" deixa ler que só a vedação depende do Comitê.)
+- **Explicativa e ressalva:** a oração explicativa ou a ressalva passou a vir depois de uma alternativa e agora cobre as duas hipóteses?
+- **Remissão:** ao integrar o fecho à frase ("Ver Anexo, item 41" → "…, conforme o Anexo, item 41"), a remissão continua cobrindo todas as frases que o fecho cobria? Quando valia para o parágrafo inteiro, deixá-la no fim ou em frase própria.
+- **Referente:** pronome, elipse ou particípio solto ("se acolhida") tem referente próximo e único?
+- **Número:** "respectivamente" distribui dois textos? Então "as redações", no plural.
+- **Prazo e duração:** "dura até dez dias" afirma duração; "tem até dez dias" afirma prazo. Prazo suspenso não limita a duração.
 
 ### Parecer
 

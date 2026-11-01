@@ -14,7 +14,7 @@ Instrução expressa do usuário na tarefa prevalece sobre este perfil. Em compo
 
 | Parâmetro | Padrão | Observação |
 |---|---|---|
-| `max_palavras_por_paragrafo` | 120 | conferido pela pré-auditoria; acima disso, dividir em ponto de frase |
+| `max_palavras_por_paragrafo` | 120 | conferido pela pré-auditoria; acima disso, dividir em ponto de frase. Vale também para cada bloco do Anexo de Redações Sugeridas, contadas a marca `(NR)`/`(AC)` e os símbolos `§` e `–`; mirar cerca de 115 para a próxima emenda caber |
 | `max_paginas` | 15 | o usuário pode ampliar; esse valor pode ser ampliado na tarefa |
 | corpo do texto | Times New Roman 10,5 | ver a divergência com o padrão `legal-br` abaixo |
 | fecho | "É o parecer, sob censura." | último parágrafo numerado |
@@ -62,7 +62,8 @@ Os limites são parâmetros da tarefa, não regras fixas: registrar na prévia o
   - nada de listas telegráficas, marcadores ou parágrafo de uma frase isolada;
   - nada de `[CONFIRMAR]`, `[INFORMAR]` ou `[NÃO CONSTA]` no corpo. Cada lacuna vira uma providência descrita em prosa, com o responsável. Exemplo: "convém que a Secretaria de Governança confirme…".
 - **Itens dentro do parágrafo:** enumerações curtas vão em ponto e vírgula, dentro do próprio parágrafo.
-- **Redação substitutiva:** proposta entre aspas, no próprio parágrafo, precedida de "Sugere-se a redação:" ou "Sugere-se para o art. N:".
+- **Redação substitutiva:** proposta entre aspas, no próprio parágrafo, precedida de "Sugere-se a redação:" ou "Sugere-se para o art. N:". Com várias redações para a mesma norma, levá-las a um Anexo de Redações Sugeridas, no formato de `tecnica-legislativa.md`, seção 6, e o parecer remete ao item.
+- **Remissão ao Anexo:** integrada à frase ("…, conforme o Anexo, item 13"), e não em fecho telegráfico ("Ver Anexo, item 13", "Redações no Anexo, itens 4 e 44"). Quando a remissão vale para o parágrafo inteiro, fica no fim do parágrafo ou em frase própria, para não se prender só à última frase.
 - **Precedente:** citado uma única vez, em uma frase, com órgão, número, relator e data do julgamento; nos demais pontos, remeter ao parágrafo em que foi citado. Não transcrever ementa.
 - **Natureza do parecer:** é opinativo. Não chamá-lo de "vinculante" e não usar "orientação técnica vinculante".
 - **Sem adjetivação confirmatória** ("plena harmonia", "perfeita consonância", "plena viabilidade") quando a conclusão exige ajustes.
@@ -112,6 +113,7 @@ Objeção de auditor a trecho travado vai ao usuário como dissenso, com a fonte
 - **Créditos:** rodadas intermediárias em `medium` ou só com as diferenças (`pacote_auditoria.py montar --anterior`); sondar a rota com prompt mínimo antes de pacote grande; se o Antigravity responder 429 por saldo, gerar o pacote em arquivo único para o usuário colar no app do Gemini.
 - **Achados de auditor:** são hipóteses até a conferência na fonte. Rejeitar sugestão que contrarie o texto literal da fonte ou trecho travado e registrar o motivo. Depois de corrigir, reauditar o novo hash. Para buscar nota-alvo, pedir antes o diagnóstico do que separa a versão da nota (ver `../loop-debate-agentes/references/custo-e-creditos.md`).
 - **Melhorias consensuais:** para refinar minuta madura, usar o overlay `emendas_juridicas` (receitas, seção 10) com `--tipo-documento parecer`: as classificações das emendas são as quatro da conclusão mais `redacional`, os agentes propõem e votam às cegas, debatem uma vez e só entram as emendas em que todos concordam, depois da adesão ao conjunto.
+- **Melhorias de redação:** quando o usuário pedir revisão de redação, e não auditoria, seguir `revisao-redacional.md` (referência da Redação Jurídica Consensual): propostas de duas famílias, consolidação e verificação por trecho, passada de uniformidade, quadro comparativo para aprovação e aplicação com controle de alterações, espelhada na minuta e no Anexo.
 - **Trabalho em paralelo:** ler as versões compartilhadas autorizadas e gravar os próprios resultados em pasta isolada, preservando arquivos de outras sessões.
 
 ## Armadilhas verificadas (Codemge/Codemig, outubro de 2026)
