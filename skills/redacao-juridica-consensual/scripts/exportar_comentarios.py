@@ -15,8 +15,9 @@ Para cada comentário, este script devolve:
   aparecem como ``¶``;
 - número do parágrafo numerado onde está o trecho. A contagem é a do Word:
   parágrafos com ``numPr`` próprio (nível 0, ``numId`` diferente de 0) e texto
-  visível não vazio. Trecho fora de parágrafo numerado traz o último número antes
-  dele ("depois do § N");
+  visível não vazio, na visão "tudo aceito" (parágrafo de marca excluída se junta
+  ao seguinte; linha de tabela excluída sai), a mesma do ``overlay_docx``. Trecho
+  fora de parágrafo numerado traz o último número antes dele ("depois do § N");
 - texto do comentário.
 
 O módulo também serve de leitor de .docx para ``verificar_remissoes.py``
@@ -96,13 +97,28 @@ def numerado(p: ET.Element) -> bool:
     return ilvl is None or ilvl.get(W + "val", "0") == "0"
 
 
+def marca_excluida(p: ET.Element) -> bool:
+    """A marca de parágrafo foi excluída: aceito, o parágrafo se funde com o seguinte."""
+    ppr = p.find(W + "pPr")
+    rpr = ppr.find(W + "rPr") if ppr is not None else None
+    return rpr is not None and rpr.find(W + "del") is not None
+
+
+def linha_excluida(tr: ET.Element) -> bool:
+    trpr = tr.find(W + "trPr")
+    return trpr is not None and trpr.find(W + "del") is not None
+
+
 def _paragrafos_xml(body: ET.Element) -> list[ET.Element]:
+    """Parágrafos do corpo, inclusive em tabelas, fora de caixas de texto e de linhas de tabela excluídas."""
     out: list[ET.Element] = []
 
     def visitar(el: ET.Element) -> None:
         for c in el:
             if c.tag == W + "p":
                 out.append(c)
+            elif c.tag == W + "tr" and linha_excluida(c):
+                continue
             elif c.tag not in SALTAR:
                 visitar(c)
 
@@ -110,10 +126,31 @@ def _paragrafos_xml(body: ET.Element) -> list[ET.Element]:
     return out
 
 
-def _corpo(z: zipfile.ZipFile) -> list[ET.Element]:
+def paragrafos_aceitos(body: ET.Element) -> list[list[ET.Element]]:
+    """Parágrafos na visão "tudo aceito": cada item é a lista de ``w:p`` que viram um só parágrafo
+    (os de marca excluída se juntam ao seguinte); o último da lista dá a formatação e a numeração.
+    Funciona com ``xml.etree`` e com ``lxml``; ``overlay_docx`` usa a mesma contagem."""
+    grupos: list[list[ET.Element]] = []
+    atual: list[ET.Element] = []
+    for p in _paragrafos_xml(body):
+        atual.append(p)
+        if not marca_excluida(p):
+            grupos.append(atual)
+            atual = []
+    if atual:
+        grupos.append(atual)
+    return grupos
+
+
+def _corpo(z: zipfile.ZipFile) -> list[list[ET.Element]]:
     root = ET.fromstring(z.read("word/document.xml"))
     body = root.find(W + "body")
-    return _paragrafos_xml(body if body is not None else root)
+    return paragrafos_aceitos(body if body is not None else root)
+
+
+def _eventos_grupo(grupo: list[ET.Element]):
+    for p in grupo:
+        yield from _eventos(p)
 
 
 def ler_paragrafos(path: Path | str) -> list[dict]:
@@ -126,10 +163,10 @@ def ler_paragrafos(path: Path | str) -> list[dict]:
         pars = _corpo(z)
     out = []
     n = 0
-    for i, p in enumerate(pars):
-        texto = texto_visivel(p)
+    for i, g in enumerate(pars):
+        texto = norm("".join(v for k, v in _eventos_grupo(g) if k == "t"))
         numero = None
-        if texto and numerado(p):
+        if texto and numerado(g[-1]):
             n += 1
             numero = n
         out.append({"indice": i, "numero": numero, "texto": texto})
@@ -184,11 +221,11 @@ def ler_comentarios(path: Path | str) -> list[dict]:
     ref: dict[str, int] = {}
     ativos: list[str] = []
     n = 0
-    for i, p in enumerate(pars):
-        evs = list(_eventos(p))
+    for i, g in enumerate(pars):
+        evs = list(_eventos_grupo(g))
         texto = norm("".join(v for k, v in evs if k == "t"))
         numero = None
-        if texto and numerado(p):
+        if texto and numerado(g[-1]):
             n += 1
             numero = n
         info.append((numero, texto))

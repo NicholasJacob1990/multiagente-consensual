@@ -76,6 +76,22 @@ def extrair(path: Path) -> list[dict]:
     return itens
 
 
+def _chave(t: str) -> str:
+    return " ".join(vr.norm(t).casefold().split())
+
+
+def _resumo_classificacao(detalhe: str) -> str:
+    """'correção necessária (parágrafo 169, ii)' → 'Correção necessária'; vazio quando não reconhece."""
+    d = detalhe.casefold()
+    if "corre" in d and "necess" in d:
+        return "Correção necessária"
+    if "recomenda" in d:
+        return "Recomendação"
+    if "sugest" in d:
+        return "Sugestão"
+    return ""
+
+
 def mesclar(novos: list[dict], base: list[dict]) -> tuple[list[dict], list[str]]:
     """Conserva os campos da base que o Anexo não mostra e relata as diferenças por item."""
     por_item = {b["item"]: b for b in base}
@@ -89,10 +105,20 @@ def mesclar(novos: list[dict], base: list[dict]) -> tuple[list[dict], list[str]]
         m = dict(b)
         for k, v in n.items():
             if k == "grupo" and b.get("grupo"):
-                continue  # a base tem o nome do grupo em caixa normal
+                if _chave(b["grupo"]) == _chave(v):
+                    continue  # mesmo grupo: a base o tem em caixa normal
+                dif.append(f"item {n['item']}: grupo mudou ({b['grupo']} → {v})")
+                m[k] = v
+                continue
             if b.get(k) != v:
                 dif.append(f"item {n['item']}: {k} mudou")
             m[k] = v
+        # a classificação resumida da base depende da detalhada: se a detalhada mudou, refaz a resumida
+        if "classificacao" in b and b.get("classificacao_detalhe") != n.get("classificacao_detalhe"):
+            nova = _resumo_classificacao(n.get("classificacao_detalhe", ""))
+            if nova != b["classificacao"]:
+                dif.append(f"item {n['item']}: classificacao refeita ({b['classificacao']} → {nova or 'indefinida'})")
+            m["classificacao"] = nova
         out.append(m)
     for k in sorted(set(por_item) - {n["item"] for n in novos}):
         dif.append(f"item {k}: está na base, mas não no Anexo")

@@ -9,6 +9,9 @@ declarem o mesmo ``name`` no frontmatter.
 from __future__ import annotations
 
 import argparse
+import fnmatch
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -178,14 +181,58 @@ def link_shared_skill(name: str, central_dir: Path, roots: tuple[Path, ...]) -> 
         target.symlink_to(central_dir, target_is_directory=True)
 
 
-def sync_managed_skills(shared_roots: tuple[Path, ...]) -> list[str]:
+INSTALL_RECORD = HOME / ".local" / "state" / "multiagente-consensual" / "skills-instaladas.json"
+# Arquivos feitos para receber dados locais (perfil de um órgão, com fontes e decisões do caso): sem registro
+# da instalação anterior, a cópia local diferente da distribuída é preservada, e não sobrescrita.
+PERSONALIZAVEIS = ("references/perfil-*.md",)
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _load_record() -> dict[str, str]:
+    try:
+        return json.loads(INSTALL_RECORD.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def install_file(key: str, relative: Path, source: Path, target: Path, record: dict[str, str],
+                 preserved: list[str], record_out: dict[str, str]) -> None:
+    """Copia ``source`` para ``target``, salvo quando ``target`` foi alterado localmente desde a última
+    instalação (ou é personalizável e difere, sem registro): aí a cópia local fica e a versão distribuída
+    vai para ``<arquivo>.distribuido``, para mesclar."""
+    data = source.read_bytes()
+    novo = _sha(data)
+    record_out[key] = novo
+    if target.is_file():
+        atual = _sha(target.read_bytes())
+        if atual == novo:
+            return
+        anterior = record.get(key)
+        local = atual != anterior if anterior else any(fnmatch.fnmatch(relative.as_posix(), p) for p in PERSONALIZAVEIS)
+        if local:
+            atomic_write(target.with_name(target.name + ".distribuido"), data)
+            preserved.append(key)
+            return
+    atomic_write(target, data)
+    target.chmod(source.stat().st_mode & 0o777)
+
+
+def sync_managed_skills(shared_roots: tuple[Path, ...], preserved: list[str] | None = None) -> list[str]:
     """Atualiza somente as skills que pertencem a este plugin.
 
     Arquivos estranhos já existentes no diretório de destino são preservados;
     caches e metadados locais nunca são copiados. Assim, a sincronização é
     aditiva em relação às extensões do usuário e autoritativa apenas para os
-    diretórios versionados pelo pacote que contenham um SKILL.md.
+    diretórios versionados pelo pacote que contenham um SKILL.md. Arquivo do
+    pacote alterado localmente desde a instalação anterior (registro em
+    ``INSTALL_RECORD``) também é preservado; a versão nova fica em
+    ``<arquivo>.distribuido`` e o nome vai para ``preserved``.
     """
+    record, record_out = _load_record(), {}
+    preserved = preserved if preserved is not None else []
     synced: list[str] = []
     for source_dir in sorted(PLUGIN_SKILL_SOURCE.iterdir()):
         if not source_dir.is_dir() or not (source_dir / "SKILL.md").is_file():
@@ -200,10 +247,10 @@ def sync_managed_skills(shared_roots: tuple[Path, ...]) -> list[str]:
             if not source.is_file() or source.suffix == ".pyc" or source.name == ".DS_Store":
                 continue
             target = central_dir / relative
-            atomic_write(target, source.read_bytes())
-            target.chmod(source.stat().st_mode & 0o777)
+            install_file(f"{source_dir.name}/{relative.as_posix()}", relative, source, target, record, preserved, record_out)
         link_shared_skill(source_dir.name, central_dir, shared_roots)
         synced.append(source_dir.name)
+    atomic_write(INSTALL_RECORD, (json.dumps({**record, **record_out}, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     return synced
 
 
@@ -278,7 +325,8 @@ def main() -> int:
         for name, text in sources.items():
             atomic_write(target / f"{name}.md", text.encode("utf-8"))
 
-    synced_skills = sync_managed_skills(shared_skill_roots)
+    preserved: list[str] = []
+    synced_skills = sync_managed_skills(shared_skill_roots, preserved)
     shared_runtime = sync_shared_runtime()
 
     created_skills: list[str] = []
@@ -308,6 +356,9 @@ def main() -> int:
     print(f"commands={len(sources)} targets={len(command_keys)}")
     print("requested_targets=" + ",".join(sorted(requested)))
     print(f"managed_skills_synced={len(synced_skills)}")
+    print(f"local_files_preserved={len(preserved)}")
+    for key in preserved:
+        print(f"preserved={key} (versão distribuída em {key}.distribuido: mesclar)")
     print(f"shared_runtime_files={len(shared_runtime)}")
     print(f"portable_skills_created={len(created_skills)}")
     if created_skills:

@@ -157,7 +157,7 @@ def test_aplicar_overlay_paragrafos_respostas_e_aceite(tmp_path: Path) -> None:
            "respostas": [{"id": "1", "texto": "Ajustei o parágrafo 1."}]}
     sai = tmp_path / "s.docx"
     rel = ap.aplicar(ent, sai, alt, "Autor", "2026-11-02T00:00:00Z")
-    assert rel[0] == "§ 1: 3 palavras" and rel[-1] == "resposta 1: reescrita"
+    assert rel[0].startswith("§ 1: aviso") and rel[1] == "§ 1: 3 palavras" and rel[-1] == "resposta 1: reescrita"
     xml = zipfile.ZipFile(sai).read("word/document.xml").decode()
     assert "<w:ins" in xml and "<w:del " in xml and 'w:author="Autor"' in xml
     assert "Ajustei o parágrafo 1." in zipfile.ZipFile(sai).read("word/comments.xml").decode()
@@ -177,7 +177,7 @@ def test_aplicar_overlay_paragrafos_respostas_e_aceite(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="aparece 0 vezes"):
         ap.aplicar(ent, tmp_path / "y.docx", {"paragrafos": [{"n": 3, "antes": "inexistente", "depois": "x"}]},
                    "Autor", "2026-11-02T00:00:00Z")
-    assert ap.main([str(ent), str(tmp_path / "z.docx"), "--alteracoes", str(_json(tmp_path, alt))]) == 0
+    assert ap.main([str(ent), str(tmp_path / "z.docx"), "--alteracoes", str(_json(tmp_path, alt)), "--autor", "Autor"]) == 0
 
 
 def _json(tmp_path: Path, dados: dict) -> Path:

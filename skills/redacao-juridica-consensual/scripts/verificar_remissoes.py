@@ -431,7 +431,8 @@ def _dispositivo(art: str, par: str | None, pu: bool, inc: str | None) -> tuple[
 
 
 _CADEIA_DEPOIS_RE = re.compile(
-    r"^(?:[\s,§º°\d]|\b(?-i:[IVXLC]+)\b|\be\b|par[áa]grafos?\s+[úu]nico|caput|incisos?|al[íi]neas?\s+[a-z]\b)*?"
+    r"^(?:[\s,§º°\d]|\b(?-i:[IVXLC]+)\b|\be\b|par[áa]grafos?\s+[úu]nico|caput|incisos?|al[íi]neas?\s+[a-z]\b"
+    r"|[\"“][a-z][\"”])*?"
     r"\b(?:d[aoe]s?|n[ao]s?)\s+",
     re.IGNORECASE,
 )
@@ -453,8 +454,19 @@ def diploma_da_citacao(texto: str, ini: int, fim: int) -> str | None:
     return None
 
 
+_ORD = r"\s*[º°]?"
+_NUM_DISP = rf"\d+{_ORD}(?:-[A-Z]\b)?"
+_LISTA_DISP = rf"{_NUM_DISP}(?:\s*(?:,|\be\b)\s*{_NUM_DISP})*"
+CIT_ARTS_RE = re.compile(rf"\barts\.\s*(?P<lista>{_LISTA_DISP})", re.IGNORECASE)  # "arts. 7º, 8º e 9º"
+CIT_PARS_DO_ART_RE = re.compile(  # "art. 23, §§ 1º e 2º"
+    rf"\bart\.\s*(?P<art>\d+){_ORD}(?:-(?P<suf>[A-Z])\b)?\s*,\s*§§\s*(?P<lista>{_LISTA_DISP})", re.IGNORECASE)
+_ITEM_DISP_RE = re.compile(r"(?P<n>\d+)\s*[º°]?(?:-(?P<suf>[A-Z])\b)?")
+
+
 def citacoes_dispositivo(texto: str) -> list[tuple[int, int, tuple, str]]:
-    """Citações simples a dispositivo: (ini, fim, chave, rótulo)."""
+    """Citações a dispositivo: (ini, fim, chave, rótulo). Reconhece a citação simples ("art. 5º, § 2º, I"),
+    "§ 2º do art. 5º", a lista de artigos ("arts. 7º, 8º e 9º") e a de parágrafos ("art. 23, §§ 1º e 2º");
+    cada número de uma lista vira uma citação, com a posição do próprio número."""
     out = []
     ocupados: list[tuple[int, int]] = []
     for m in CIT_PAR_DO_ART_RE.finditer(texto):
@@ -462,13 +474,73 @@ def citacoes_dispositivo(texto: str) -> list[tuple[int, int, tuple, str]]:
         chave, rot = _dispositivo(art, m.group("par"), bool(m.group("pu")), None)
         out.append((m.start(), m.end(), chave, rot))
         ocupados.append(m.span())
+    for m in CIT_ARTS_RE.finditer(texto):
+        for x in _ITEM_DISP_RE.finditer(m.group("lista")):
+            art = x.group("n") + (f"-{x.group('suf')}" if x.group("suf") else "")
+            chave, rot = _dispositivo(art, None, False, None)
+            out.append((m.start(), m.start("lista") + x.end(), chave, rot))  # início no "arts.": o diploma vale para todos
+    for m in CIT_PARS_DO_ART_RE.finditer(texto):
+        art = m.group("art") + (f"-{m.group('suf')}" if m.group("suf") else "")
+        for x in _ITEM_DISP_RE.finditer(m.group("lista")):
+            chave, rot = _dispositivo(art, x.group("n"), False, None)
+            out.append((m.start(), m.start("lista") + x.end(), chave, rot))
     for m in CIT_ART_RE.finditer(texto):
         if any(a <= m.start() < b for a, b in ocupados):
             continue
         art = m.group("art") + (f"-{m.group('suf')}" if m.group("suf") else "")
         chave, rot = _dispositivo(art, m.group("par"), bool(m.group("pu")), m.group("inc2") or m.group("inc"))
         out.append((m.start(), m.end(), chave, rot))
-    return sorted(out)
+    return sorted(set(out))
+
+
+_QUALIFICADOR_RE = re.compile(  # entre o diploma e a citação: "da Codemig", "da Codemge e da Codemig", "(PC 011)"
+    r"(?:\s+(?:d[aoe]s?|n[ao]s?)\s+[A-ZÀ-Ú][\wÀ-ú.]*(?:\s+(?:e\s+)?(?:d[aoe]s?\s+)?[A-ZÀ-Ú][\wÀ-ú.]*){0,4})?"
+    r"(?:\s*\([^()]{0,40}\))?\s*,\s*(?:n[oa]s?\s+)?")  # "A IN nº 76/2026, no art. 11"
+_MESMA_RE = re.compile(r"mesm[ao]\s+[A-ZÀ-Ú]")  # "da mesma Lei", depois da cadeia: a norma citada antes
+_AMBOS_RE = re.compile(r"\b(?:ambos|ambas|todos|todas|respectivamente)\s*,?\s+(?:d[aoe]s?|n[ao]s?)\s+", re.IGNORECASE)
+_DA_MINUTA_RE = re.compile(
+    r"^(?:[\s,§º°\d]|\b(?-i:[IVXLC]+)\b|\be\b|par[áa]grafos?\s+[úu]nico|caput|incisos?)*?\b(?:d[ao]|n[ao]|dest[ae])\s+"
+    r"(?:minuta|regulamento|edital|pr[óo]pri[ao])\b", re.IGNORECASE)
+
+
+def _diploma_ligado(texto: str, ini: int, fim: int) -> str | None:
+    """Diploma de que a citação faz parte, e não um diploma qualquer da frase: o da cadeia
+    (``diploma_da_citacao``), o que abre o parêntese da citação ("Estatuto Social da Codemig (art. 22)"),
+    o que vem depois de aposto entre parênteses ("art. 140, § 1º (à época, parágrafo único), da Lei") e o de
+    "…, ambos da Lei" ou "arts. 17 e 19 da Lei" na mesma oração."""
+    d = diploma_da_citacao(texto, ini, fim)
+    if d:
+        return d
+    cadeia = _CADEIA_DEPOIS_RE.match(texto[fim:fim + 120])
+    if cadeia and _MESMA_RE.match(texto[fim + cadeia.end():fim + cadeia.end() + 40]):
+        return "mesma norma"
+    antes = texto[max(0, ini - 160):ini]
+    for d in DIPLOMA_RE.finditer(antes):  # "(Estatuto Social da Codemig, art. 22)", "Política de Indicação (PC 011), arts."
+        if _QUALIFICADOR_RE.fullmatch(antes[d.end():]):
+            return d.group(0)
+    abre = re.search(r"\(\s*$", antes)
+    if abre:
+        for d in DIPLOMA_RE.finditer(antes[:abre.start()]):
+            if len(antes[d.end():abre.start()]) <= 60 and not re.search(r"[.;]", antes[d.end():abre.start()]):
+                return d.group(0)
+    depois = texto[fim:fim + 240]
+    sem_aposto = re.sub(r"^\s*(?:,\s*)?\([^()]{0,120}\)", "", depois)
+    if sem_aposto != depois:
+        d = diploma_da_citacao(sem_aposto, 0, 0)
+        if d:
+            return d
+    fechos = [m.start() for m in FIM_FRASE_RE.finditer(depois)
+              if not ABREVIATURA_RE.search(depois[max(0, m.start() - 6):m.start()])] + [depois.find(";")]
+    fim_oracao = min((p for p in fechos if p >= 0), default=len(depois))
+    trecho = depois[:fim_oracao]
+    for m in _AMBOS_RE.finditer(trecho):
+        d = DIPLOMA_RE.match(trecho, m.end())
+        if d:
+            return d.group(0)
+    seguinte = re.match(r"^(?:\s*(?:,|\be\b)\s*(?:o\s+|do\s+|no\s+)?(?:art\.\s*)?\d+\s*[º°]?(?:-[A-Z]\b)?)+", depois)
+    if seguinte:  # "art. 17 e art. 19 da Lei": o diploma vem depois do último da lista
+        return diploma_da_citacao(texto, fim + seguinte.end() - 1, fim + seguinte.end())
+    return None
 
 
 # ---------------------------------------------------------------- conferir
@@ -482,7 +554,7 @@ def _conferir_paragrafos(u: Unidade, existentes: dict[int, str], total: int) -> 
                 out.append(Achado("bloqueante", "intervalo_invertido", u.local,
                                   f"«{trecho}»: intervalo {ref.inicio} a {ref.fim} invertido", trecho))
                 continue
-            for n in sorted({ref.inicio, ref.fim}):
+            for n in range(ref.inicio, ref.fim + 1):  # o intervalo inteiro, não só as pontas
                 if n not in existentes:
                     out.append(Achado("bloqueante", "remissao_paragrafo", u.local,
                                       f"«{trecho}» aponta para o parágrafo {n}, que não existe (o parecer tem {total})", trecho))
@@ -522,15 +594,17 @@ def _conferir_dispositivos(u: Unidade, oficial: set[tuple] | None, revisada: set
                 continue
             if re.search(r"inexistente[\s\"“]*$", u.texto[max(0, ini - 25):ini]):  # o próprio parecer aponta o dispositivo inexistente
                 continue
-            # diploma na mesma frase, antes do parêntese ("Estatuto Social (art. 22, § 1º)") ou depois de aposto
-            # ("art. 140, § 1º (à época, parágrafo único), da Lei nº 6.404/1976"; "…, ambos da Lei…"): outra norma
-            if DIPLOMA_RE.search(oracao(u.texto, ini, fim)):
+            # diploma preso à citação, antes do parêntese ("Estatuto Social (art. 22, § 1º)"), depois de aposto
+            # ("art. 140, § 1º (à época, parágrafo único), da Lei nº 6.404/1976") ou "…, ambos da Lei…": outra norma.
+            # Um diploma solto na frase não basta ("A Lei nº 13.303/2016 não dispensa o art. 999 da minuta").
+            if _diploma_ligado(u.texto, ini, fim):
                 continue
             msg = f"«{rot}»: dispositivo inexistente na minuta oficial sem a marca 'sugerido'"
             if revisada is not None and chave in revisada:
                 msg += " (existe só na minuta revisada)"
-            # diploma citado antes no parágrafo: pode ser artigo dele, e não da minuta
-            nivel = "info" if DIPLOMA_RE.search(u.texto[:ini]) else "alerta"
+            # diploma citado antes, solto: pode ser artigo dele, e não da minuta; "da minuta" expresso tira a dúvida
+            da_minuta = _DA_MINUTA_RE.match(u.texto[fim:fim + 80])
+            nivel = "info" if DIPLOMA_RE.search(u.texto[:ini]) and not da_minuta else "alerta"
             if nivel == "info":
                 msg += "; o parágrafo cita outra norma antes: conferir de qual diploma é"
             out.append(Achado(nivel, "dispositivo", u.local, msg, norm(seg)[:200]))
@@ -544,6 +618,20 @@ def _conferir_dispositivos(u: Unidade, oficial: set[tuple] | None, revisada: set
             out.append(Achado("info", "diploma_implicito", u.local,
                               f"«{m.group(0)}»: artigo sem diploma depois de citar {diploma}: conferir se é da minuta",
                               norm(seg)[:200]))
+    return out
+
+
+def _conferir_minuta_interna(unidades: list[Unidade], estrutura: set[tuple]) -> list[Achado]:
+    """Remissões internas da minuta revisada ("nos termos do art. 23, § 2º") a dispositivo que ela não tem."""
+    out = []
+    for u in unidades:
+        for ini, fim, chave, rot in citacoes_dispositivo(u.texto):
+            if chave in estrutura or _diploma_ligado(u.texto, ini, fim):
+                continue
+            if chave[0] == "inc":  # incisos dependem do contexto (caput, § ou parágrafo único): conferência só por artigo e §
+                continue
+            out.append(Achado("alerta", "remissao_interna_minuta", u.local,
+                              f"«{rot}»: a minuta revisada remete a dispositivo que ela não tem", norm(u.texto)[:200]))
     return out
 
 
@@ -633,7 +721,8 @@ def conferir(parecer: Path, anexo: Path | None = None, minuta_oficial: Path | No
     total = max(existentes) if existentes else 0
     itens, linhas_anexo = ler_anexo(anexo) if anexo else ({}, [])
     oficial = estrutura_minuta(ler_unidades(minuta_oficial)) if minuta_oficial else None
-    revisada = estrutura_minuta(ler_unidades(minuta_revisada)) if minuta_revisada else None
+    unidades_revisada = ler_unidades(minuta_revisada) if minuta_revisada else []
+    revisada = estrutura_minuta(unidades_revisada) if minuta_revisada else None
     coment: list[Unidade] = []
     for c in comentarios or []:
         for k in ec.ler_comentarios(c):
@@ -652,6 +741,8 @@ def conferir(parecer: Path, anexo: Path | None = None, minuta_oficial: Path | No
             achados += _conferir_itens(u, itens)
     for u in unidades:
         achados += _conferir_dispositivos(u, oficial, revisada)
+    if revisada and any(k[0] == "art" for k in revisada):
+        achados += _conferir_minuta_interna(unidades_revisada, revisada)
     if anexo:
         achados += _conferir_classificacao(existentes, linhas_anexo)
     if anterior and comentarios:
@@ -770,7 +861,8 @@ def _unidades_json(obj, nome: str, caminho: str = "$"):
 
 
 def _ocorrencias(path: Path):
-    """(local, contexto, antigo, romano, faixa) de cada número citado em remissão a parágrafo."""
+    """(local, contexto, antigo, romano, ponta) de cada número citado em remissão a parágrafo;
+    ``ponta`` é None no número isolado e "inicio" ou "fim" na ponta de intervalo."""
     if path.suffix.lower() == ".json":
         fontes = list(_unidades_json(json.loads(path.read_text(encoding="utf-8")), path.name))
     elif path.suffix.lower() == ".docx":
@@ -782,14 +874,14 @@ def _ocorrencias(path: Path):
         if tipo == "lista":
             ctx = f"paragrafos_parecer = {valor}"
             for n in valor:
-                yield local, ctx, n, None, False
+                yield local, ctx, n, None, None
             continue
         for r in remissoes_paragrafo(valor):
             ctx = oracao(valor, r.ini, r.fim)
             for ref in r.refs:
-                yield local, ctx, ref.inicio, ref.romano, ref.faixa
+                yield local, ctx, ref.inicio, ref.romano, "inicio" if ref.faixa else None
                 if ref.faixa:
-                    yield local, ctx, ref.fim, None, True
+                    yield local, ctx, ref.fim, None, "fim"
 
 
 def mapear(antigo: Path, novo: Path, em: list[Path] | None = None) -> dict:
@@ -801,10 +893,10 @@ def mapear(antigo: Path, novo: Path, em: list[Path] | None = None) -> dict:
     decisoes = []
     vistos: dict[tuple[str, str, int], int] = {}
     for path in [novo, *(em or [])]:
-        for local, ctx, n, romano, faixa in _ocorrencias(path):
+        for local, ctx, n, romano, ponta in _ocorrencias(path):
             alvos = mapa.get(n)
-            if alvos is None or len(alvos) == 1 or (faixa and alvos):
-                continue  # fora do mapa, sem divisão, ou ponta de intervalo (vai do primeiro ao último)
+            if alvos is None or len(alvos) == 1:
+                continue  # fora do mapa ou sem divisão
             ordem = vistos.get((path.name, ctx, n), 0)
             vistos[(path.name, ctx, n)] = ordem + 1
             d = {
@@ -819,6 +911,12 @@ def mapear(antigo: Path, novo: Path, em: list[Path] | None = None) -> dict:
             }
             if not alvos:
                 d["nota"] = "parágrafo antigo suprimido: indicar em 'escolha' o número novo"
+            elif ponta:
+                d["ponta"] = ponta
+                d["nota"] = (f"{'início' if ponta == 'inicio' else 'fim'} de intervalo em parágrafo dividido: indicar a parte "
+                             f"em que o intervalo {'começa' if ponta == 'inicio' else 'termina'} ('todas' = "
+                             f"{'a primeira' if ponta == 'inicio' else 'a última'}); estender o intervalo a todas as "
+                             f"partes pode citar mais do que o texto antigo citava")
             if romano:
                 d["romano"] = romano
                 com = [p["opcao"] for p in d["partes"] if re.search(rf"(?<!\w){re.escape(romano)}\)", texto_novo.get(p["numero"], ""))]
@@ -912,13 +1010,16 @@ class Renumerador:
         return [alvos[i] for i in idx]
 
     def ponta(self, local: str, ctx: str, n: int, inicio: bool) -> int | None:
-        """Ponta de intervalo: o primeiro número novo do início ou o último do fim."""
+        """Ponta de intervalo. Sem divisão, o número novo; dividida ou suprimida, exige decisão ('todas' leva
+        o início à primeira parte e o fim à última)."""
         alvos = self.mapa.get(n)
         if alvos is None:
             return n
-        if alvos:
-            return alvos[0] if inicio else alvos[-1]
-        ds = self._resolver(local, ctx, n, [], "ponta de intervalo suprimida na versão nova")
+        if len(alvos) == 1:
+            return alvos[0]
+        motivo = ("ponta de intervalo em parágrafo dividido sem escolha" if alvos
+                  else "ponta de intervalo suprimida na versão nova")
+        ds = self._resolver(local, ctx, n, alvos, motivo)
         return (ds[0] if inicio else ds[-1]) if ds else None
 
     def texto(self, valor: str, local: str) -> str:

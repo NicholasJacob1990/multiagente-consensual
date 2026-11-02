@@ -10,7 +10,9 @@ do anexo e na minuta revisada. Este script lê os blocos do anexo marcados com
   um inciso e suas alíneas, por exemplo);
 - ``por_partes``: bloco que reproduz uma linha de tabela em prosa rotulada
   ("Etapa. Responsável: X; Prazo: Y") ou com as opções entre parênteses
-  ("Pergunta? (Sim / Não)"), cujas partes aparecem todas na minuta;
+  ("Pergunta? (Sim / Não)"), cujas partes aparecem todas no mesmo parágrafo ou
+  na mesma linha de tabela da minuta (partes espalhadas por linhas diferentes
+  contam como divergência);
 - ``fora_da_minuta``: bloco iniciado por colchete ("[Edital – item a definir]"),
   que não pertence à minuta;
 - ``divergente``: nenhum dos casos; o relatório mostra o trecho mais próximo.
@@ -32,7 +34,8 @@ Exemplo::
     espelho_redacoes.py --anexo anexo.docx --minuta minuta_revisada.docx \\
         --parecer parecer.docx --mudancas mudancas.json --json espelho.json
 
-Sai com código 1 se houver bloco divergente ou redação superada no parecer.
+Sai com código 1 se houver bloco divergente, redação superada no parecer ou se
+nenhum bloco (NR)/(AC) for reconhecido no anexo.
 """
 
 from __future__ import annotations
@@ -157,11 +160,23 @@ def classificar(bloco: dict, unidades: set[str], corrido: str, lista: list[str])
     m = OPCOES.match(partes[-1])
     if m:  # opções de resposta entre parênteses ("(Sim / Não)") são outra coluna
         partes[-1:] = [m.group(1), m.group(2)]
-    if len(partes) > 1 and all(p and p in corrido for p in partes):
-        return {"estado": "por_partes"}
+    if len(partes) > 1 and all(partes):
+        # todas as partes na mesma unidade (parágrafo ou linha de tabela "a || b || c"): responsável e prazo
+        # espalhados por linhas diferentes não espelham a linha
+        if any(all(p in u for p in partes) for u in lista):
+            return {"estado": "por_partes"}
+        if all(p in corrido for p in partes):
+            proximo, razao = _mais_proximo(t, lista)
+            return {"estado": "divergente", "mais_proximo": proximo[:300], "semelhanca": razao,
+                    "motivo": "as partes existem na minuta, mas em linhas ou parágrafos diferentes"}
+    proximo, razao = _mais_proximo(t, lista)
+    return {"estado": "divergente", "mais_proximo": proximo[:300], "semelhanca": razao}
+
+
+def _mais_proximo(t: str, lista: list[str]) -> tuple[str, float]:
     proximo = max(lista, key=lambda u: difflib.SequenceMatcher(None, t, u, autojunk=False).quick_ratio(), default="")
     razao = difflib.SequenceMatcher(None, t, proximo, autojunk=False).ratio() if proximo else 0.0
-    return {"estado": "divergente", "mais_proximo": proximo[:300], "semelhanca": round(razao, 2)}
+    return proximo, round(razao, 2)
 
 
 def segmentos_superados(antes: str, depois: str, contexto: int = 8, minimo: int = 35) -> list[str]:
@@ -199,7 +214,8 @@ def conferir(anexo: Path, minuta: Path, parecer: Path | None = None, mudancas: P
     for b in blocos:
         contagem[b["estado"]] = contagem.get(b["estado"], 0) + 1
     resultado["contagem"] = contagem
-    resultado["ok"] = not contagem.get("divergente") and not resultado["superadas_no_parecer"]
+    resultado["sem_blocos"] = not blocos  # nenhum (NR)/(AC) reconhecido: nada foi conferido
+    resultado["ok"] = bool(blocos) and not contagem.get("divergente") and not resultado["superadas_no_parecer"]
     return resultado
 
 
@@ -217,9 +233,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         args.json.write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
     print("Blocos do anexo:", ", ".join(f"{k} {v}" for k, v in sorted(r["contagem"].items())) or "nenhum")
+    if r["sem_blocos"]:
+        print("- NENHUM BLOCO (NR)/(AC) reconhecido no anexo: nada foi conferido")
     for b in r["blocos"]:
         if b["estado"] == "divergente":
             print(f"- DIVERGENTE ({b['marca']}) {b['rotulo'] or ''} {b['texto'][:120]}")
+            if b.get("motivo"):
+                print(f"  {b['motivo']}")
             print(f"  mais próximo ({b['semelhanca']}): {b['mais_proximo'][:120]}")
     for s in r["superadas_no_parecer"]:
         print(f"- REDAÇÃO SUPERADA NO PARECER [{s['alvo']}]: {s['trecho'][:140]}")

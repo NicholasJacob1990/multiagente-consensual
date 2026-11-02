@@ -2,10 +2,16 @@
 """Monta o pacote de auditoria travado por hash e confere a resposta do auditor.
 
 O pacote reúne instruções, dossiê, adendo de fontes literais e minuta, cada parte
-delimitada e com seu SHA-256. A primeira linha da resposta do auditor tem de
-repetir o hash da minuta: resposta sem ele, ou com outro, foi dada sobre outra
-versão (ou sobre anexo desatualizado) e é descartada. Isso já aconteceu duas
-vezes no mesmo caso; o hash torna o erro detectável na hora.
+delimitada e com seu SHA-256. A resposta do auditor tem de declarar o hash da
+minuta (``HASH_RECEBIDO: <hash>``) numa das 20 primeiras linhas, no começo da
+linha ou logo depois do preâmbulo que alguns CLIs narram: resposta sem ele, ou com
+outro, foi dada sobre outra versão (ou sobre anexo desatualizado) e é descartada.
+Isso já aconteceu duas vezes no mesmo caso; o hash torna o erro detectável na hora.
+
+``verificar`` separa três coisas: o hash (declarado e certo), a resposta (sem
+declaração de falha logo no início e com os trechos de ``--exigir``) e a
+cobertura (hash e resposta válidos e, se o pacote tem comentários, também o
+``HASH_COMENTARIOS``). Só sai com 0 quando a cobertura é certificada.
 
 Com ``--anterior``, monta o pacote só com as diferenças (parágrafos alterados ou
 novos, com o vizinho de cada lado), para rodadas intermediárias mais baratas.
@@ -13,8 +19,8 @@ novos, com o vizinho de cada lado), para rodadas intermediárias mais baratas.
 Com ``--comentarios`` (um ou mais arquivos de texto, como a saída de
 ``exportar_comentarios.py``), o pacote ganha a parte "COMENTÁRIOS E RESPOSTAS",
 com hash próprio no cabeçalho. O auditor que certificar os comentários repete
-``HASH_COMENTARIOS: <hash>``; ``verificar`` recusa a resposta que citar outro hash e
-avisa quando a resposta não o cita.
+``HASH_COMENTARIOS: <hash>``; ``verificar`` recusa a resposta que citar outro hash
+ou que não o citar (salvo ``--comentarios-opcionais``).
 
 Exemplos::
 
@@ -144,31 +150,67 @@ def hash_comentarios_do_pacote(texto: str) -> str | None:
     return m.group(1) if m else None
 
 
+# A linha do hash é uma declaração do auditor: começa nela (depois de marcação como "> ", "**", "`") ou vem
+# grudada no fim de uma frase de preâmbulo ("…a contagem.HASH: …", como o CLI do Grok narra). Citada no
+# meio de outra frase ("Pedido: HASH_RECEBIDO: …"), não vale.
+_INICIO_DECLARACAO = r"(?:^[\s>*_`#-]*|(?<=[.!?])\s*)"
+# recusa do próprio trabalho (não achado de auditoria, como "não foi possível localizar o art. 9º na fonte")
+RECUSA_RE = re.compile(
+    r"\bn[ãa]o\s+(?:executei|realizei|fiz|consegui|pude|foi\s+poss[íi]vel)(?:\s+\w+){0,2}?\s+"
+    r"(?:a\s+auditoria|auditar|a\s+an[áa]lise|analisar|ler\s+(?:o\s+pacote|a\s+minuta|os\s+arquivos)|acessar|abrir)\b"
+    r"|\b(?:unable\s+to|could\s+not|cannot|can't)\s+(?:complete|perform|read|access|open)\b", re.IGNORECASE)
+PALAVRAS_MINIMAS = 30
+
+
+def _declaracao(resposta: str, rx: re.Pattern) -> tuple[int, re.Match] | None:
+    primeiras = [l for l in resposta.strip().split("\n") if l.strip()][:LINHAS_PREAMBULO]
+    for k, l in enumerate(primeiras):
+        for m in rx.finditer(l):
+            if re.search(_INICIO_DECLARACAO + r"$", l[:m.start()]):
+                return k, m
+    return None
+
+
 def verificar_comentarios(resposta: str, esperado: str) -> tuple[bool | None, str]:
     """True: certificou os comentários enviados; False: citou outro hash; None: não certificou."""
-    primeiras = [l for l in resposta.strip().split("\n") if l.strip()][:5]
-    for l in primeiras:
-        m = HASH_COMENTARIOS_RE.search(l)
-        if m:
-            if m.group(1).lower() == esperado:
-                return True, "hash dos comentários confere"
-            return False, f"hash dos comentários divergente: a resposta cita {m.group(1)[:16]}…, esperado {esperado[:16]}…"
+    achado = _declaracao(resposta, HASH_COMENTARIOS_RE)
+    if achado:
+        m = achado[1]
+        if m.group(1).lower() == esperado:
+            return True, "hash dos comentários confere"
+        return False, f"hash dos comentários divergente: a resposta cita {m.group(1)[:16]}…, esperado {esperado[:16]}…"
     return None, "a resposta não certifica os comentários (sem HASH_COMENTARIOS)"
 
 
 def verificar(resposta: str, esperado: str) -> tuple[bool, str]:
-    """Procura o hash nas primeiras linhas; tolera o preâmbulo que alguns CLIs narram antes dele."""
-    primeiras = [l for l in resposta.strip().split("\n") if l.strip()][:LINHAS_PREAMBULO]
-    for k, l in enumerate(primeiras):
-        m = HASH_RE.search(l)
-        if m:
-            aviso = ""
-            if k or m.start() > 0:
-                aviso = " (precedido de preâmbulo do CLI; descartá-lo antes de usar a resposta)"
-            if m.group(1).lower() == esperado:
-                return True, "hash confere" + aviso
-            return False, f"hash divergente: a resposta cita {m.group(1)[:16]}…, esperado {esperado[:16]}…"
-    return False, f"a resposta não repete o hash nas primeiras {LINHAS_PREAMBULO} linhas"
+    """Procura a declaração do hash nas primeiras linhas; tolera o preâmbulo que alguns CLIs narram antes dele.
+    Só confere o hash: se a resposta é uma auditoria de fato, diz ``validar_resposta``."""
+    achado = _declaracao(resposta, HASH_RE)
+    if not achado:
+        return False, f"a resposta não declara o hash nas primeiras {LINHAS_PREAMBULO} linhas"
+    k, m = achado
+    if m.group(1).lower() != esperado:
+        return False, f"hash divergente: a resposta cita {m.group(1)[:16]}…, esperado {esperado[:16]}…"
+    aviso = " (precedido de preâmbulo do CLI; descartá-lo antes de usar a resposta)" if k or m.start() > 0 else ""
+    return True, "hash confere" + aviso
+
+
+def validar_resposta(resposta: str, exigir: list[str] | None = None) -> tuple[bool, list[str]]:
+    """Hash certo não prova auditoria feita: recusa a resposta que declara falha logo depois do hash ou
+    não traz os trechos exigidos (por exemplo, "Decisão:"); avisa quando o corpo é curto demais."""
+    corpo = HASH_COMENTARIOS_RE.sub("", HASH_RE.sub("", resposta))
+    msgs, ok = [], True
+    inicio = " ".join(corpo.split()[:80])
+    if RECUSA_RE.search(inicio):
+        ok = False
+        msgs.append(f"a resposta declara falha ou recusa logo no início: «{RECUSA_RE.search(inicio).group(0)}»")
+    for t in exigir or []:
+        if t.casefold() not in resposta.casefold():
+            ok = False
+            msgs.append(f"a resposta não traz «{t}», exigido nesta auditoria")
+    if len(corpo.split()) < PALAVRAS_MINIMAS:
+        msgs.append(f"atenção: corpo com menos de {PALAVRAS_MINIMAS} palavras; conferir se a auditoria foi feita")
+    return ok, msgs
 
 
 def conferir_instrucoes(instrucoes: str, doc: pm.Documento) -> list[str]:
@@ -213,6 +255,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--pacote", type=Path)
     g.add_argument("--hash")
     v.add_argument("--resposta", type=Path, required=True)
+    v.add_argument("--exigir", action="append", default=[], metavar="TRECHO",
+                   help="trecho que a resposta tem de trazer (repetível), ex.: --exigir 'Decisão:'")
+    v.add_argument("--comentarios-opcionais", action="store_true",
+                   help="não reprova a resposta que deixa de certificar os comentários do pacote")
     args = ap.parse_args(argv)
 
     if args.cmd == "montar":
@@ -234,13 +280,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     resposta = args.resposta.read_text(encoding="utf-8")
     ok, msg = verificar(resposta, esperado.lower())
-    print(msg)
+    print(f"hash: {msg}")
+    valida, msgs = validar_resposta(resposta, args.exigir)
+    print("resposta: " + ("válida" if valida else "INVÁLIDA"))
+    for m in msgs:
+        print(f"  {m}")
+    ok = ok and valida
     h_com = hash_comentarios_do_pacote(args.pacote.read_text(encoding="utf-8")) if args.pacote else None
     if h_com:
         ok_com, msg_com = verificar_comentarios(resposta, h_com)
-        print(msg_com)
-        if ok_com is False:
+        print(f"comentários: {msg_com}")
+        if ok_com is False or (ok_com is None and not args.comentarios_opcionais):
             ok = False
+    print("cobertura: " + ("certificada" if ok else "NÃO certificada"))
     return 0 if ok else 1
 
 

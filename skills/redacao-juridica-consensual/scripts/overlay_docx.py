@@ -28,15 +28,20 @@ class Ctx:
 
 
 def normalize_runs(p):
-    """Um filho de texto por run: w:t, w:delText ou w:br."""
+    """Um filho por run (além do rPr): w:t, w:delText, w:br, w:tab ou outro.
+
+    Os demais filhos (referência de nota ou de comentário, campo, desenho) seguem, na ordem original,
+    cada um no seu run, com a mesma formatação; nada do run original se perde, e ``split_run`` não
+    duplica uma referência de nota ao copiar o run."""
     for r in list(p.iter(w('r'))):
-        kids = [c for c in r if c.tag in (w('t'), w('delText'), w('br'), w('tab'))]
+        kids = [c for c in r if c.tag != w('rPr')]
         if len(kids) <= 1:
             continue
         rpr = r.find(w('rPr'))
         parent, idx = r.getparent(), r.getparent().index(r)
+        attrs = dict(r.attrib)
         for k, c in enumerate(kids):
-            nr = etree.Element(w('r'))
+            nr = etree.Element(w('r'), attrs)
             if rpr is not None:
                 nr.append(copy.deepcopy(rpr))
             nr.append(c)
@@ -54,14 +59,16 @@ def is_deleted(r, p):
 
 
 def run_text(r):
+    """Texto do run inteiro (todos os w:t, w:br e w:tab), igual antes e depois de ``normalize_runs``."""
+    out = []
     for c in r:
         if c.tag == w('t'):
-            return c.text or ''
-        if c.tag == w('br'):
-            return '\n'
-        if c.tag == w('tab'):
-            return '\t'
-    return ''
+            out.append(c.text or '')
+        elif c.tag == w('br'):
+            out.append('\n')
+        elif c.tag == w('tab'):
+            out.append('\t')
+    return ''.join(out)
 
 
 def vis_runs(p):
@@ -207,6 +214,7 @@ def _coalesce(ops, short=3):
 
 
 def replace(p, old, new, ctx, whole=False):
+    normalize_runs(p)
     vis = visible(p)
     assert vis.count(old) == 1, (vis.count(old), old[:90])
     base = vis.index(old)
@@ -345,23 +353,39 @@ def insert_head_after(anchor, tpl, text, ctx):
 
 # ---------------------------------------------------------------- utilidades de documento
 
-def paragrafos_numerados(body):
-    """Parágrafos com numeração automática (numPr) e texto visível, na ordem: {número: w:p}."""
+def grupos_numerados(body):
+    """{número: [w:p, …]} dos parágrafos numerados na visão "tudo aceito", com a contagem de
+    ``exportar_comentarios`` (numPr próprio no nível 0, numId diferente de 0, texto visível; marca de
+    parágrafo excluída junta o parágrafo ao seguinte; linhas excluídas e caixas de texto ficam fora)."""
+    import exportar_comentarios as ec
     num, k = {}, 0
-    for p in body.iter(w('p')):
-        ppr = p.find(w('pPr'))
-        if ppr is not None and ppr.find(w('numPr')) is not None and visible(p).strip():
+    for g in ec.paragrafos_aceitos(body):
+        if ec.numerado(g[-1]) and ''.join(visible(p) for p in g).strip():
             k += 1
-            num[k] = p
+            num[k] = g
     return num
 
 
-def responder(comments_root, cid, ctx=None, texto=None, antes=None, depois=None):
-    """Reescreve (texto) ou corrige um trecho (antes → depois) do comentário ``cid``; devolve o novo texto."""
+def paragrafos_numerados(body):
+    """{número: w:p}; o w:p é o último do grupo (o que leva a numeração). Ver ``grupos_numerados``."""
+    return {n: g[-1] for n, g in grupos_numerados(body).items()}
+
+
+def responder(comments_root, cid, ctx=None, texto=None, antes=None, depois=None, atual=None):
+    """Reescreve (texto) ou corrige um trecho (antes → depois) do comentário ``cid``; devolve o novo texto.
+
+    Com ``ctx``, só reescreve comentário do próprio autor (``ctx.author``): a resposta de outra pessoa
+    não se altera. Com ``atual``, confere antes o texto inteiro do comentário."""
     alvo = [c for c in comments_root.iter(w('comment')) if c.get(w('id')) == str(cid)]
     if len(alvo) != 1:
         raise ValueError(f"comentário {cid} não encontrado (ou repetido)")
     c = alvo[0]
+    if ctx is not None and (c.get(w('author')) or '') != ctx.author:
+        raise ValueError(f"comentário {cid} é de «{c.get(w('author')) or 'sem autor'}», não de «{ctx.author}»: não reescrevo")
+    if atual is not None:
+        corpo = '\n'.join(''.join(x.text or '' for x in p.iter(w('t'))) for p in c.iter(w('p')))
+        if ' '.join(corpo.split()) != ' '.join(atual.split()):
+            raise ValueError(f"comentário {cid} mudou desde a leitura: «{corpo[:70]}»")
     if texto is not None:
         ts = list(c.iter(w('t')))
         if not ts:
@@ -393,6 +417,11 @@ _MUDANCAS = ('rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChang
 def aceitar_xml(root):
     """Aceita todas as revisões de uma parte XML (corpo, notas, comentários), como o Word faria."""
     P = w('p')
+    # linha de tabela excluída sai inteira (a marca fica no trPr, não em volta das células)
+    for tr in list(root.iter(w('tr'))):
+        trpr = tr.find(w('trPr'))
+        if trpr is not None and trpr.find(w('del')) is not None and tr.getparent() is not None:
+            tr.getparent().remove(tr)
     # parágrafo com marca excluída: o conteúdo passa ao parágrafo seguinte
     for p in list(root.iter(P)):
         ppr = p.find(w('pPr'))

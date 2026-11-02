@@ -135,7 +135,8 @@ def test_pacote_com_comentarios_e_hash_proprio(tmp_path: Path) -> None:
     hm = mod.hash_do_pacote(pacote.read_text(encoding="utf-8"))
     resp = tmp_path / "resp.md"
     resp.write_text(f"HASH_RECEBIDO: {hm}\nDecisão: aprovar\n", encoding="utf-8")
-    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 0  # sem certificar: só avisa
+    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 1  # sem certificar: reprova
+    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp), "--comentarios-opcionais"]) == 0
     resp.write_text(f"HASH_RECEBIDO: {hm}\nHASH_COMENTARIOS: {'1' * 64}\n", encoding="utf-8")
     assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 1
     resp.write_text(f"HASH_RECEBIDO: {hm}\nHASH_COMENTARIOS: {h}\n", encoding="utf-8")

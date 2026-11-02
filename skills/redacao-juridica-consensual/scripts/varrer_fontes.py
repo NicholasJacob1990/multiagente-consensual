@@ -23,13 +23,18 @@ import argparse
 import re
 import sys
 import unicodedata
-import zipfile
 from pathlib import Path
-from xml.etree import ElementTree as ET
 
-W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-# "Art. 45.", "Art.45", "**Art. 21 -**", "Art. 2º", e itens de regimento "8.6", "5.9"
-MARCA_RE = re.compile(r"(?:\*\*)?\b(Art(?:igo)?\.?\s*\d+[º°]?(?:-[A-Z])?)|(?<![\d.,])(\d{1,2}\.\d{1,2})(?=\s+[A-ZÁÉÍÓÚ])")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import exportar_comentarios as ec  # noqa: E402
+
+# Cabeçalho de artigo ("Art. 45.", "Art.45", "**Art. 21 -**", "Art. 2º") no começo da linha ou depois de fim
+# de frase, e não a remissão no meio do texto ("o pessoal a que se refere o Art. 22"); e itens de regimento
+# ("8.6", "5.9") seguidos de maiúscula
+MARCA_RE = re.compile(
+    r"(?:(?:^|(?<=\n))[\s>#*_-]*|(?:(?<=[.;:!?)\]])|(?<=\*\*))\s*(?:\*\*)?)"
+    r"(?P<art>Art(?:igo)?\.?\s*\d+\s*[º°]?(?:-[A-Z])?)(?=\s*(?:[.\-–—:]|\*\*|\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ]))"
+    r"|(?<![\d.,])(?P<item>\d{1,2}\.\d{1,2})(?=\s+[A-ZÁÉÍÓÚ])")
 
 
 def sem_acento(t: str) -> str:
@@ -37,10 +42,8 @@ def sem_acento(t: str) -> str:
 
 
 def ler_texto(path: Path) -> str:
-    if path.suffix.lower() == ".docx":
-        with zipfile.ZipFile(path) as z:
-            root = ET.fromstring(z.read("word/document.xml"))
-        return "\n".join("".join(t.text or "" for t in p.iter(W + "t")) for p in root.iter(W + "p"))
+    if path.suffix.lower() == ".docx":  # visão "tudo aceito", com o mesmo leitor das demais ferramentas
+        return "\n".join(p["texto"] for p in ec.ler_paragrafos(path))
     return path.read_text(encoding="utf-8", errors="replace")
 
 
@@ -64,11 +67,13 @@ def segmentos(texto: str) -> list[tuple[str, str]]:
     marcas = list(MARCA_RE.finditer(plano))
     if not marcas:
         return [("(sem divisão)", plano)]
-    out = [("(preâmbulo)", plano[:marcas[0].start()])] if marcas[0].start() > 0 else []
+    inicio = lambda m: m.start("art") if m.group("art") else m.start("item")  # noqa: E731
+    out = [("(preâmbulo)", plano[:inicio(marcas[0])])] if inicio(marcas[0]) > 0 else []
     for k, m in enumerate(marcas):
-        fim = marcas[k + 1].start() if k + 1 < len(marcas) else len(plano)
-        rot = (m.group(1) or m.group(2)).replace("Art.", "Art. ").replace("  ", " ")
-        out.append((rot.strip(), plano[m.start():fim]))
+        fim = inicio(marcas[k + 1]) if k + 1 < len(marcas) else len(plano)
+        rot = m.group("art") or m.group("item")
+        rot = re.sub(r"\s+", " ", re.sub(r"^(Art(?:igo)?\.?)\s*", r"\1 ", rot))
+        out.append((rot.strip(), plano[inicio(m):fim]))
     return out
 
 

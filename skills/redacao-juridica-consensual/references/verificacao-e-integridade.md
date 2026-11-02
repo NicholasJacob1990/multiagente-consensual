@@ -224,7 +224,11 @@ remissão a parágrafo inexistente e correção da conclusão posta no parágraf
   --autor NOME --aceito ACEITO.docx --original REVISAO.docx --validador …/validate.py`: localiza o
   parágrafo pela numeração do Word, exige trecho único, aplica o diff por palavras em controle de
   alterações sobre as revisões de outra pessoa (sem aceitá-las nem rejeitá-las), recusa parágrafo acima
-  do limite de palavras, reescreve respostas a comentários, valida e gera a visão "tudo aceito".
+  do limite de palavras, confere a preimagem (`atual`) quando dada, só reescreve respostas do próprio autor,
+  valida o provisório antes de gravar (reprovado, nada é gravado) e gera a visão "tudo aceito".
+- **Reinstalação.** A partir da 1.17.1, o instalador não sobrescreve arquivo de skill alterado localmente
+  (nem o `references/perfil-*.md` diferente do distribuído, na primeira vez): a versão nova fica em
+  `<arquivo>.distribuido`, para mesclar, e o Codex registra também o Legal BR.
 - **Fontes do anexo.** Se o anexo foi editado à mão ou a fonte de dados se perdeu, recuperá-la com
   `scripts/extrair_anexo_json.py ANEXO.docx --base anexo_itens_antigo.json --saida anexo_itens.json`
   antes de regenerar: regenerar a partir do JSON antigo apaga as correções posteriores.
