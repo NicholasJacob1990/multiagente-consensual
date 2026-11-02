@@ -20,6 +20,8 @@ No consultivo público, conferir regime aplicável, competência, instrução, m
 
 Não converter essa arquitetura em modelo rígido. Consulta breve pode ser respondida em poucos parágrafos; parecer complexo pode precisar de tópicos por questão e anexos. Doutrina não é seção obrigatória.
 
+**Parecer sobre norma em elaboração** (regulamento, edital, estatuto, política, cláusulas articuladas): as redações substitutivas seguem [técnica legislativa](tecnica-legislativa.md). Poucas redações vão no próprio parágrafo; muitas vão a um Anexo de Redações Sugeridas (seção 6 daquela referência), com o mesmo texto do dispositivo no anexo, na minuta revisada e nas tabelas, e o parecer remete ao item dentro da frase ("…, conforme o Anexo, item 13").
+
 ## Raciocínio e decisão
 
 Para cada questão material, apresentar: regra → fatos que satisfazem ou não seus requisitos → aplicação → resposta. Se a resposta depender de premissa não provada, dizer como ela muda nos cenários plausíveis. A conclusão deve incorporar essa condição e não apagá-la.
@@ -35,3 +37,4 @@ Na revisão, conferir especialmente se:
 - recomendação, condicionantes e risco residual são compatíveis entre si;
 - a autoridade ou o cliente consegue identificar a próxima providência;
 - a conclusão não transforma possibilidade condicionada em direito adquirido ou autorização automática.
+- havendo Anexo de Redações Sugeridas, cada bloco coincide com o dispositivo da minuta e o parecer não cita redação superada.

@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   A2A_PACKAGE,
   ALL_TARGETS,
+  codexPluginNames,
   marketplaceDocuments,
   parseArgs,
   resolveTargets,
@@ -28,6 +29,10 @@ test("marketplaces apontam para o payload estável relativo", () => {
   assert.equal(documents.claude.plugins[0].source, "./plugins/multiagente-consensual");
   assert.equal(documents.codex.plugins[0].source.path, "./plugins/multiagente-consensual");
   assert.equal(documents.codex.plugins[0].policy.authentication, "ON_USE");
+});
+
+test("Codex registra todos os plugins do marketplace, inclusive o Legal BR", () => {
+  assert.deepEqual(codexPluginNames(), ["multiagente-consensual", "legal-br"]);
 });
 
 test("catálogo instalado resolve os dois plugins e distribui as skills jurídicas e PDF", async () => {

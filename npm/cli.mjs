@@ -463,8 +463,15 @@ function registerCodex(context) {
   } else {
     run("codex", ["plugin", "marketplace", "add", context.installRoot, "--json"], context);
   }
-  run("codex", ["plugin", "add", `${PLUGIN_NAME}@${MARKETPLACE_NAME}`, "--json"], context);
-  return { status: "installed" };
+  const plugins = codexPluginNames(context.pluginRoot);
+  for (const name of plugins) run("codex", ["plugin", "add", `${name}@${MARKETPLACE_NAME}`, "--json"], context);
+  return { status: "installed", plugins };
+}
+
+// Todos os plugins que o marketplace do Codex anuncia (o principal e o Legal BR), na ordem: antes só o
+// principal era registrado e o Legal BR exigia `codex plugin add` à mão a cada versão.
+export function codexPluginNames(pluginRoot = PACKAGE_ROOT) {
+  return marketplaceDocuments("0", pluginRoot).codex.plugins.map((entry) => entry.name);
 }
 
 function registerClaude(context) {

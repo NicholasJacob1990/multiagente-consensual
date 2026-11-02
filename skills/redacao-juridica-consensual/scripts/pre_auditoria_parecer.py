@@ -2,9 +2,11 @@
 """Pré-auditoria determinística de qualquer trabalho jurídico em Markdown: parecer, petição, recurso, decisão.
 
 Roda antes de qualquer auditoria por modelo e depois de cada rodada de
-emendas. Pega o que é mecânico — numeração, tamanho dos parágrafos, fecho,
-remissões internas, marcadores soltos, assinatura, repetição de precedente,
-frases quase iguais, trechos travados e remissões quebradas por renumeração —
+emendas. Pega o que é mecânico — numeração, tamanho dos parágrafos, ritmo
+(parágrafos demais encostados no teto), fecho, remissões internas e sua
+concordância ("O parágrafos 185 e 186 admite"), remissão genérica ao Anexo sem
+nome, marcadores soltos, assinatura, repetição de precedente, frases quase
+iguais, trechos travados e remissões quebradas por renumeração —
 para que os auditores gastem a atenção no mérito. Com ``--anterior``, aponta ainda
 palavras de alcance acrescentadas ou retiradas ("até", "sempre", "somente", "deverá"...),
 ressalvas que sumiram e frases da versão anterior sem correspondente na nova.
@@ -29,6 +31,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import re
 import sys
 from dataclasses import asdict, dataclass
@@ -36,6 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parecer_md as pm  # noqa: E402
+import verificar_remissoes as vr  # noqa: E402
 
 PERFIS = {
     "generico": {
@@ -43,6 +47,7 @@ PERFIS = {
         "fecho": None,
         "rotulos_conclusao": [],
         "assinatura": [],
+        "anexos_nomeados": False,
     },
     "genes": {
         "max_palavras": 120,
@@ -59,6 +64,7 @@ PERFIS = {
             "De acordo:",
             "Gerência de Negócios Jurídicos e Demandas Estratégicas (GENES) / Diretoria Jurídica (DIJUR)",
         ],
+        "anexos_nomeados": True,
     },
 }
 
@@ -170,6 +176,63 @@ def checar_palavras(doc: pm.Documento, maximo: int | None) -> list[Achado]:
         for b in doc.paragrafos
         if pm.palavras(b.texto) > maximo
     ]
+
+
+RITMO_FAIXA = 0.10  # "perto do teto": a menos de 10% do máximo de palavras
+RITMO_PROPORCAO = 0.30
+
+
+def checar_ritmo(doc: pm.Documento, maximo: int | None) -> list[Achado]:
+    """Parágrafos demais encostados no teto: o texto fica monótono e cada emenda estoura o limite."""
+    pars = doc.paragrafos
+    if not maximo or not pars:
+        return []
+    piso = maximo * (1 - RITMO_FAIXA)
+    perto = [b.numero for b in pars if pm.palavras(b.texto) >= piso]
+    proporcao = len(perto) / len(pars)
+    if proporcao <= RITMO_PROPORCAO:
+        return []
+    return [Achado("alerta", "ritmo", None,
+                   f"{len(perto)} de {len(pars)} parágrafos ({proporcao:.0%}) têm {math.ceil(piso)} palavras ou mais, a menos de "
+                   f"10% do teto de {maximo}: variar o tamanho, com a maioria entre 40 e 90 palavras "
+                   f"(parágrafos: {', '.join(map(str, perto[:20]))}{' …' if len(perto) > 20 else ''})")]
+
+
+ANEXO_RE = re.compile(r"\bAnexo\b")
+ANEXO_NOMEADO_RE = re.compile(r"^\s+(?:[IVXLC]+\b|\d+\b|[A-Z]\b|d[eaos]{1,2}\s|[–—-]|[“\"«])")
+ANEXO_ID_RE = re.compile(r"\b(?:Anexo|ANEXO)\s+([IVXLC]+|\d+|[A-Z])\b")
+ANEXO_TITULO_RE = re.compile(r"^\s*(?:Anexo|ANEXO)\b")
+
+
+def contar_anexos(doc: pm.Documento) -> int:
+    """Anexos distintos: identificadores ("Anexo I", "Anexo 2") e títulos que começam por "Anexo"."""
+    ids = set(ANEXO_ID_RE.findall(doc.bruto))
+    titulos = {b.texto.strip() for b in doc.blocos if b.tipo in ("titulo", "marca") and ANEXO_TITULO_RE.match(b.texto)}
+    return max(len(ids), len(titulos))
+
+
+def checar_anexos_nomeados(doc: pm.Documento, exigir: bool = False) -> list[Achado]:
+    """Remissão genérica ao Anexo ("Anexo, item 5", "(Anexo, itens 3 e 4)", "conforme Anexo") sem dizer qual."""
+    n_anexos = contar_anexos(doc)
+    if not exigir and n_anexos < 2:
+        return []
+    motivo = "o perfil exige" if exigir else f"o documento tem {n_anexos} anexos"
+    out = []
+    for b in doc.paragrafos:
+        for m in ANEXO_RE.finditer(b.texto):
+            if ANEXO_NOMEADO_RE.match(b.texto[m.end():m.end() + 8]):
+                continue
+            trecho = b.texto[max(0, m.start() - 12):m.end() + 14].strip()
+            out.append(Achado("alerta", "anexo_generico", b.numero,
+                              f"remissão genérica ao Anexo («…{trecho}…»): {motivo} nomear o anexo em toda remissão "
+                              "(ex.: «Anexo de Redações Sugeridas, item 5»)"))
+    return out
+
+
+def checar_concordancia_remissoes(doc: pm.Documento) -> list[Achado]:
+    """Mesma regra de ``verificar_remissoes.py``: "O parágrafos 185 e 186 admite" e afins."""
+    return [Achado("alerta", "concordancia", b.numero, f"{msg}: «{trecho}»")
+            for b in doc.paragrafos for trecho, msg in vr.problemas_concordancia(pm.sem_negrito(b.texto))]
 
 
 def checar_fecho(doc: pm.Documento, fecho: str | None) -> list[Achado]:
@@ -415,8 +478,11 @@ def auditar(doc: pm.Documento, cfg: dict, anterior: pm.Documento | None = None, 
     achados = []
     achados += checar_numeracao(doc)
     achados += checar_palavras(doc, cfg.get("max_palavras"))
+    achados += checar_ritmo(doc, cfg.get("max_palavras"))
     achados += checar_fecho(doc, fecho)
     achados += checar_remissoes(doc)
+    achados += checar_concordancia_remissoes(doc)
+    achados += checar_anexos_nomeados(doc, bool(cfg.get("anexos_nomeados")))
     achados += checar_marcadores(doc, fecho, proibidos or [])
     achados += checar_conclusao(doc, cfg.get("rotulos_conclusao", []))
     achados += checar_assinatura(doc, fecho, cfg.get("assinatura", []))
