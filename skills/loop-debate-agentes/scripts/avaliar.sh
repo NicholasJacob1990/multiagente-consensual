@@ -129,10 +129,10 @@ provider_padrao() {
 
 modelo_padrao() {
   case "$1" in
-    codex) echo gpt-5.6-sol ;;
+    codex) echo gpt-6.1-sol ;;
     claude) echo claude-opus-5 ;;
     gemini|antigravity) echo gemini-3.8-flash-high ;;
-    grok) echo cursor-grok-4.6-high ;;
+    grok) echo grok-4.7 ;;
     kimi) echo kimi-code/k3 ;;
     *) echo "" ;;
   esac
@@ -308,7 +308,7 @@ verifica_motor() {
         && echo "AVISO: ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN estão no ambiente; o juiz vai rodar com elas REMOVIDAS, na assinatura." >&2
       ;;
     gemini|antigravity) command -v agy >/dev/null || die "motor=$M mas o Antigravity CLI (agy) não está no PATH" ;;
-    grok) command -v cursor-agent >/dev/null || die "motor=grok mas o Cursor CLI não está no PATH" ;;
+    grok) command -v grok >/dev/null || die "motor=grok mas a CLI oficial da xAI (grok) não está no PATH" ;;
     kimi) command -v kimi >/dev/null || die "motor=kimi mas o Kimi Code CLI não está no PATH" ;;
     opencode) command -v opencode >/dev/null || die "motor=opencode mas o OpenCode não está no PATH" ;;
     *) die "motor desconhecido: $M" ;;

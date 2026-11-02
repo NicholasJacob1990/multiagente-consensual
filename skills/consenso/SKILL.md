@@ -174,7 +174,7 @@ Decisão não é consenso: se as cadeiras divergirem, informar o dissenso mesmo 
 
 ## Participantes
 
-Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa Cursor com `cursor-grok-4.6-high` por padrão ou a CLI oficial da xAI com `grok-4.6` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial, Gemini 3.8 usa o Antigravity e Muse Spark 1.3 usa o OpenCode Go. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
+Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa a CLI oficial da xAI com `grok-4.7` e esforço `xhigh` por padrão ou o Cursor com `cursor-grok-4.6-high` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial, Gemini 3.8 usa o Antigravity e Muse Spark 1.3 usa o OpenCode Go. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
 
 Usar `scripts/cli_adapter.py` para participantes externos:
 
@@ -185,7 +185,7 @@ Usar `scripts/cli_adapter.py` para participantes externos:
 | Gemini | `gemini` | Rota `agy`, padrão `gemini-3.8-flash-high`; aceitar override explícito disponível na conta |
 | Antigravity | `antigravity` | Comando `agy`, padrão `gemini-3.8-flash-high`, acesso integral com aprovação automática |
 | Muse | `muse` | OpenCode Go · `opencode-go/muse-spark-1.3-contributor` · esforço `max` |
-| Grok | `grok` | Cursor CLI com `cursor-grok-4.6-high` (padrão) ou CLI oficial xAI com `grok-4.6` (seleção explícita) |
+| Grok | `grok` | CLI oficial xAI com `grok-4.7` e esforço `xhigh` (padrão) ou Cursor CLI com `cursor-grok-4.6-high` (seleção explícita) |
 | Kimi | `kimi` | Kimi Code CLI oficial, padrão `kimi-code/k3` via OAuth; opção explícita `opencode-go/kimi-k3` com chave OpenCode Go; 1.048.576 tokens e esforço `max` obrigatório |
 | OpenCode | `opencode` | Provedor/modelo no formato do CLI; Kimi, GLM, DeepSeek, Qwen e Muse usam esforço `max` obrigatório |
 

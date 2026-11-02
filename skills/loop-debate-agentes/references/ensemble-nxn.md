@@ -30,12 +30,12 @@ Ativar somente por pedido explícito. Gravar `perfil = ensemble_nxn_v1`; aceitar
     "profundidade": "profundo",
     "produtores": [
       {"id": "produtor-1", "cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic", "sessao": "sessao-propria"},
-      {"id": "produtor-2", "cli": "codex", "modelo": "gpt-5.6-sol", "provedor": "openai", "sessao": "sessao-propria"},
+      {"id": "produtor-2", "cli": "codex", "modelo": "gpt-6.1-sol", "provedor": "openai", "sessao": "sessao-propria"},
       {"id": "produtor-3", "cli": "gemini", "modelo": "gemini-3.8-flash-high", "provedor": "google", "sessao": "sessao-propria"}
     ],
     "revisores": [
       {"id": "revisor-1", "cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic", "sessao": "sessao-revisao"},
-      {"id": "revisor-2", "cli": "codex", "modelo": "gpt-5.6-sol", "provedor": "openai", "sessao": "sessao-revisao"},
+      {"id": "revisor-2", "cli": "codex", "modelo": "gpt-6.1-sol", "provedor": "openai", "sessao": "sessao-revisao"},
       {"id": "revisor-3", "cli": "gemini", "modelo": "gemini-3.8-flash-high", "provedor": "google", "sessao": "sessao-revisao"}
     ],
     "matriz": {

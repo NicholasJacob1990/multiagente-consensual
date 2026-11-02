@@ -228,9 +228,8 @@ O contrato central fica em `~/.agents/multiagent-manifest.json`. Ele separa:
 - **approval ceiling:** o maior poder decisório daquela integração.
 
 As rotas obrigatórias são Claude pelo Claude Code, Kimi K3 pelo Kimi Code e Gemini
-3.7 Flash High pelo Antigravity. O Grok oferece duas rotas fixas e identificadas:
-Cursor com `cursor-grok-4.6-high` ou CLI oficial da xAI com `grok-4.6` e esforço
-`xhigh`.
+3.7 Flash High pelo Antigravity. O Grok oferece duas rotas fixas e identificadas: CLI oficial da xAI com
+`grok-4.7` e esforço `xhigh` (padrão) ou Cursor com `cursor-grok-4.6-high`.
 
 Para novas chamadas, modelos Grok fora dessas rotas são rejeitados; runs históricos já congelados
 preservam o modelo registrado. `model-routing.yaml` continua existindo apenas como visão de
@@ -1685,9 +1684,9 @@ silenciosamente:
 | Identidade base | Modelo local configurado |
 |---|---|
 | `@claude-opus` | Claude Code · `claude-opus-5` |
-| `@gpt-codex` | Codex CLI · `gpt-5.6-sol`, esforço `xhigh` |
+| `@gpt-codex` | Codex CLI · `gpt-6.1-sol`, esforço `xhigh` |
 | `@gemini-pro` | Antigravity CLI · `gemini-3.8-flash-high` |
-| `@grok` | ponte para a rota Grok selecionada: Cursor · `cursor-grok-4.6-high` ou xAI CLI oficial · `grok-4.6` |
+| `@grok` | ponte para a rota Grok selecionada: Cursor · `cursor-grok-4.6-high` ou xAI CLI oficial · `grok-4.7` |
 | `@glm` | `opencode-go/glm-5.3` |
 | `@deepseek` | `opencode-go/deepseek-v4-pro` |
 | `@qwen-coder` | `opencode-go/qwen3.8-max` |
@@ -1733,7 +1732,7 @@ OpenCode são pontes para a rota ativa no Mesh, preservando no recibo se a execu
 usou Cursor ou a CLI oficial da xAI.
 
 Nos comandos
-multiagente, `@codex` resolve para o Codex CLI com `gpt-5.6-sol` e esforço
+multiagente, `@codex` resolve para o Codex CLI com `gpt-6.1-sol` e esforço
 `xhigh`, `@kimi` resolve para Kimi Code/K3 e `@gemini` para
 Antigravity/Gemini 3.8. A identidade `@gpt-codex` da tabela acima continua sendo
 um agente interno do OpenCode e não substitui a cadeira Codex. Perfis homônimos

@@ -29,9 +29,12 @@ class CoworkBridgeTests(unittest.TestCase):
         self.manifest = bridge.load_manifest(bridge.DEFAULT_MANIFEST)
 
     def test_grok_route_is_fixed(self) -> None:
-        resolved = bridge.resolve_seat(self.manifest, "grok", "grok-4.6-high")
-        self.assertEqual(resolved["route"], "cursor")
-        self.assertEqual(resolved["model"], "cursor-grok-4.6-high")
+        resolved = bridge.resolve_seat(self.manifest, "grok", None)
+        self.assertEqual(resolved["route"], "grok_official")
+        self.assertEqual(resolved["model"], "grok-4.7")
+        cursor = bridge.resolve_seat(self.manifest, "grok", "cursor-grok-4.6-high")
+        self.assertEqual(cursor["route"], "cursor")
+        self.assertEqual(cursor["model"], "cursor-grok-4.6-high")
         with self.assertRaisesRegex(ValueError, "modelo incompatível"):
             bridge.resolve_seat(self.manifest, "grok", "grok-4")
 
@@ -48,7 +51,7 @@ class CoworkBridgeTests(unittest.TestCase):
                 "bridge_version": 1,
                 "request_id": str(uuid.uuid4()),
                 "participant": "grok",
-                "model": "grok-4.6-high",
+                "model": "cursor-grok-4.6-high",
                 "root": str(root),
                 "prompt_file": str(prompt),
                 "output_policy": "adaptive_up_to_native_max",

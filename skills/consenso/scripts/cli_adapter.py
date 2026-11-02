@@ -32,7 +32,7 @@ EFFORT_PATTERN = re.compile(r"^[A-Za-z0-9._+\-]+$")
 MAX_PROMPT_BYTES = 512 * 1024
 OUTPUT_POLICIES = ("adaptive_up_to_native_max", "concise_soft_target")
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
-REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
+REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.7"
 REQUIRED_GROK_OFFICIAL_EFFORT = "xhigh"
 
 
@@ -133,7 +133,7 @@ def load_manifest(raw: str | None) -> dict[str, Any]:
         raise RuntimeError("O manifesto não aplica ferramentas completas com escopos explícitos.")
     required = {
         "claude": "claude",
-        "grok": "cursor",
+        "grok": "grok_official",
         "kimi": "kimi",
         "gemini": "antigravity",
     }

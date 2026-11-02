@@ -721,7 +721,7 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertFalse(any("segredo" in item for item in command))
         command, stdin, _env = adapter.build_invocation(
             "grok", "grok_official", "grok", root, prompt_path, "segredo",
-            "grok-4.6", "xhigh", "adaptive_up_to_native_max",
+            "grok-4.7", "xhigh", "adaptive_up_to_native_max",
         )
         self.assertIsNone(stdin)
         self.assertIn("--prompt-file", command)
@@ -819,7 +819,7 @@ class AdapterAndGateTests(unittest.TestCase):
             "saida_sha256": "c" * 64,
             "artefato_sha256": "d" * 64,
             "emitido_em": "2026-08-14T12:00:00Z",
-            "modelo_efetivo": "gpt-5.6-sol",
+            "modelo_efetivo": "gpt-6.1-sol",
             "modelo_confirmado": True,
             "execucao_efetiva": True,
             "execucao_id": "execucao-isolada-0001",
@@ -887,9 +887,10 @@ class AdapterAndGateTests(unittest.TestCase):
         gemini = adapter.resolve_seat(manifest, "gemini", None)
         muse = adapter.resolve_seat(manifest, "muse", None)
         opencode = adapter.resolve_seat(manifest, "opencode", None)
-        grok_cursor = adapter.resolve_seat(manifest, "grok", None)
+        grok_padrao = adapter.resolve_seat(manifest, "grok", None)
+        grok_cursor = adapter.resolve_seat(manifest, "grok", None, "cursor")
         grok_official = adapter.resolve_seat(
-            manifest, "grok", "grok-4.6", "grok_official"
+            manifest, "grok", "grok-4.7", "grok_official"
         )
         self.assertEqual(claude["route"], "claude")
         self.assertEqual(claude["model"], "claude-opus-5")
@@ -897,7 +898,7 @@ class AdapterAndGateTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "claude", "claude-sonnet-5")
         self.assertEqual(codex["route"], "codex")
-        self.assertEqual(codex["model"], "gpt-5.6-sol")
+        self.assertEqual(codex["model"], "gpt-6.1-sol")
         self.assertEqual(codex["default_effort"], "xhigh")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "codex", "outro-modelo")
@@ -919,10 +920,12 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(muse["default_effort"], "max")
         self.assertEqual(opencode["route"], "opencode")
         self.assertEqual(opencode["model"], "opencode-go/glm-5.3")
+        self.assertEqual(grok_padrao["route"], "grok_official")
+        self.assertEqual(grok_padrao["model"], "grok-4.7")
         self.assertEqual(grok_cursor["route"], "cursor")
         self.assertEqual(grok_cursor["model"], "cursor-grok-4.6-high")
         self.assertEqual(grok_official["route"], "grok_official")
-        self.assertEqual(grok_official["model"], "grok-4.6")
+        self.assertEqual(grok_official["model"], "grok-4.7")
         self.assertEqual(grok_official["default_effort"], "xhigh")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(
@@ -1051,11 +1054,11 @@ class AdapterAndGateTests(unittest.TestCase):
             participants = [
                 {
                     "cadeira": "codex", "rota": "codex",
-                    "modelo": "gpt-5.6-sol", "provedor": "openai",
+                    "modelo": "gpt-6.1-sol", "provedor": "openai",
                 },
                 {
-                    "cadeira": "grok", "rota": "cursor",
-                    "modelo": "cursor-grok-4.6-high", "provedor": "xai",
+                    "cadeira": "grok", "rota": "grok_official",
+                    "modelo": "grok-4.7", "provedor": "xai",
                 },
             ]
             receipts = []
@@ -1544,8 +1547,8 @@ class AdapterAndGateTests(unittest.TestCase):
                     "fundamento_divergencia": None,
                 })).hexdigest()
             identities = {
-                "codex": ("codex", "openai", "gpt-5.6-sol"),
-                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
+                "codex": ("codex", "openai", "gpt-6.1-sol"),
+                "grok": ("grok_official", "xai", "grok-4.7"),
                 "claude": ("claude", "anthropic", "claude-opus-5"),
             }
             receipts = []
@@ -1774,8 +1777,8 @@ class AdapterAndGateTests(unittest.TestCase):
                 "derivacao_sha256": verdict["derivacao_sha256"],
             })).hexdigest()
             identities = {
-                "codex": ("codex", "openai", "gpt-5.6-sol"),
-                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
+                "codex": ("codex", "openai", "gpt-6.1-sol"),
+                "grok": ("grok_official", "xai", "grok-4.7"),
                 "claude": ("claude", "anthropic", "claude-opus-5"),
             }
             receipts = []
@@ -1845,8 +1848,8 @@ class AdapterAndGateTests(unittest.TestCase):
             artifact.write_text("decisão colegiada\n", encoding="utf-8")
             digest = provenance.hash_file(artifact)["sha256"]
             seats = [
-                ("codex", "codex", "openai", "gpt-5.6-sol"),
-                ("grok", "cursor", "xai", "cursor-grok-4.6-high"),
+                ("codex", "codex", "openai", "gpt-6.1-sol"),
+                ("grok", "grok_official", "xai", "grok-4.7"),
             ]
             votes = []
             receipts = []
@@ -1964,8 +1967,8 @@ class AdapterAndGateTests(unittest.TestCase):
             "simulacao": False,
             "artefato_sha256": "a" * 64,
             "participantes": [
-                {"cadeira": "codex", "rota": "codex", "modelo": "gpt-5.6-sol", "provedor": "openai"},
-                {"cadeira": "grok", "rota": "cursor", "modelo": "cursor-grok-4.6-high", "provedor": "xai"},
+                {"cadeira": "codex", "rota": "codex", "modelo": "gpt-6.1-sol", "provedor": "openai"},
+                {"cadeira": "grok", "rota": "grok_official", "modelo": "grok-4.7", "provedor": "xai"},
             ],
             "bloqueadores": ["divergência material"],
             "dissensos": ["tese A versus B"],
