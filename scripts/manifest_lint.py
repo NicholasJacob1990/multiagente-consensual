@@ -34,7 +34,7 @@ REQUIRED_CLAUDE_MODEL = "claude-opus-5"
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
 REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.7"
 REQUIRED_KIMI_MODEL = "kimi-code/k3"
-REQUIRED_KIMI_MODELS = ["kimi-code/k3", "opencode-go/kimi-k3"]
+REQUIRED_KIMI_MODELS = ["kimi-code/k3", "opencode-go/kimi-k3", "kimi-k3-max"]
 REQUIRED_GEMINI_MODEL = "gemini-3.8-flash-high"
 REQUIRED_OPENCODE_MODEL = "opencode-go/glm-5.3"
 REQUIRED_MUSE_MODEL = "opencode-go/muse-spark-1.3-contributor"
@@ -271,7 +271,7 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     if kimi.get("default_model") != REQUIRED_KIMI_MODEL:
         errors.append(f"modelo padrão do Kimi deve ser {REQUIRED_KIMI_MODEL}")
     if kimi.get("allowed_models") != REQUIRED_KIMI_MODELS:
-        errors.append("Kimi deve permitir exatamente OAuth e OpenCode Go para o K3")
+        errors.append("Kimi deve permitir exatamente OAuth, OpenCode Go e Cursor para o K3")
     if kimi.get("context_window_tokens") != 1048576:
         errors.append("Kimi K3 deve declarar a janela integral de 1.048.576 tokens")
 

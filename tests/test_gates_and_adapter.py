@@ -913,6 +913,24 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(kimi_opencode["model"], "opencode-go/kimi-k3")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "kimi", "opencode-go/kimi-k2.6")
+        kimi_cursor = adapter.resolve_seat(manifest, "kimi", "kimi-k3-max")
+        self.assertEqual(kimi_cursor["route"], "cursor")
+        self.assertEqual(kimi_cursor["model"], "kimi-k3-max")
+        self.assertEqual(adapter.resolve_effort(kimi_cursor, None), "max")
+        with self.assertRaises(RuntimeError):
+            adapter.resolve_seat(manifest, "kimi", "kimi-code/k3", "opencode")
+        grok_build = adapter.resolve_seat(manifest, "grok", None)
+        self.assertEqual(grok_build["effective_model_aliases"], ["grok-4.7-build"])
+        uso = '{"modelUsage": {"grok-4.7-build": {"inputTokens": 1}}}'
+        observado, _, _ = adapter.structured_observation(
+            uso, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertEqual(observado, "grok-4.7")
+        outro = '{"modelUsage": {"grok-4.7-build-fast": {"inputTokens": 1}}}'
+        observado, _, _ = adapter.structured_observation(
+            outro, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertIsNone(observado)
         self.assertEqual(gemini["route"], "antigravity")
         self.assertEqual(gemini["model"], "gemini-3.8-flash-high")
         self.assertEqual(muse["route"], "opencode")
