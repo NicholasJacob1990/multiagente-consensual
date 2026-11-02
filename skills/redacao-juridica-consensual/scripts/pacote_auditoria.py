@@ -37,7 +37,10 @@ import parecer_md as pm  # noqa: E402
 CONTRATO = "pacote_auditoria_v1"
 CHARS_POR_TOKEN = 3.5
 ALERTA_TOKENS = 120_000
-HASH_RE = re.compile(r"HASH_RECEBIDO:\s*`?([0-9a-f]{64})`?", re.IGNORECASE)
+HASH_RE = re.compile(r"HASH(?:_RECEBIDO)?:\s*`?([0-9a-f]{64})`?", re.IGNORECASE)
+LINHAS_PREAMBULO = 20
+REF_CORRECAO_RE = re.compile(r"corre[çc][ãa]o\s*\((?P<rom>[ivx]{1,5})\)[^§\n]{0,30}?(?:§|par[áa]grafo)\s*(?P<n>\d+)", re.IGNORECASE)
+REF_PAR_INSTR_RE = re.compile(r"(?:§§?|par[áa]grafos?)\s*(\d+)(?:\s*(?:a|e)\s*(\d+))?", re.IGNORECASE)
 CAB_RE = re.compile(r"^SHA-256 da minuta: ([0-9a-f]{64})$", re.M)
 HASH_COMENTARIOS_RE = re.compile(r"HASH_COMENTARIOS:\s*`?([0-9a-f]{64})`?", re.IGNORECASE)
 CAB_COMENTARIOS_RE = re.compile(r"^SHA-256 dos comentários: ([0-9a-f]{64})$", re.M)
@@ -154,14 +157,42 @@ def verificar_comentarios(resposta: str, esperado: str) -> tuple[bool | None, st
 
 
 def verificar(resposta: str, esperado: str) -> tuple[bool, str]:
-    primeiras = [l for l in resposta.strip().split("\n") if l.strip()][:3]
-    for l in primeiras:
+    """Procura o hash nas primeiras linhas; tolera o preâmbulo que alguns CLIs narram antes dele."""
+    primeiras = [l for l in resposta.strip().split("\n") if l.strip()][:LINHAS_PREAMBULO]
+    for k, l in enumerate(primeiras):
         m = HASH_RE.search(l)
         if m:
+            aviso = ""
+            if k or m.start() > 0:
+                aviso = " (precedido de preâmbulo do CLI; descartá-lo antes de usar a resposta)"
             if m.group(1).lower() == esperado:
-                return True, "hash confere"
+                return True, "hash confere" + aviso
             return False, f"hash divergente: a resposta cita {m.group(1)[:16]}…, esperado {esperado[:16]}…"
-    return False, "a resposta não repete o hash nas primeiras linhas"
+    return False, f"a resposta não repete o hash nas primeiras {LINHAS_PREAMBULO} linhas"
+
+
+def conferir_instrucoes(instrucoes: str, doc: pm.Documento) -> list[str]:
+    """Remissões a parágrafos escritas à mão nas instruções: existem e apontam o grupo certo da conclusão?"""
+    pars = doc.por_numero()
+    if doc.numeracao == "mista":  # o parser renumera tudo quando há linhas sem número; vale a numeração escrita
+        pars = {b.numero_original: b.texto for b in doc.paragrafos if getattr(b, "numero_original", None)}
+    maior = max(pars) if pars else 0
+    avisos = []
+    for m in REF_PAR_INSTR_RE.finditer(instrucoes):
+        for g in m.groups():
+            if g and int(g) > maior:
+                avisos.append(f"instruções citam «{m.group(0)}», mas a minuta tem {maior} parágrafos")
+    for m in REF_CORRECAO_RE.finditer(instrucoes):
+        n, rom = int(m.group("n")), m.group("rom").lower()
+        if n in pars and f"({rom})" not in pars[n].lower():
+            marca = f"({rom}) "
+
+            def peso(t: str) -> int:  # a lista da conclusão ("impõe-se: (i) …") pesa mais que a menção avulsa
+                return 2 * bool(re.search(r"impõe-se|necessárias?\s+(?:no|na|ainda)|^\d+\.\s*Corre", t, re.I)) + ("necessári" in t)
+            onde = sorted((k for k, t in pars.items() if marca in t.lower()), key=lambda k: -peso(pars[k]))
+            dica = f"; o ({rom}) está no § {onde[0]}" if onde else ""
+            avisos.append(f"instruções põem a correção ({rom}) no § {n}, que não a contém{dica}")
+    return avisos
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -187,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "montar":
         instr = args.instrucoes.read_text(encoding="utf-8") if args.instrucoes else INSTRUCOES_PADRAO
         fmt = args.formato_resposta.read_text(encoding="utf-8") if args.formato_resposta else None
+        for aviso in conferir_instrucoes(instr, pm.ler(args.minuta)):
+            print(f"atenção: {aviso}")
         texto = montar(args.minuta, instr, args.dossie, args.adendo, args.anterior, fmt, args.comentarios)
         args.saida.write_text(texto, encoding="utf-8")
         tokens = int(len(texto) / CHARS_POR_TOKEN)

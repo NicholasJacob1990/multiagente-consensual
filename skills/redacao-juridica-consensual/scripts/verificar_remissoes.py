@@ -102,6 +102,13 @@ ITEM_FORA_RE = re.compile(
     r"|quadro|cronograma|minuta|regulamento|sum[áa]rio|[íi]ndice|lei|decreto|resolu|instru|in\b|estatuto|regimento|portaria)",
     re.IGNORECASE,
 )
+# itens citados de outro documento: "(Parecer AGE nº 16.188/2020, itens 59 e 74)", "itens 59 e 74 daquele parecer"
+EXTERNO_ANTES_RE = re.compile(
+    r"\b(?:Parecer|Nota\s+(?:Jur[íi]dica|T[ée]cnica)|Of[íi]cio|Memorando|Ac[óo]rd[ãa]o|Resolu[çc][ãa]o|Portaria|Delibera[çc][ãa]o)"
+    r"\s+(?:[A-Z][\w/-]*\s+)*n[º°.]?\s*[\d./-]+",
+    re.IGNORECASE,
+)
+EXTERNO_DEPOIS_RE = re.compile(r"^\s*,?\s*(?:daquel|dess|dest)[ea]s?\s+(?:parecer|nota|documento|of[íi]cio|ac[óo]rd[ãa]o)", re.IGNORECASE)
 ITEM_TITULO_RE = re.compile(r"^\s*Item\s+(\d+)\s*(?:[–—:-]|\.\s)", re.IGNORECASE)
 ROTULO_ANEXO_RE = re.compile(r"^\s*(Classificação|Fundamento|Observação|Nota|Justificativa)\s*:", re.IGNORECASE)
 PAR_LINHA_RE = re.compile(r"^\s*(\d+)\.\s+(.*\S)\s*$")
@@ -295,11 +302,21 @@ def remissoes_item(texto: str) -> list[Remissao]:
     """Remissões a itens do Anexo ("item 5", "itens 4 a 7", "item 54, V"); ignora "item 8.6" e itens de outros anexos."""
     out = []
     for m in ITEM_REF_RE.finditer(texto):
-        if ITEM_FORA_RE.match(texto[m.end():m.end() + 40]):
+        if ITEM_FORA_RE.match(texto[m.end():m.end() + 40]) or EXTERNO_DEPOIS_RE.match(texto[m.end():m.end() + 40]):
+            continue
+        if _item_de_documento_externo(texto, m.start()):
             continue
         refs = _refs(m.group("lista"), m.start("lista"), r"[IVXL]+")
         out.append(Remissao(m.start(), m.end(), m.group("kw"), m.span("kw"), m.group("lista"), refs))
     return out
+
+
+def _item_de_documento_externo(texto: str, ini: int) -> bool:
+    """O "item" vem logo depois do nome de outro documento, no mesmo parêntese ou na mesma oração."""
+    antes = texto[max(0, ini - 140):ini]
+    corte = max(antes.rfind("("), antes.rfind(". "), antes.rfind("; "))
+    trecho = antes[corte + 1:] if corte >= 0 else antes
+    return bool(EXTERNO_ANTES_RE.search(trecho)) and "Anexo" not in trecho
 
 
 def problemas_concordancia(texto: str) -> list[tuple[str, str]]:
@@ -530,8 +547,87 @@ def _conferir_dispositivos(u: Unidade, oficial: set[tuple] | None, revisada: set
     return out
 
 
+CORRECOES_RE = re.compile(r"^\s*Corre[çc][õo]es\s+necess[áa]rias\b", re.IGNORECASE)
+MARCA_ROMANO_RE = re.compile(r"\((?P<rom>(?-i:[ivx]{1,5}))\)\s")
+CORRECAO_RE = re.compile(r"corre[çc][ãa]o\s+necess[áa]ria|corre[çc][õo]es\s+necess[áa]rias", re.IGNORECASE)
+
+
+def grupos_correcao(existentes: dict[int, str]) -> dict[str, set[int]]:
+    """Parágrafos citados em cada correção necessária da conclusão: "(i) … (parágrafos 34 e 35)"."""
+    grupos: dict[str, set[int]] = {}
+    inicio = None
+    for n in sorted(existentes):
+        txt = existentes[n]
+        if inicio is None and CORRECOES_RE.match(txt):
+            inicio = n
+        if inicio is None:
+            continue
+        marcas = list(MARCA_ROMANO_RE.finditer(txt))
+        if not marcas:
+            if n > inicio:
+                break
+            continue
+        for k, mk in enumerate(marcas):
+            fim = marcas[k + 1].start() if k + 1 < len(marcas) else len(txt)
+            alvo = grupos.setdefault(mk.group("rom"), set())
+            for r in remissoes_paragrafo(txt[mk.start():fim]):
+                for ref in r.refs:
+                    alvo.update(range(ref.inicio, ref.fim + 1))
+    return grupos
+
+
+def classificacoes_anexo(linhas_anexo: list[Unidade]) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for u in linhas_anexo:
+        m = re.match(r"Anexo, item (\d+) \(Classificação\)", u.local)
+        if m:
+            out.setdefault(int(m.group(1)), u.texto)
+    return out
+
+
+def _conferir_classificacao(existentes: dict[int, str], linhas_anexo: list[Unidade]) -> list[Achado]:
+    """Parágrafo que a conclusão cita numa correção necessária não deve remeter a item só de recomendação."""
+    classif = classificacoes_anexo(linhas_anexo)
+    out, vistos = [], set()
+    for rom, pars in grupos_correcao(existentes).items():
+        for n in sorted(pars):
+            for r in remissoes_item(existentes.get(n, "")):
+                for ref in r.refs:
+                    for k in range(ref.inicio, ref.fim + 1):
+                        c = classif.get(k)
+                        if not c or CORRECAO_RE.search(c) or (n, k) in vistos:
+                            continue
+                        vistos.add((n, k))
+                        out.append(Achado("alerta", "classificacao", f"parecer § {n}",
+                                          f"o § {n} integra a correção ({rom}) da conclusão, mas remete ao item {k} do Anexo, "
+                                          f"classificado sem correção necessária: «{c[:110]}». Conferir se o trecho é recomendação "
+                                          f"posta em parágrafo de correção (ou o inverso).", existentes[n][:160]))
+    return out
+
+
+def _conferir_respostas(existentes: dict[int, str], anterior: Path, comentarios: list[Path], autor: str | None) -> list[Achado]:
+    """Respostas presas a parágrafo alterado, ou que o citam, desde a versão anterior do parecer."""
+    antigos = numerados(ler_parecer(anterior))
+    mudados = {n for n, t in existentes.items() if norm(t) != norm(antigos.get(n, ""))}
+    out = []
+    for c in comentarios:
+        for k in ec.ler_comentarios(c):
+            if autor and autor.lower() not in (k["autor"] or "").lower():
+                continue
+            if not autor and not k.get("responde_a"):
+                continue
+            citados = {n for r in remissoes_paragrafo(k["texto"]) for ref in r.refs for n in range(ref.inicio, ref.fim + 1)}
+            hit = sorted((citados | set(k.get("paragrafos") or [])) & mudados)
+            if hit:
+                out.append(Achado("alerta", "revisar_resposta", f"comentário {k['id']} ({k['autor'] or 'sem autor'}) — {c.name}",
+                                  f"cita ou está ancorado em parágrafo alterado desde a versão anterior (§§ {', '.join(map(str, hit))}): "
+                                  f"reconferir a resposta contra o texto atual", k["texto"][:160]))
+    return out
+
+
 def conferir(parecer: Path, anexo: Path | None = None, minuta_oficial: Path | None = None,
-             minuta_revisada: Path | None = None, comentarios: list[Path] | None = None) -> dict:
+             minuta_revisada: Path | None = None, comentarios: list[Path] | None = None,
+             anterior: Path | None = None, autor: str | None = None) -> dict:
     unidades = ler_parecer(parecer)
     existentes = numerados(unidades)
     total = max(existentes) if existentes else 0
@@ -556,6 +652,10 @@ def conferir(parecer: Path, anexo: Path | None = None, minuta_oficial: Path | No
             achados += _conferir_itens(u, itens)
     for u in unidades:
         achados += _conferir_dispositivos(u, oficial, revisada)
+    if anexo:
+        achados += _conferir_classificacao(existentes, linhas_anexo)
+    if anterior and comentarios:
+        achados += _conferir_respostas(existentes, anterior, comentarios, autor)
 
     contagem = {s: sum(a.severidade == s for a in achados) for s in ORDEM}
     return {
@@ -964,6 +1064,8 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--minuta-oficial", type=Path)
     c.add_argument("--minuta-revisada", type=Path)
     c.add_argument("--comentarios", type=Path, nargs="+", help=".docx cujos comentários também são conferidos")
+    c.add_argument("--anterior", type=Path, help="versão anterior do parecer: lista as respostas a reconferir")
+    c.add_argument("--autor", help="com --anterior, só os comentários deste autor (padrão: todas as respostas)")
     c.add_argument("--json", type=Path, help="grava o relatório completo")
     m = sub.add_parser("mapear", help="alinha parecer antigo e novo e lista as decisões de remissão")
     m.add_argument("--antigo", type=Path, required=True)
@@ -977,11 +1079,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "conferir":
-        erro = _existe(args.parecer, args.anexo, args.minuta_oficial, args.minuta_revisada, *(args.comentarios or []))
+        erro = _existe(args.parecer, args.anexo, args.minuta_oficial, args.minuta_revisada, args.anterior,
+                       *(args.comentarios or []))
         if erro:
             print(erro, file=sys.stderr)
             return 2
-        res = conferir(args.parecer, args.anexo, args.minuta_oficial, args.minuta_revisada, args.comentarios)
+        res = conferir(args.parecer, args.anexo, args.minuta_oficial, args.minuta_revisada, args.comentarios,
+                       args.anterior, args.autor)
         if args.json:
             args.json.write_text(json.dumps(res, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(relatorio_conferir(res))

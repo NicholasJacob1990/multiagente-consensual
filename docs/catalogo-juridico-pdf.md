@@ -13,7 +13,7 @@ de distribuição preservam os originais da máquina de origem.
 | `consenso` | Deliberação sobre versão congelada e verificável. |
 | `loop-debate-agentes` | Rodadas de melhoria, inclusive emendas consensuais. |
 | `workflow-agentes` | Equipes, papéis e dependências de execução. |
-| `redacao-juridica-consensual` | Pareceres, peças, recursos e outros trabalhos jurídicos com o motor consensual, inclusive revisão de redação sem mérito, técnica legislativa e conferência de remissões e comentários entre parecer, anexo e minuta. |
+| `redacao-juridica-consensual` | Pareceres, peças, recursos e outros trabalhos jurídicos com o motor consensual, inclusive revisão de redação sem mérito, técnica legislativa, conferência de remissões e comentários entre parecer, anexo e minuta, aplicação de alterações sobre revisão alheia e varredura das normas internas. |
 | `minuta-juridica-fundamentada` | Redação jurídica direta e fundamentada. |
 | `analise-juridica-epistemica` | Rastreabilidade de fatos, fontes, inferências e autoridade humana. |
 | `auditoria-juridica-de-minutas` | Auditoria e comparação de versões, com leitura das revisões de DOCX. |

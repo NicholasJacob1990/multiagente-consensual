@@ -35,6 +35,7 @@ Reprove independentemente da nota se houver:
 - fato material inventado ou prova significativamente deturpada;
 - norma, precedente, citação, número de processo, relator ou resultado inventado;
 - fonte decisiva não verificada, superada ou citada fora de contexto;
+- orientação normativa do órgão de advocacia pública do ente (parecer da AGE ou da PGE) sobre o dispositivo interpretado, não localizada ou não enfrentada;
 - afirmação de que um dispositivo não existe, não tem parágrafos ou incisos, ou não alcança certo caso, desmentida pelo texto integral da norma;
 - remissão interna a parágrafo inexistente ou errado, ou o mesmo fundamento repetido em parágrafos diferentes sem função distinta;
 - omissão material de competência, cabimento, tempestividade ou legitimidade quando pertinente;
@@ -66,6 +67,8 @@ A aprovação conjunta não produz uma nota compensatória do pacote. Todos os i
 Em qualquer tipo (parecer, peça, decisão, contrato):
 
 - para cada ato material, identifique quem instrui, quem opina, quem decide, em que etapa e quando essa competência se esgota; separe análise técnica, decisão, homologação, deliberação societária ou judicial e investidura ou cumprimento, inclusive nas redações substitutivas e nos pedidos;
+- confira toda atribuição ("caberá ao X", "a Secretaria informará", "o controlador assegurará") contra o mapa de competências montado do estatuto, dos regimentos e das políticas, com o artigo de cada uma (verificação e integridade, seção 6): eleger conselheiro e eleger diretor costumam caber a órgãos diferentes;
+- inserir uma recomendação em parágrafo que a conclusão cita numa faixa de correção necessária (ou o inverso) confunde a classificação; depois de inserir texto, confira as faixas de cada grupo da conclusão (`verificar_remissoes.py conferir` acusa quando o parágrafo cita item do anexo de classificação diferente);
 - confira as palavras que mudam o alcance de uma frase — "até", "sempre", "somente", "exclusivamente", "deve", "pode", "não pode", "no mínimo" — e as ressalvas ("salvo", "desde que", "sem prejuízo"): uma troca pequena no diff pode criar teto, obrigação ou exceção sem fundamento;
 - aplique os testes de alcance da reescrita (abaixo) a toda frase que mudou de ordem, foi dividida ou fundida;
 - prazos máximos não são duração; etapas condicionais não integram todo percurso; atividades paralelas não se somam sem encadeamento;
