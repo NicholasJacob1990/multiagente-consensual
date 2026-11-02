@@ -83,6 +83,7 @@ Reescrita de forma pode mudar o conteúdo sem trocar nenhuma palavra de alcance.
 - **Remissão:** ao integrar o fecho à frase ("Ver Anexo, item 41" → "…, conforme o Anexo, item 41"), a remissão continua cobrindo todas as frases que o fecho cobria? Quando valia para o parágrafo inteiro, deixá-la no fim ou em frase própria.
 - **Referente:** pronome, elipse ou particípio solto ("se acolhida") tem referente próximo e único?
 - **Número:** "respectivamente" distribui dois textos? Então "as redações", no plural.
+- **Hipótese e marco herdados:** a frase que virou parágrafo próprio dependia da hipótese ou do marco temporal do parágrafo de origem? Sem "Na hipótese do § Nº" ou sem o marco repetido ("Após a homologação, …"), passa a valer para todo o processo.
 - **Prazo e duração:** "dura até dez dias" afirma duração; "tem até dez dias" afirma prazo. Prazo suspenso não limita a duração.
 
 ### Parecer

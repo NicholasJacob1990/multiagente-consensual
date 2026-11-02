@@ -12,6 +12,24 @@ Esta referência trata de forma. Não muda competência, prazo, requisito, efeit
 - **Parágrafo único** só quando houver um; ao acrescentar o segundo, renumerar como §§ 1º e 2º e conferir todas as remissões ao antigo parágrafo único.
 - **Dispositivo acrescido:** na alteração de norma vigente, não renumerar artigos; usar o número anterior seguido de letra maiúscula (LC nº 95/1998, art. 12, III, "b"). Em minuta ainda não aprovada, a renumeração é livre, mas exige varrer o texto inteiro, os anexos e o parecer à procura das remissões deslocadas.
 - **Remissão** indica o dispositivo exato ("art. 27, parágrafo único", "art. 60, § 3º") e não "o artigo anterior" ou "o disposto acima".
+- **Numeração:** artigos e parágrafos em ordinal até o nono e em cardinal a partir do décimo ("§ 10."); parágrafo único por extenso (LC nº 95/1998, art. 10, I e IV).
+
+## 1-A. Uma norma por parágrafo
+
+O critério para desdobrar é o número de normas, e não o tamanho. Um parágrafo que reúne comandos autônomos (outro sujeito, outra hipótese, outra consequência, uma exceção) vira tantos parágrafos quantas forem as normas (art. 11, III, "c"). Uma segunda frase só complementar à primeira (prazo, forma, registro, marco inicial) pode ficar. Hipóteses ou elementos enumerados numa frase longa vão a incisos (art. 11, III, "d").
+
+- **Norma nova ou alteração:** regulamento que substitui outro é norma nova; vale o art. 11 e a renumeração é livre. Na alteração de norma vigente, vale o art. 12, sem renumerar artigos.
+- **Assunto alheio ao artigo:** a norma vai ao artigo do mesmo assunto, se houver ("renúncia de membro da Junta que quer se candidatar" sai do artigo da composição da Junta e vai ao dos impedimentos). Isso evita criar artigo e renumerar todos os seguintes.
+- **Referente e alcance:** a frase que deixa o parágrafo de origem perde o contexto. Recompor com "Na hipótese do § Nº, …" quando dependia da hipótese anterior; repetir o marco temporal ("Após a homologação, é vedada…") quando o herdava. Trocar "nesse caso", "essa instância" e "daquela Secretaria" pelo nome ou pela remissão. Aplicar os testes de alcance da reescrita em `rubrica-juridica.md`, da Redação Jurídica Consensual.
+- **Duplicidade:** se a frase desdobrada repete regra de outro dispositivo, remeter a ele ("a substituição observará o art. 8º, § 3º").
+- **Remissões:**
+  - montar o mapa de numeração antiga para nova por artigo;
+  - varrer minuta, tabelas e anexos da norma, anexo de redações e parecer, sem distinguir maiúsculas ("Art. 7º, §§ 3º e 4º" em coluna de tabela) e incluindo listas ("arts. 3º, § 5º, e 60, § 5º"), formas inversas ("§ 3º do art. 39", "§ 3º daquele artigo", "parágrafo único desse artigo") e remissões internas ("o § 1º");
+  - decidir caso a caso quando um parágrafo virou vários: a remissão segue a parte a que se refere ("art. 60, § 1º" sobre a solicitação da diligência passa a § 2º);
+  - excluir remissões a outras normas que tenham o mesmo número ("art. 40, parágrafo único, do Decreto").
+- **Parecer:** citar a numeração da minuta examinada e a da minuta revisada só para dispositivos sugeridos, declarando a convenção uma vez no parágrafo de método; atualizar as remissões a acréscimos sugeridos.
+- **Anexo de redações:** um bloco por dispositivo resultante, com `(NR)` para o que existia e `(AC)` para o novo; títulos, classificações e observações renumerados; dispositivo do original que só muda de número fica numa observação ("o § 4º da minuta passa a § 5º, sem alteração de texto"); a matéria deslocada é explicada na observação do item.
+- **Minuta com controle de alterações:** o dispositivo original deslocado aparece excluído no lugar de origem e acrescido no de destino, com comentário que explique o deslocamento; o que só muda de número recebe comentário de renumeração sem alteração de conteúdo.
 
 ## 2. Frase normativa
 
