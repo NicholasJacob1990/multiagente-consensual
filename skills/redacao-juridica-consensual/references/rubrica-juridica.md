@@ -70,6 +70,7 @@ Em qualquer tipo (parecer, peça, decisão, contrato):
 - aplique os testes de alcance da reescrita (abaixo) a toda frase que mudou de ordem, foi dividida ou fundida;
 - prazos máximos não são duração; etapas condicionais não integram todo percurso; atividades paralelas não se somam sem encadeamento;
 - separe exigência jurídica de convenção editorial; preferência de estilo sem ganho demonstrável não reprova a versão nem justifica nova versão de mérito;
+- em documento com comentários e respostas, confira as respostas do autor contra o texto atual a cada rodada: números de parágrafo, item e dispositivo; afirmações como "ajustei", "retirei" e "mantive"; e coerência entre a concordância dada à revisora e o que o texto manteve ("De acordo" não pode conviver com a recomendação que a revisora pediu para retirar). Numeração de versão superada só fica se marcada como "antigo";
 - não transponha a solução particular de um caso para outro como verdade permanente.
 
 ### Testes de alcance da reescrita
@@ -85,6 +86,8 @@ Reescrita de forma pode mudar o conteúdo sem trocar nenhuma palavra de alcance.
 - **Número:** "respectivamente" distribui dois textos? Então "as redações", no plural.
 - **Hipótese e marco herdados:** a frase que virou parágrafo próprio dependia da hipótese ou do marco temporal do parágrafo de origem? Sem "Na hipótese do § Nº" ou sem o marco repetido ("Após a homologação, …"), passa a valer para todo o processo.
 - **Prazo e duração:** "dura até dez dias" afirma duração; "tem até dez dias" afirma prazo. Prazo suspenso não limita a duração.
+- **Ressalva que muda o alvo da remissão:** o dispositivo citado ganhou ressalva ou foi desdobrado? A remissão que antes servia a todas as hipóteses pode ter de apontar o parágrafo que agora trata da hipótese ressalvada ("unifica-se com a defesa do § 1º", depois que o § 1º passou a excluir o inciso IV, deve remeter ao § 2º).
+- **Rol espelhado:** a tabela, o calendário ou o formulário que reproduz um rol do articulado (interessados, legitimados, responsáveis, documentos) o reproduz inteiro?
 
 ### Parecer
 

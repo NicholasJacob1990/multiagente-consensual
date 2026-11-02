@@ -105,3 +105,38 @@ def test_pacote_hash_e_diferencas(tmp_path: Path) -> None:
     sem_p2 = mod.montar(tmp_path / "a.md", "Audite.", anterior=tmp_path / "b.md")
     assert "SUPRIMIDO OU REESCRITO" in sem_p2 and "Parágrafo novo sobre a junta eleitoral" in sem_p2
     assert len(diff) < len(mod.montar(tmp_path / "b.md", "Audite.")) + 2000
+
+
+def test_pacote_com_comentarios_e_hash_proprio(tmp_path: Path) -> None:
+    mod = load("pacote_auditoria")
+    pm = load("parecer_md")
+    (tmp_path / "b.md").write_text(ALVO, encoding="utf-8")
+    c1 = tmp_path / "comentarios.txt"
+    c1.write_text("[0] Revisor\nTrecho: «O art. 31»\nComentário: conferir o prazo.\n\n[1] Autor — responde ao [0]\n"
+                  "Comentário: ajustado.\n", encoding="utf-8")
+    sem = mod.montar(tmp_path / "b.md", "Audite.")
+    assert "COMENTÁRIOS E RESPOSTAS" not in sem and mod.hash_comentarios_do_pacote(sem) is None
+    pac = mod.montar(tmp_path / "b.md", "Audite.", comentarios=[c1])
+    h = mod.hash_comentarios_do_pacote(pac)
+    assert h == pm.sha256_texto(c1.read_text(encoding="utf-8"))
+    assert f"===== INÍCIO: COMENTÁRIOS E RESPOSTAS (sha256 {h}) =====" in pac and "Comentário: ajustado." in pac
+    assert f"HASH_COMENTARIOS: {h}" in pac and mod.hash_do_pacote(pac) == mod.hash_do_pacote(sem)
+    assert mod.verificar_comentarios(f"HASH_RECEBIDO: x\nHASH_COMENTARIOS: {h}", h)[0] is True
+    assert mod.verificar_comentarios("HASH_COMENTARIOS: " + "0" * 64, h)[0] is False
+    assert mod.verificar_comentarios("Decisão: aprovar", h)[0] is None
+
+    c2 = tmp_path / "outro.txt"
+    c2.write_text("[7] Gestor\nComentário: ok.\n", encoding="utf-8")
+    dois = mod.montar(tmp_path / "b.md", "Audite.", comentarios=[c1, c2])
+    assert "### comentarios.txt" in dois and "### outro.txt" in dois and mod.hash_comentarios_do_pacote(dois) != h
+
+    pacote = tmp_path / "pacote.md"
+    assert mod.main(["montar", "--minuta", str(tmp_path / "b.md"), "--comentarios", str(c1), "--saida", str(pacote)]) == 0
+    hm = mod.hash_do_pacote(pacote.read_text(encoding="utf-8"))
+    resp = tmp_path / "resp.md"
+    resp.write_text(f"HASH_RECEBIDO: {hm}\nDecisão: aprovar\n", encoding="utf-8")
+    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 0  # sem certificar: só avisa
+    resp.write_text(f"HASH_RECEBIDO: {hm}\nHASH_COMENTARIOS: {'1' * 64}\n", encoding="utf-8")
+    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 1
+    resp.write_text(f"HASH_RECEBIDO: {hm}\nHASH_COMENTARIOS: {h}\n", encoding="utf-8")
+    assert mod.main(["verificar", "--pacote", str(pacote), "--resposta", str(resp)]) == 0

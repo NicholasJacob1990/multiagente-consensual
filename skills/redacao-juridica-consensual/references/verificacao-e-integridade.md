@@ -149,3 +149,31 @@ conclusões que ele fixou, fecho, assinatura) vai para um `travados.json`
 (`[{"id": ..., "paragrafo": N, "texto": "..."}]`). A pré-auditoria reprova a versão em que um trecho
 travado mudou, e o modo de emendas recusa emenda sobre ele. Se um auditor objetar a trecho travado,
 a objeção é levada ao usuário como dissenso; o texto só muda com nova autorização dele.
+
+## 5. Conferência por frentes depois de reorganizar o pacote
+
+Depois de dividir parágrafos, renumerar dispositivos ou regenerar anexos, a conferência mecânica
+(`verificar_remissoes.py conferir`, `espelho_redacoes.py`, pré-auditoria) acha o que não existe, mas
+não acha a remissão que existe e aponta para o parágrafo vizinho. Para isso, usar verificadores em
+paralelo, só de leitura, cada um com escopo fechado e o texto integral dos arquivos:
+
+1. **Remissões a parágrafos no parecer**, corpo e conclusão: o parágrafo citado trata da matéria? Atenção
+   às partes de parágrafo dividido, aos intervalos da conclusão e aos numerais romanos.
+2. **Remissões a itens do anexo e a dispositivos** no parecer: o item trata da matéria? O dispositivo
+   existe na norma examinada ou está marcado como sugerido? O artigo de outra norma leva o diploma?
+3. **Anexo e comentários da minuta revisada**: fundamento, classificação e observação de cada item;
+   remissões internas dos blocos; comentário de cada alteração (existe, remete ao item certo, tem a
+   classificação do bloco).
+4. **Comentários do documento** (`exportar_comentarios.py`): cada resposta do autor continua verdadeira
+   diante do texto atual? Algum comentário da revisora ficou ancorado em trecho que mudou de assunto?
+
+Cada verificador devolve tabela com local, trecho atual, problema, correção proposta e confiança.
+Conferir cada achado na fonte antes de aplicar; aplicar as correções de dados (JSON do anexo e dos
+comentários) com um agente que também confira cada uma contra o parecer, e as do parecer com controle
+de alterações. Depois, um **verificador novo, sobre o resultado**, faz a reconferência: o mesmo agente
+que corrigiu não certifica a própria correção. Os achados de mérito que surgirem (rol incompleto,
+ressalva que mudou o alvo da remissão) seguem o portão de integridade; os que contrariarem decisão do
+usuário vão a ele como dissenso.
+
+Na auditoria por modelo externo, mandar também a exportação dos comentários
+(`pacote_auditoria.py montar --comentarios`): sem ela, o auditor só pode certificar o texto.

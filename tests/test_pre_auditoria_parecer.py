@@ -169,3 +169,40 @@ def test_remissao_revisada_de_proposito_vira_informativo(tmp_path: Path) -> None
     code, achados = run(tmp_path, novo, "--remissoes-revisadas", "3", anterior=anterior)
     assert "renumeracao" not in regras(achados)
     assert any(a["regra"] == "renumeracao" and a["severidade"] == "info" for a in achados)
+
+
+def test_ritmo_paragrafos_encostados_no_teto(tmp_path: Path) -> None:
+    longo = " ".join(["palavra"] * 110)  # abaixo do teto de 120, mas a menos de 10% dele
+    texto = parecer(f"1. {longo}", f"2. {longo}", BASE[2].replace("parágrafo 2", "parágrafo 1"))
+    code, achados = run(tmp_path, texto)
+    ritmo = [a for a in achados if a["regra"] == "ritmo"]
+    assert code == 0 and len(ritmo) == 1 and ritmo[0]["severidade"] == "alerta"
+    assert "2 de 5 parágrafos (40%)" in ritmo[0]["mensagem"] and "108 palavras" in ritmo[0]["mensagem"]
+    assert "entre 40 e 90" in ritmo[0]["mensagem"]
+    texto = parecer(f"1. {longo}", *BASE[1:])
+    _, achados = run(tmp_path, texto)
+    assert not any(a["regra"] == "ritmo" for a in achados)  # 1 de 5 (20%)
+
+
+def test_anexo_sem_nome_no_perfil_genes_e_com_varios_anexos(tmp_path: Path) -> None:
+    generico = "2. O prazo está no Anexo, item 5, conforme Anexo; ver parágrafo 3."
+    nomeado = "2. O prazo está no Anexo de Redações Sugeridas, item 5, e no Anexo II; ver parágrafo 3."
+    _, achados = run(tmp_path, parecer(BASE[0], generico, BASE[2]))
+    assert [a["paragrafo"] for a in achados if a["regra"] == "anexo_generico"] == [2, 2]
+    _, achados = run(tmp_path, parecer(BASE[0], nomeado, BASE[2]))
+    assert not any(a["regra"] == "anexo_generico" for a in achados)
+    # perfil genérico: só cobra quando o documento tem mais de um anexo
+    _, achados = run(tmp_path, parecer(BASE[0], generico, BASE[2]), "--perfil", "generico")
+    assert not any(a["regra"] == "anexo_generico" for a in achados)
+    dois = "2. Ver o Anexo I e o Anexo II (Anexo, itens 3 e 4); ver parágrafo 3."
+    _, achados = run(tmp_path, parecer(BASE[0], dois, BASE[2]), "--perfil", "generico")
+    gen = [a for a in achados if a["regra"] == "anexo_generico"]
+    assert len(gen) == 1 and "2 anexos" in gen[0]["mensagem"]
+
+
+def test_concordancia_das_remissoes(tmp_path: Path) -> None:
+    texto = parecer(BASE[0], "2. O parágrafos 1 e 3 admite a tese do regulamento.", BASE[2])
+    code, achados = run(tmp_path, texto)
+    conc = [a for a in achados if a["regra"] == "concordancia"]
+    assert code == 0 and {a["paragrafo"] for a in conc} == {2} and all(a["severidade"] == "alerta" for a in conc)
+    assert any("«admite»" in a["mensagem"] for a in conc)

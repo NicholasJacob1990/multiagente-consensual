@@ -26,10 +26,13 @@ O critério para desdobrar é o número de normas, e não o tamanho. Um parágra
   - montar o mapa de numeração antiga para nova por artigo;
   - varrer minuta, tabelas e anexos da norma, anexo de redações e parecer, sem distinguir maiúsculas ("Art. 7º, §§ 3º e 4º" em coluna de tabela) e incluindo listas ("arts. 3º, § 5º, e 60, § 5º"), formas inversas ("§ 3º do art. 39", "§ 3º daquele artigo", "parágrafo único desse artigo") e remissões internas ("o § 1º");
   - decidir caso a caso quando um parágrafo virou vários: a remissão segue a parte a que se refere ("art. 60, § 1º" sobre a solicitação da diligência passa a § 2º);
-  - excluir remissões a outras normas que tenham o mesmo número ("art. 40, parágrafo único, do Decreto").
-- **Parecer:** citar a numeração da minuta examinada e a da minuta revisada só para dispositivos sugeridos, declarando a convenção uma vez no parágrafo de método; atualizar as remissões a acréscimos sugeridos.
+  - excluir remissões a outras normas que tenham o mesmo número ("art. 40, parágrafo único, do Decreto");
+  - revisitar os intervalos ("parágrafos 169 a 174", "§§ 2º a 5º") contra o conteúdo, não só contra a numeração: depois da divisão, o último número pode passar a incluir parte que não trata da matéria.
+- **Ressalva que muda o alvo da remissão:** quando um dispositivo ganha ou perde ressalva ("Ressalvada a hipótese do inciso IV, …"), revisar toda remissão a ele. A regra que remetia ao § 1º para todas as hipóteses pode ter de remeter ao parágrafo que agora trata da hipótese ressalvada.
+- **Parecer:** citar a numeração da minuta examinada e a da minuta revisada só para dispositivos sugeridos, declarando a convenção uma vez no parágrafo de método; atualizar as remissões a acréscimos sugeridos. Declarada a convenção, todo dispositivo que não exista na minuta examinada leva "sugerido" ("art. 59, § 1º, II, sugerido"), e artigo de outra norma leva o diploma, ainda que já citado na frase anterior ("IN nº 076/2026, art. 12, caput").
 - **Anexo de redações:** um bloco por dispositivo resultante, com `(NR)` para o que existia e `(AC)` para o novo; títulos, classificações e observações renumerados; dispositivo do original que só muda de número fica numa observação ("o § 4º da minuta passa a § 5º, sem alteração de texto"); a matéria deslocada é explicada na observação do item.
 - **Minuta com controle de alterações:** o dispositivo original deslocado aparece excluído no lugar de origem e acrescido no de destino, com comentário que explique o deslocamento; o que só muda de número recebe comentário de renumeração sem alteração de conteúdo.
+- **Remissões ao parecer depois de dividir parágrafos do parecer:** decidir uma a uma a parte citada; citar as duas partes só quando a matéria estiver nas duas. Script: `verificar_remissoes.py mapear` lista as decisões pendentes e `renumerar` recusa aplicar enquanto houver alguma sem escolha.
 
 ## 2. Frase normativa
 
@@ -59,6 +62,7 @@ O critério para desdobrar é o número de normas, e não o tamanho. Um parágra
 
 - Cada linha de cronograma ou calendário com a mesma estrutura: etapa em substantivo, base normativa, responsável e prazo com marco inicial expresso ("5 dias, do recebimento da comunicação").
 - Legenda de siglas e designações na própria tabela ou em nota final.
+- **Rol espelhado:** a célula que enumera interessados, legitimados ou responsáveis reproduz o rol do artigo a que a linha remete, inteiro. Se o art. 58 notifica "o mais votado, os candidatos cuja classificação possa mudar e o candidato a quem se impute irregularidade", a linha da contestação lista os três; ao alterar o artigo, alterar a linha na mesma rodada. A coluna da base normativa aponta o dispositivo que de fato rege a etapa ("Arts. 57 e 58, parágrafo único", e não só "Art. 57", se a notificação está no art. 58).
 - Formulário: pergunta direta ao declarante, em segunda pessoa ou forma impessoal uniforme; declaração final em primeira pessoa, com verbo pleno ("declaro que as informações prestadas são verdadeiras") em vez de nominalização ("declaro a veracidade").
 
 ## 6. Redação sugerida em parecer e no Anexo de Redações Sugeridas
@@ -70,4 +74,7 @@ Quando o parecer propõe texto para a norma examinada:
 - **Texto idêntico:** o mesmo dispositivo tem a mesma redação, palavra por palavra, no bloco do Anexo, na minuta revisada e em qualquer tabela que o reproduza. Toda emenda a um vale para os outros na mesma rodada.
 - **Parecer:** cita o dispositivo pelo número e remete ao item ("…, conforme o Anexo, item 13"); não transcreve redação que possa ficar desatualizada. Quando transcrever, conferir contra o bloco a cada versão.
 - **Minuta revisada:** sobre a minuta oficial, com controle de alterações e um comentário por dispositivo alterado que remeta ao item do Anexo; dispositivo ajustado só na forma recebe o comentário "Ajuste de redação (técnica legislativa), sem alteração de conteúdo".
+  - **Toda alteração tem comentário**, inclusive linhas de tabela e dispositivos alterados por consequência de outro item. Conferir no docx, e não só nos dados de origem, que nenhuma alteração ficou sem comentário.
+  - **"Sem alteração de conteúdo" só para forma.** Troca de termo que decorre de correção de mérito ("recursos" por "pedidos de reconsideração", depois de suprimido o recurso) não é ajuste de forma: o comentário diz de qual item ou parágrafo do parecer ela decorre.
+  - **A classificação do comentário é a do Anexo** para aquele bloco (correção necessária, recomendação etc.). Comentário gerado a partir da classificação geral do item pode errar o bloco: usar a classificação por bloco.
 - **Conferência mecânica:** `redacao-juridica-consensual/scripts/espelho_redacoes.py`, do plugin Multiagente Consensual, confere bloco a bloco o Anexo contra a minuta e procura no parecer trechos da redação superada.
