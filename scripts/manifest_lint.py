@@ -30,7 +30,7 @@ REQUIRED_SEAT_ROUTES = {
     "gemini": "antigravity",
     "muse": "opencode",
 }
-REQUIRED_CLAUDE_MODEL = "claude-opus-5"
+REQUIRED_CLAUDE_MODEL = "claude-opus-5-5"
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
 REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.7"
 REQUIRED_KIMI_MODEL = "kimi-code/k3"
@@ -139,7 +139,7 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
     ]
     lines += route_block(
         "claude", "claude",
-        "Claude deve usar Claude Opus 5 exclusivamente pelo Claude Code CLI.",
+        "Claude deve usar Claude Opus 5.5 exclusivamente pelo Claude Code CLI.",
     )
     lines += route_block(
         "codex", "codex",

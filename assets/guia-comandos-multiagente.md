@@ -989,7 +989,7 @@ ou condição de parada. Ele é o motor-base dos perfis especializados.
 Exemplo completo:
 
 ```text
-/loop-debate-agentes Claude Opus 5 redige a especificação. GPT Codex critica e
+/loop-debate-agentes Claude Opus 5.5 redige a especificação. GPT Codex critica e
 propõe alterações; o redator original responde e corrige. Faça até 4 rodadas de
 debate por versão e até 5 tentativas. Use painel externo de 3 sessões, meta 8,5,
 piso 7, consenso estrito em cada versão e Gemini em auditoria cega. Entregue
@@ -1243,7 +1243,7 @@ As modalidades permanecem separadas:
 Exemplo simples:
 
 ```text
-/redacao-juridica-consensual prepare uma apelação. Claude Opus 5 redige, Codex
+/redacao-juridica-consensual prepare uma apelação. Claude Opus 5.5 redige, Codex
 critica e Grok 4.6 High audita. Use até 12 versões. Mantenha os demais padrões.
 ```
 
@@ -1256,7 +1256,7 @@ Exemplo composto:
 
 ```text
 /redacao-juridica-consensual produza um pacote com parecer, recurso e minuta de
-decisão. Use ensemble N×N somente no recurso: Claude Opus 5, Codex e Grok devem
+decisão. Use ensemble N×N somente no recurso: Claude Opus 5.5, Codex e Grok devem
 gerar candidatas e revisar todas. Cada documento terá seu próprio hash,
 consenso, auditoria e canônico.
 ```
@@ -1267,7 +1267,7 @@ documental e `ensemble_juridico` fica limitado ao `artefato_id` do recurso.
 Exemplo de parecer:
 
 ```text
-/redacao-juridica-consensual Claude Opus 5 redige um parecer sobre os documentos
+/redacao-juridica-consensual Claude Opus 5.5 redige um parecer sobre os documentos
 anexos. Codex verifica fatos, fundamentos e precedentes; Gemini revisa a
 estrutura; Kimi faz auditoria cega. Use até 5 tentativas, consenso estrito,
 média 8,5 e piso 7. Não invente fatos ou citações e entregue um único parecer
@@ -1286,7 +1286,7 @@ cabimento e todos os pontos controvertidos.
 Exemplo de acórdão com publicação *opinion of the court* e apuração global:
 
 ```text
-/redacao-juridica-consensual forme um colegiado com Claude Opus 5, Codex e Grok
+/redacao-juridica-consensual forme um colegiado com Claude Opus 5.5, Codex e Grok
 sobre a minuta atual. Use opinion_of_court e maioria simples. Cada julgador deve
 votar no dispositivo pelo critério global e aderir separadamente a cada proposição essencial. Codex
 redige a opinião da maioria; publique votos concorrentes e dissidentes. Exija
@@ -1342,7 +1342,7 @@ jurídica recebe novo hash e precisa passar novamente pelo consenso e pelos gate
 jurídicos; nenhuma aprovação de uma candidata é transferida para a síntese.
 
 ```text
-/redacao-juridica-consensual use ensemble N×N profundo com Claude Opus 5, Codex,
+/redacao-juridica-consensual use ensemble N×N profundo com Claude Opus 5.5, Codex,
 Kimi e Grok para produzir quatro minutas independentes a partir dos mesmos autos
 e fontes. Faça revisão cega 4×4 e dois ciclos de crítica, réplica e revisão.
 Depois, use Gemini como consolidador designado. Submeta a síntese a consenso
@@ -1411,7 +1411,7 @@ versões completas é 20 por artefato.
 Exemplo completo, pronto para uso:
 
 ```text
-/redacao-juridica-consensual use ensemble N×N profundo com Claude Opus 5, Codex
+/redacao-juridica-consensual use ensemble N×N profundo com Claude Opus 5.5, Codex
 e Kimi. Forneça a todos o mesmo conjunto de autos, fatos, fontes e critérios
 jurídicos. Cada modelo deve produzir cegamente uma minuta completa e
 independente.
@@ -1683,7 +1683,7 @@ silenciosamente:
 
 | Identidade base | Modelo local configurado |
 |---|---|
-| `@claude-opus` | Claude Code · `claude-opus-5` |
+| `@claude-opus` | Claude Code · `claude-opus-5-5` |
 | `@gpt-codex` | Codex CLI · `gpt-6.1-sol`, esforço `xhigh` |
 | `@gemini-pro` | Antigravity CLI · `gemini-3.8-flash-high` |
 | `@grok` | ponte para a rota Grok selecionada: Cursor · `cursor-grok-4.6-high` ou xAI CLI oficial · `grok-4.7` |
@@ -1837,10 +1837,10 @@ avaliação e a auditoria no hash escolhido.
 ### 10.8 Acórdão com opinião da maioria e dissidência
 
 ```text
-/redacao-juridica-consensual Claude Opus 5, Codex, Kimi e Grok julgam a minuta
+/redacao-juridica-consensual Claude Opus 5.5, Codex, Kimi e Grok julgam a minuta
 congelada. Use opinion_of_court, maioria simples e quórum 4. Faça até 8 rodadas
 e 2 ciclos de crítica, réplica e revisão. Cada julgador vota no dispositivo e
-adere por ID a cada proposição essencial. Claude Opus 5 redige a opinião da
+adere por ID a cada proposição essencial. Claude Opus 5.5 redige a opinião da
 maioria somente com os fundamentos que atingirem o limiar; os não aderentes
 produzem votos concorrentes ou dissidentes. Exija ratio unificada, publique
 todos os votos separados, preserve os hashes e use Codex em nova sessão para a
@@ -1854,7 +1854,7 @@ gates, um artefato canônico aprovado.
 
 ### 10.9 Prompt completo para parecer jurídico — Claude, Codex e Grok
 
-Este modelo parte do Claude Code porque o Claude Opus 5 será o redator original.
+Este modelo parte do Claude Code porque o Claude Opus 5.5 será o redator original.
 Abra o terminal na pasta do caso, valide as rotas e inicie o Claude em comandos
 separados:
 
@@ -1894,7 +1894,7 @@ CONTEXTO E LIMITES
 - Não exponha segredos, credenciais ou dados pessoais desnecessários.
 
 PAPÉIS E ROTAS OBRIGATÓRIAS
-- Redator e consolidador iterativo: Claude Opus 5, exclusivamente pelo Claude
+- Redator e consolidador iterativo: Claude Opus 5.5, exclusivamente pelo Claude
   Code. O Claude cria a primeira versão, responde a cada objeção e permanece
   responsável por todas as correções do artefato canônico.
 - Avaliador-crítico: Codex, em sessão separada. Deve confrontar fatos, provas,
@@ -2044,7 +2044,7 @@ REGRAS DE SEGURANÇA JURÍDICA
 - Exija revisão e decisão final de profissional habilitado.
 
 PAPÉIS E ROTAS OBRIGATÓRIAS
-- Redator e consolidador iterativo: Claude Opus 5, exclusivamente pelo Claude
+- Redator e consolidador iterativo: Claude Opus 5.5, exclusivamente pelo Claude
   Code. O Claude cria a peça e continua responsável pelas correções.
 - Revisor processual e factual: Codex, em sessão separada. Deve verificar autos,
   cronologia, prova, cabimento, admissibilidade, dialeticidade, fundamentação,
@@ -2367,7 +2367,7 @@ um servidor na internet. O Cowork não deve tentar acessar `localhost`.
 ```text
 /multiagente-consensual:loop-debate-agentes
 
-Claude Opus 5 redige o parecer. Codex critica e sugere alterações. Grok pelo
+Claude Opus 5.5 redige o parecer. Codex critica e sugere alterações. Grok pelo
 Cursor 4.6 High verifica contra-argumentos e Kimi K3 pelo Kimi Code faz a revisão
 final. Faça até 8 rodadas e 2 ciclos por participante em cada versão, com até 6
 tentativas. Use consenso estrito sempre, meta 8,5, piso 7, painel de 3 sessões e

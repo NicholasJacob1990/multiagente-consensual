@@ -47,7 +47,7 @@ Exemplo estrutural reduzido:
   "raiz_artefatos": "/caminho/do/run",
   "artefato_sha256": "<sha256>",
   "participantes": [
-    {"cadeira": "claude", "rota": "claude", "modelo": "claude-opus-5", "provedor": "anthropic"},
+    {"cadeira": "claude", "rota": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic"},
     {"cadeira": "codex", "rota": "codex", "modelo": "gpt-6.1-sol", "provedor": "openai"}
   ],
   "ledger_deliberacao": {

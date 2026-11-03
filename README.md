@@ -378,7 +378,7 @@ multiagent-bridge invoke \
 
 Rotas obrigatórias atuais:
 
-- Claude Opus 5 (`claude-opus-5`) → Claude Code CLI;
+- Claude Opus 5.5 (`claude-opus-5-5`) → Claude Code CLI;
 - Grok → Cursor CLI, modelo `cursor-grok-4.6-high`;
 - Kimi → `kimi-secure`, wrapper do Kimi Code CLI oficial, padrão `kimi-code/k3` via OAuth; no painel ou no bridge, `opencode-go/kimi-k3` seleciona explicitamente a mesma cadeira com a chave OpenCode Go do Keychain (1M, esforço `max` obrigatório);
 - Codex → Codex CLI;

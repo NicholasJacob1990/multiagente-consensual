@@ -25,7 +25,7 @@ Persistir um `meta.json` compatível com:
       "id": "cadeira-1",
       "agente": "claude-opus-redator",
       "cli": "claude",
-      "modelo": "claude-opus-5",
+      "modelo": "claude-opus-5-5",
       "provedor_de_acesso": "claude-code",
       "familia": "anthropic/claude",
       "papel": "redator",

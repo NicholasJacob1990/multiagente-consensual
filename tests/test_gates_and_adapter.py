@@ -796,7 +796,7 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertNotIn("MULTIAGENT_ATTESTATION_KEY", env)
         claude, _stdin, _env = adapter.build_invocation(
             "claude", "claude", "claude", root, prompt, "teste",
-            "claude-opus-5", None, "adaptive_up_to_native_max",
+            "claude-opus-5-5", None, "adaptive_up_to_native_max",
         )
         self.assertNotIn(str(Path.home()), claude)
         with self.assertRaises(RuntimeError):
@@ -836,36 +836,36 @@ class AdapterAndGateTests(unittest.TestCase):
 
     def test_structured_model_confirmation_is_observed_not_requested(self) -> None:
         observed, rendered, models = adapter.structured_observation(
-            json.dumps({"model": "claude-opus-5", "result": "ok"}),
-            "claude-opus-5",
+            json.dumps({"model": "claude-opus-5-5", "result": "ok"}),
+            "claude-opus-5-5",
         )
-        self.assertEqual(observed, "claude-opus-5")
+        self.assertEqual(observed, "claude-opus-5-5")
         self.assertEqual(rendered, "ok")
-        self.assertEqual(models, ["claude-opus-5"])
+        self.assertEqual(models, ["claude-opus-5-5"])
         not_observed, _rendered, models = adapter.structured_observation(
             json.dumps({"model": "fallback-model", "result": "ok"}),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(not_observed)
         self.assertEqual(models, ["fallback-model"])
         echoed, _rendered, models = adapter.structured_observation(
             json.dumps({
                 "model": "fallback-model",
-                "result": {"text": "ok", "model": "claude-opus-5"},
+                "result": {"text": "ok", "model": "claude-opus-5-5"},
             }),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(echoed)
         self.assertEqual(models, ["fallback-model"])
         mixed, _rendered, models = adapter.structured_observation(
             json.dumps({
-                "modelUsage": {"claude-opus-5": {}, "fallback-model": {}},
+                "modelUsage": {"claude-opus-5-5": {}, "fallback-model": {}},
                 "result": "ok",
             }),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(mixed)
-        self.assertEqual(models, ["claude-opus-5", "fallback-model"])
+        self.assertEqual(models, ["claude-opus-5-5", "fallback-model"])
 
     def test_native_session_confirmation_reads_only_cli_envelope(self) -> None:
         self.assertIsNone(adapter.structured_session_observation("", "claude"))
@@ -893,8 +893,8 @@ class AdapterAndGateTests(unittest.TestCase):
             manifest, "grok", "grok-4.7", "grok_official"
         )
         self.assertEqual(claude["route"], "claude")
-        self.assertEqual(claude["model"], "claude-opus-5")
-        self.assertEqual(adapter.resolve_seat(manifest, "claude", "opus")["model"], "claude-opus-5")
+        self.assertEqual(claude["model"], "claude-opus-5-5")
+        self.assertEqual(adapter.resolve_seat(manifest, "claude", "opus")["model"], "claude-opus-5-5")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "claude", "claude-sonnet-5")
         self.assertEqual(codex["route"], "codex")
@@ -980,7 +980,7 @@ class AdapterAndGateTests(unittest.TestCase):
             "artefato_sha256": digest,
             "participantes": [
                 {"cadeira": "A", "rota": "codex", "modelo": "gpt", "provedor": "openai"},
-                {"cadeira": "A", "rota": "claude", "modelo": "claude-opus-5", "provedor": "anthropic"},
+                {"cadeira": "A", "rota": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic"},
             ],
             "bloqueadores": [],
             "dissensos": [],
@@ -1567,7 +1567,7 @@ class AdapterAndGateTests(unittest.TestCase):
             identities = {
                 "codex": ("codex", "openai", "gpt-6.1-sol"),
                 "grok": ("grok_official", "xai", "grok-4.7"),
-                "claude": ("claude", "anthropic", "claude-opus-5"),
+                "claude": ("claude", "anthropic", "claude-opus-5-5"),
             }
             receipts = []
             for index, vote in enumerate(verdict["votos"], start=1):
@@ -1797,7 +1797,7 @@ class AdapterAndGateTests(unittest.TestCase):
             identities = {
                 "codex": ("codex", "openai", "gpt-6.1-sol"),
                 "grok": ("grok_official", "xai", "grok-4.7"),
-                "claude": ("claude", "anthropic", "claude-opus-5"),
+                "claude": ("claude", "anthropic", "claude-opus-5-5"),
             }
             receipts = []
             for index, vote in enumerate(verdict["votos"], start=1):

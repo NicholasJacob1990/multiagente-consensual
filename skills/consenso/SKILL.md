@@ -31,7 +31,7 @@ Exemplos:
 /consenso analise a autenticação e diga qual correção é mais segura
 /consenso Claude e Grok revisem o diff atual
 /consenso use Codex, Antigravity e Gemini, com 3 ciclos por modelo
-/consenso debata com Claude Opus 5 e Grok pelo Cursor 4.6 High em no máximo 10 rodadas
+/consenso debata com Claude Opus 5.5 e Grok pelo Cursor 4.6 High em no máximo 10 rodadas
 /consenso Claude redige, Grok critica, Gemini revisa e Codex avalia
 /consenso verifique se há consenso sobre a versão atual deste documento
 /consenso entre @Estrategista, @Oponente e @Revisor; @Supervisor decide; 4 rodadas por tentativa
@@ -174,7 +174,7 @@ Decisão não é consenso: se as cadeiras divergirem, informar o dissenso mesmo 
 
 ## Participantes
 
-Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5 (`claude-opus-5`) por Claude Code; para Grok, usa a CLI oficial da xAI com `grok-4.7` e esforço `xhigh` por padrão ou o Cursor com `cursor-grok-4.6-high` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial, Gemini 3.8 usa o Antigravity e Muse Spark 1.3 usa o OpenCode Go. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
+Antes de resolver CLIs, ler `~/.agents/multiagent-manifest.json`. Separar `seat` semântica, modelo solicitado e `route` executada. A política estrita exige Claude Opus 5.5 (`claude-opus-5-5`) por Claude Code; para Grok, usa a CLI oficial da xAI com `grok-4.7` e esforço `xhigh` por padrão ou o Cursor com `cursor-grok-4.6-high` quando essa rota for escolhida explicitamente; Kimi K3 usa o Kimi Code CLI oficial, Gemini 3.8 usa o Antigravity e Muse Spark 1.3 usa o OpenCode Go. Rejeitar modelos incompatíveis com a rota em runs novos e preservar runs históricos já congelados. Manifesto ausente, inválido ou com rota indisponível causa pausa e relatório; nunca trocar de rota silenciosamente. O YAML legado não pode sobrescrever o JSON canônico.
 
 Usar `scripts/cli_adapter.py` para participantes externos:
 

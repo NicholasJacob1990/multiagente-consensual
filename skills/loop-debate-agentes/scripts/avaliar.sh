@@ -130,7 +130,7 @@ provider_padrao() {
 modelo_padrao() {
   case "$1" in
     codex) echo gpt-6.1-sol ;;
-    claude) echo claude-opus-5 ;;
+    claude) echo claude-opus-5-5 ;;
     gemini|antigravity) echo gemini-3.8-flash-high ;;
     grok) echo grok-4.7 ;;
     kimi) echo kimi-code/k3 ;;
