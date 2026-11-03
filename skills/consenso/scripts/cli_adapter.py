@@ -451,6 +451,14 @@ def structured_observation(
         if requested_model and unique_models and set(unique_models) <= accepted
         else None
     )
+    fragmentos = [
+        value["data"] for value in values
+        if isinstance(value, dict) and value.get("type") == "text" and isinstance(value.get("data"), str)
+    ]
+    if fragmentos:
+        # A CLI oficial do Grok transmite a resposta em fragmentos {"type": "text", "data": ...};
+        # o último fragmento, sozinho, não é a resposta.
+        return observed, "".join(fragmentos), unique_models
     rendered: str | None = None
     for value in reversed(values):
         rendered = recursive_value(

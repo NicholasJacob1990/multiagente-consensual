@@ -931,6 +931,17 @@ class AdapterAndGateTests(unittest.TestCase):
             outro, "grok-4.7", grok_build["effective_model_aliases"]
         )
         self.assertIsNone(observado)
+        fluxo = "\n".join([
+            '{"type": "thought", "data": "pensando"}',
+            '{"type": "text", "data": "1. Primeiro "}',
+            '{"type": "text", "data": "parágrafo."}',
+            '{"type": "end", "modelUsage": {"grok-4.7-build": {"inputTokens": 1}}}',
+        ])
+        observado, renderizado, _ = adapter.structured_observation(
+            fluxo, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertEqual(renderizado, "1. Primeiro parágrafo.")
+        self.assertEqual(observado, "grok-4.7")
         self.assertEqual(gemini["route"], "antigravity")
         self.assertEqual(gemini["model"], "gemini-3.8-flash-high")
         self.assertEqual(muse["route"], "opencode")
