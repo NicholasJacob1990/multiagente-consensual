@@ -589,6 +589,9 @@ def build_invocation(
             command += ["--model", model]
         if effort:
             command += ["-c", f"model_reasoning_effort={effort}"]
+        if os.environ.get("MULTIAGENTE_CODEX_MULTI_AGENT") == "1":
+            # Subagentes nativos do Codex (spawn_agent), só quando o run pede expressamente.
+            command += ["-c", "features.multi_agent=true"]
         command.append("-")
         stdin = governed_prompt
     elif route == "claude":
