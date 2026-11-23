@@ -27,6 +27,7 @@ Se a alteração de um documento modificar premissa compartilhada, reabra todos 
 7. Jurisprudência pertinente, com contexto, aderência e eventuais distinções.
 8. Doutrina relevante, quando confirmada e útil.
 9. Aplicação ao caso e alternativas interpretativas.
+   - Quando a titularidade, o fato decisivo ou o regime aplicável ficar indeterminado, matriz de hipóteses: para cada hipótese, a prova que a confirmaria ou afastaria, a consequência jurídica, o legitimado e a via, e a providência. A conclusão remete a cada hipótese, e nem a ementa nem o anexo escolhem hipótese que o corpo deixou aberta.
 10. Contra-argumentos, riscos, incertezas e consequências práticas.
 11. Conclusão objetiva, respondendo separadamente a cada questão.
 12. Ressalvas, providências e recibo de fontes.

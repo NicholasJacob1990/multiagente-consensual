@@ -350,7 +350,7 @@ As fontes citadas devem ser verificadas em suas versoes originais atualizadas.
 
 ## Notas
 
-- Sempre indicar claramente quando um resultado foi obtido via MCP (fonte primaria) vs. conhecimento interno (pode estar desatualizado)
+- Sempre indicar claramente quando um resultado foi obtido via MCP (fonte primaria) vs. conhecimento interno (pode estar desatualizado); rotular cada achado de fato com o nivel L1-L4 (`${CLAUDE_PLUGIN_ROOT}/references/fontes-web.md`, secao 0) e listar em "Lacunas e Limitacoes" o que ficou em L3 ou L4
 - Registrar as queries exatas usadas em cada MCP para reprodutibilidade
 - Se nenhum MCP juridico estiver disponivel, a pesquisa se baseara no conhecimento interno com aviso explicito ao usuario
 - Recomendacoes de fontes complementares: Westlaw Brazil, Vlex, JusBrasil, LegisWeb, Planalto.gov.br

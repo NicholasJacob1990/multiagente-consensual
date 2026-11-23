@@ -22,6 +22,12 @@ Distinguir número físico da página no arquivo de número impresso no document
 
 Para extrair conteúdo destinado a análise jurídica, manter o vínculo entre trecho, documento e página. A extração não certifica autenticidade, vigência de norma ou validade de assinatura.
 
+## Dossiê grande e cobertura
+
+Toda saída analítica declara a cobertura: `Lidas X de N páginas: <intervalos>; não lidas: <intervalos>`. Busca por palavra-chave é triagem e não conta como leitura. Em dossiê acima de 60 páginas, concluir sobre fato decisivo (titularidade, cadeia de atos, datas, valores) exige leitura integral por blocos, com índice documental montado página a página: documento, intervalo de páginas físicas, data e natureza. Enquanto houver páginas não lidas, a conclusão sobre fato decisivo fica ressalvada, com a indicação delas.
+
+Cada documento do índice recebe uma natureza: `fonte_primaria` (escritura, matrícula, sentença, carta de adjudicação), `alegacao_de_parte` (comunicação interna ou pedido da consulente) ou `relatorio_secundario` (nota do usuário, relatório de outro modelo ou de fluxo automatizado). O que vem só de `alegacao_de_parte` ou de `relatorio_secundario` entra na análise epistêmica (`analise-juridica-epistemica`) na classe `alegacao` e é pista a conferir na fonte primária, nunca fonte.
+
 ## Criar e editar
 
 Preferir ferramentas disponíveis no ambiente: `reportlab` para geração programática; `pypdf` para operações estruturais; conversor de documentos para preservar um arquivo-fonte editável quando esse for o fluxo escolhido. Instalar dependências em ambiente isolado somente quando faltarem e forem necessárias.

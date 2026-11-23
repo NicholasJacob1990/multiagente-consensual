@@ -29,8 +29,19 @@ Tratar repetições por sua função. Preservar a retomada de uma tese quando el
 
 **Parecer e nota consultiva:** conservar o registro culto, a profundidade e o encadeamento demonstrativo, com voz ponderada e orientada à decisão. Desenvolver alternativas, limites e providências; evitar importar a combatividade própria da impugnação de uma sentença para uma consulta.
 
+Os dois estilos de parecer (executivo e clássico), com o núcleo comum e as regras de cada um, estão em `../../redacao-juridica-consensual/references/estilos-de-redacao.md`. Este perfil forense corresponde ao estilo clássico, que naquela referência traz a forma completa do parecer clássico forense: ementa estruturada em quatro itens, estrutura Relatório / Fundamentação / Conclusão, transcrição de ementa com introdução e comentário, léxico e conectivos forenses e matriz a) a d) na conclusão. O parágrafo abaixo resume o executivo.
+
+**Parecer a gestor ou área técnica:** além do registro ponderado, priorizar leitura sem releitura: resposta objetiva no início; relatório em ordem narrativa (quem consulta, objeto, fato que gerou a dúvida, quesitos enumerados, pedidos, natureza, base documental, premissa); siglas por extenso e glosa do termo técnico na primeira ocorrência do corpo; remissões rotuladas ("no plano de ação (parágrafos 123 e 124)"); e, na peça anexa dirigida a terceiro, tom de petição, identificação dos documentos pelo que o destinatário reconhece e pedidos compatíveis com a conclusão.
+
 **Auditoria:** avaliar a fidelidade ao perfil e o efeito de cada escolha sobre compreensão, precisão e persuasão. Distinguir preferência editorial, inadequação de tom, imprecisão vocabular e afirmação sem suporte; a última ultrapassa o estilo e exige avaliação substantiva. Relatar achados com linguagem direta e precisa. Corrigir a minuta somente no escopo autorizado.
 
 ## Conferência final
 
 Conferir se a revisão preservou teses, objeções enfrentadas, remissões, condições e pedidos; se a redação continua desenvolvida e formal; se a ênfase corresponde ao suporte; se as repetições têm função; e se nenhuma informação ou autoridade dos textos de referência foi transplantada para outro caso. Em fluxo multiagente, usar estes critérios nas dimensões pertinentes da rubrica já existente, sem acrescentar nota, limiar ou aprovação independente por estilo.
+
+## Densidade e pontas soltas (petições e pareceres)
+- **Petição também se mede.** Antes de entregar, `medir_densidade.py PECA.docx`: frase acima de 60 palavras e parágrafo de frase única com mais de 70 pedem divisão; o juízo lê como o gestor, com pressa.
+- **Tese no começo de cada tópico.** O tópico abre com o que se pede e o fato de que depende; a fundamentação vem depois.
+- **Julgado citado, julgado conferido e referenciado.** `conferir_orfaos.py PECA.docx` bloqueia precedente que aparece no corpo e não está nas Referências (ou na lista de julgados da peça) e acusa instrução editorial esquecida entre colchetes.
+- **Pedidos e fundamentos casados.** Cada pedido tem tópico que o sustenta e cada tópico leva a um pedido; depois de cortar texto, confira os dois sentidos.
+- **Condensar é cortar.** Regras e ordem de corte em `estilos-de-redacao.md`, seção 6 (skill de redação consensual), e procedimento em `revisao-redacional.md`, seção 7.

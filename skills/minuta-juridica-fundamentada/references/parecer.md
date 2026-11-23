@@ -13,12 +13,14 @@ No consultivo público, conferir regime aplicável, competência, instrução, m
 | Parte | Conteúdo que deve produzir |
 |---|---|
 | Identificação e ementa, se adequadas | Assunto e síntese fiel da conclusão, sem antecipar certeza que a análise não permite |
-| Relatório | Objeto da consulta, fatos relevantes, documentos examinados, premissas e perguntas delimitadas |
+| Relatório | Objeto da consulta, fatos relevantes, documentos examinados, divergências entre a consulta e os documentos, premissas e perguntas delimitadas |
 | Fundamentação | Regra aplicável, interpretação, relação com os fatos, precedentes pertinentes, objeções e alternativas juridicamente viáveis |
 | Conclusão | Resposta a cada questão, recomendação motivada, condições e limites da solução |
 | Providências, se necessárias | O que falta, quem deve providenciar quando identificado, ordem e dependências relevantes |
 
 Não converter essa arquitetura em modelo rígido. Consulta breve pode ser respondida em poucos parágrafos; parecer complexo pode precisar de tópicos por questão e anexos. Doutrina não é seção obrigatória.
+
+**Parecer sobre norma em elaboração** (regulamento, edital, estatuto, política, cláusulas articuladas): as redações substitutivas seguem [técnica legislativa](tecnica-legislativa.md). Poucas redações vão no próprio parágrafo; muitas vão a um Anexo de Redações Sugeridas (seção 6 daquela referência), com o mesmo texto do dispositivo no anexo, na minuta revisada e nas tabelas, e o parecer remete ao item dentro da frase ("…, conforme o Anexo, item 13").
 
 ## Raciocínio e decisão
 
@@ -26,12 +28,18 @@ Para cada questão material, apresentar: regra → fatos que satisfazem ou não 
 
 Apresentar alternativa principal e alternativas úteis ao objetivo, sem fabricar opções inviáveis para preencher tabela. Quando houver mais de uma interpretação defensável, explicar qual se recomenda e por quê. Separar proibição jurídica, discricionariedade, risco probatório e conveniência administrativa ou comercial.
 
+Quando fato decisivo (titularidade, extinção, transmissão) ficar indeterminado, organizar a análise por hipóteses mutuamente exclusivas, cada uma com a prova que a sustenta, a prova que a afasta, a consequência jurídica, o legitimado e a via, e a diligência que a confirma. A conclusão responde por hipótese e indica a diligência que decide entre elas.
+
+Para cada via apresentada, dizer de quem é a faculdade ou o dever, se a outra parte pode recusá-la e com que requisitos, e o efeito para cada parte. Confirmar uma situação jurídica não impõe via de regularização, e faculdade de uma parte não se apresenta como obrigação da outra.
+
 Transformar ressalva relevante em providência concreta. Por exemplo, se o exercício de um direito depende de notificação, indicar a necessidade de verificar prova do recebimento e cumprimento do prazo previsto. Não criar prazo, responsável ou condição ausentes da fonte.
 
 Na revisão, conferir especialmente se:
 
 - todas as perguntas receberam resposta e a ementa corresponde à conclusão;
+- toda condição do corpo (“se confirmado…”, “desde que”, “a depender de”) reaparece com o mesmo alcance na ementa, na conclusão, nos anexos e nos quadros sobre o ponto; anexo, quadro ou cadeia dominial não afirma como fato o que o corpo deixou condicionado;
 - documentos faltantes foram identificados sem desqualificar o que já está demonstrado;
 - recomendação, condicionantes e risco residual são compatíveis entre si;
 - a autoridade ou o cliente consegue identificar a próxima providência;
 - a conclusão não transforma possibilidade condicionada em direito adquirido ou autorização automática.
+- havendo Anexo de Redações Sugeridas, cada bloco coincide com o dispositivo da minuta e o parecer não cita redação superada.

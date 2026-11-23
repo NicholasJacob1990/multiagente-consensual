@@ -1,0 +1,6 @@
+{
+  "caso": "",
+  "verificacoes": [
+    {"id": "A1", "descricao": "", "expressao": "", "tolerancia": 0.005, "no_texto": [], "nao_no_texto": []}
+  ]
+}

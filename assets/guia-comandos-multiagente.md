@@ -1959,8 +1959,9 @@ CONTROLE DE ALTERAÇÕES DO WORD
   a base. A aprovação adere somente ao hash do arquivo limpo.
 - Se eu aceitar, rejeitar ou editar parcialmente o comparativo no Word, salve o
   resultado como nova versão limpa e repita consenso, notas e auditoria.
-- Se o runtime estiver indisponível, pause; não simule alterações nativas com
-  cor, destaque, tachado ou comentários.
+- Sem o Docxodus, use o motor nativo do `word_redline.py` (`--motor auto`), que grava
+  alterações OOXML reais e fecha com `integridade_docx.py`; se nenhum motor rodar, pause;
+  não simule alterações nativas com cor, destaque, tachado ou comentários.
 
 CONSENSO E QUALIDADE
 - Modo: consenso estrito, executado sempre sobre cada nova versão.
@@ -2138,8 +2139,8 @@ CONTROLE DE ALTERAÇÕES DO WORD
   rejeitar tudo = conteúdo-base. Consenso, notas e auditoria aderem ao hash do
   arquivo limpo.
 - Aceitação, rejeição ou edição manual parcial no Word cria uma nova versão e
-  reabre os gates. Se o runtime estiver indisponível, pause e não improvise um
-  falso controle de alterações.
+  reabre os gates. Sem o Docxodus, use o motor nativo (`--motor auto`); se
+  nenhum motor rodar, pause e não improvise um falso controle de alterações.
 
 CONSENSO E NOTAS
 - Use consenso estrito sempre, exigindo 2 verificações consecutivas do mesmo
@@ -2218,8 +2219,9 @@ python3 ~/.codex/skills/redacao-juridica-consensual/scripts/word_redline.py doct
 O campo `redlines_available` precisa ser verdadeiro. O comparador Docxodus
 funciona localmente e o Word abre as revisões OOXML nativas resultantes.
 
-Se o
-runtime estiver indisponível, pause o fluxo: destaque, cor e tachado não
+Sem o
+Docxodus, use o motor nativo do `word_redline.py` (`--motor auto`), seguido de
+`integridade_docx.py`; se nenhum motor rodar, pause o fluxo: destaque, cor e tachado não
 substituem alterações controladas. Entradas que já contenham revisões também
 devem ser resolvidas e salvas como DOCX limpo antes de nova comparação.
 

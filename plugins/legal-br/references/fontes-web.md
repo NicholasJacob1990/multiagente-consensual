@@ -10,6 +10,24 @@ na web e para jurisprudência/doutrina via conta **JusBrasil** do usuário.
 > ```
 > Leia o JSON (stdout) e gate o uso conforme `firecrawl.usar`, `jusbrasil.pronto` e `guia`.
 
+## 0. Nível de acesso e atualidade (rotular toda informação de fato vinda da web)
+
+- **L1 fonte lida:** página ou ato oficial aberto e lido; registrar URL e data de acesso.
+- **L2 trecho:** excerto literal da fonte oficial, sem o contexto inteiro.
+- **L3 resumo:** snippet de buscador (inclusive do WebSearch), resposta de IA ou notícia secundária.
+- **L4 memória** do modelo.
+
+Só L1 sustenta afirmação no parecer. L2 sustenta com ressalva. L3 e L4 orientam a
+busca e nunca viram fato: viram diligência ("convém confirmar na JUCEMG ...").
+Com rede bloqueada ou fetch negado, avise o usuário que o acesso ficou em L3 ou L4
+e liste o que falta conferir.
+
+**Atualidade:** controle acionário, vinculação societária, competência de órgão e
+cessões ou transferências de acervo mudam com o tempo. Exigem fonte datada (ato
+societário, DOE, junta comercial, site do ente), e a data vai ao texto. Ao resumir
+um ato (termo, cessão, convênio), confira no próprio ato o objeto, as partes, a
+área e as **ressalvas**: "transferiu todos os processos" é afirmação de alcance.
+
 ## 1. Firecrawl LOCAL (busca/scrape geral)
 
 Instância self-hosted em `http://localhost:3002` (key `local-firecrawl-key`). É a
@@ -168,14 +186,14 @@ local omitido — acrescente `--api-url http://localhost:3002 -k local-firecrawl
 3. **LexML** (busca unificada, URN, estadual/municipal, doutrina)
 4. **DOU** `in.gov.br` (normas infralegais e atos recentes)
 5. **Firecrawl local / WebSearch nativo** (estadual/municipal e o que faltar)
-6. Conhecimento do modelo (última opção, marcar como não-verificado)
+6. Conhecimento do modelo (última opção, marcar como não-verificado; nível L4, seção 0)
 
 ## Ordem de prioridade (jurisprudência)
 1. **brlaw MCP** (ementas diretas STF/STJ/TST)
 2. **JusBrasil autenticado** (íntegra, tribunais não cobertos pelo brlaw, doutrina)
 3. **Firecrawl local** (scrape direto de `*.jus.br`, busca web)
 4. **WebSearch nativo** (se firecrawl local offline)
-5. Conhecimento do modelo (última opção, marcar como não-verificado)
+5. Conhecimento do modelo (última opção, marcar como não-verificado; nível L4, seção 0)
 
 Sempre confirme dados do JusBrasil/scrape no inteiro teor oficial quando a decisão
 for citada como fundamento.

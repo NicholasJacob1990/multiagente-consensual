@@ -71,6 +71,21 @@ python3 "$S" auditar  parecer.docx        # relatório JSON — rode antes de en
 Toda escrita gera `parecer.bak-AAAAMMDD-HHMM.docx` ao lado. `numerar` e
 `formatar` são idempotentes: rodar de novo não duplica nada.
 
+**Notas de rodapé no Markdown.** `converter` e `parecer_genes_estilo.py` aceitam
+`[^id]` no texto e a definição `[^id]: texto` em linha própria (linhas seguintes
+recuadas continuam a nota). Geram notas reais (`footnotes.xml`, separadores,
+relação, content type, `footnotePr`), numeradas pela ordem do primeiro marcador.
+Param com erro em marcador sem definição, definição duplicada ou marcador
+repetido. Nada vira nota automaticamente: no perfil GENES, a doutrina fica em
+autor-data no texto. O subcomando `nota` cria a part de notas quando o documento
+não tem nenhuma.
+
+**Assentos da matrícula.** `extrair_assentos.py CERTIDAO.md [--quadra NN] --md`
+monta, a partir do OCR da certidão, o cabeçalho (matrícula, livro, folha, CNM,
+abertura, registro anterior), os atos R-/AV- e a tabela lote × área × nota de
+transferência × assento de destino, com destaque dos lotes sem nota e das
+leituras a conferir na imagem.
+
 ## O que `auditar` pega
 
 Os defeitos que revisor humano cobra e que passam despercebidos na leitura:

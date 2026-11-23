@@ -63,6 +63,8 @@ Classificar cada proposição material pela categoria mais precisa:
 | desconhecido material | informação ausente que pode mudar a conclusão ou a estratégia |
 | objetivo ou preferência | finalidade, aversão a risco ou escolha pertencente ao responsável humano |
 
+A peça que encaminha a consulta (comunicação interna, nota técnica, ofício) é alegação do consulente, não fonte. Cada dado decisivo dela — parte do negócio, data e natureza do ato (data da sentença não é data do trânsito em julgado), percentual, número e data de abertura de matrícula, preço ou proporção de créditos — só entra como fato comprovado com o localizador da fonte primária. Divergência entre a consulta e os documentos é achado próprio, relatado expressamente, e nunca é corrigida em silêncio.
+
 Ligar toda proposição decisiva à sua fonte, localização e alcance. Registrar data, jurisdição e nível efetivamente consultado. Se a fonte material puder ter mudado, conferir sua versão atual em fonte primária oficial. Não alegar inexistência, pacificação, vigência, obrigatoriedade ou exaustividade a partir de busca incompleta.
 
 ## Analisar por questões

@@ -2,10 +2,42 @@
 """Gera comparações DOCX com alterações controladas nativas.
 
 O artefato limpo continua canônico. O redline é um derivado auditável que
-registra a relação entre uma versão-base e a versão limpa corrente. O comparador
-local Docxodus grava marcações OOXML ``w:ins``/``w:del`` reconhecidas pelo Word.
-O script também valida, resolvendo as marcações de forma determinística, que
-aceitar tudo reproduz o texto corrente e rejeitar tudo reproduz o texto-base.
+registra a relação entre uma versão-base (a versão aprovada indicada pelo
+usuário em ``--base``) e a versão limpa corrente. As marcas são OOXML nativas
+(``w:ins``/``w:del``) reconhecidas pelo Word, com autor (``--autor``) e data
+(``--data``).
+
+Motores (``--motor``):
+
+* ``docxodus`` — comparador local Docxodus/WmlComparer (python-redlines);
+  comportamento histórico, verificado pelo hash textual bidirecional;
+* ``nativo`` — motor embutido, sem dependências: alinha os parágrafos base ×
+  limpa (difflib), detecta DIVISÃO (um parágrafo antigo ≈ dois ou três novos
+  consecutivos; a primeira parte recebe marca de parágrafo inserida) e FUSÃO
+  (o inverso; marca de parágrafo excluída), faz diff POR PALAVRA dentro dos
+  parágrafos alterados preservando o ``rPr`` de cada run (rótulo em negrito +
+  texto continua com a formatação certa), marca parágrafos novos/excluídos
+  inteiros, trata tabelas de mesma forma célula a célula e confere notas de
+  rodapé/fim (alteradas, inseridas ou excluídas). Parágrafos com estrutura
+  complexa (hiperlinks, campos, imagens, controles de conteúdo) que mudaram
+  são substituídos inteiros (exclusão + inserção) e listados no relatório.
+  O pacote (estilos, numeração, cabeçalhos, notas) é o da versão limpa;
+* ``auto`` (padrão) — Docxodus quando disponível; senão o nativo, com aviso
+  no relatório/manifesto.
+
+Depois de gerar, o motor nativo chama ``integridade_docx.conferir`` (aceitar ⇒
+limpa, rejeitar ⇒ base, Referências, notas, contagem opcional com
+``--divididos``/``--fundidos``) e falha se houver divergência. No Docxodus a
+mesma conferência é registrada no manifesto apenas como informação.
+
+Exemplos::
+
+    word_redline.py compare --base v16.docx --current v17.docx \\
+        --out v17-alteracoes-v16-v17.docx --autor "Revisão v17" \\
+        --data 2026-11-04T21:00:00Z --motor nativo --divididos 3
+
+    word_redline.py finalize --first v01.docx --previous v05.docx \\
+        --final v06.docx --out-dir entrega --autor "Redator" --motor auto
 """
 
 from __future__ import annotations
@@ -14,10 +46,17 @@ import argparse
 import contextlib
 import dataclasses
 import datetime as dt
+import difflib
 import fcntl
 import hashlib
+import html
+import importlib.util
+import itertools
 import json
+import mimetypes
 import os
+import posixpath
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +66,7 @@ import zipfile
 from pathlib import Path
 from typing import Iterator
 from xml.etree import ElementTree as ET
+from xml.parsers import expat
 
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -178,9 +218,27 @@ def validate_clean_input(path: Path | str, role: str) -> Path:
     return docx
 
 
+def _redlines_python() -> Path | None:
+    """Interpretador que executa o Docxodus: o runtime dedicado ou, se o
+    pacote ``python_redlines`` for importável no interpretador atual, ele."""
+
+    if REDLINES_PYTHON.is_file():
+        return REDLINES_PYTHON
+    try:
+        if importlib.util.find_spec("python_redlines") is not None:
+            return Path(sys.executable)
+    except (ImportError, ValueError):
+        pass
+    return None
+
+
+def docxodus_disponivel() -> bool:
+    return _redlines_python() is not None
+
+
 def _doctor_payload(deep: bool = False) -> dict[str, object]:
     osascript = shutil.which("osascript")
-    redlines_available = REDLINES_PYTHON.is_file()
+    redlines_available = docxodus_disponivel()
     payload: dict[str, object] = {
         "contract": "legal_word_redline_v1",
         "platform": sys.platform,
@@ -192,6 +250,8 @@ def _doctor_payload(deep: bool = False) -> dict[str, object]:
         "available": redlines_available,
         "engine": "docxodus_wmlcomparer",
         "output": "native_ooxml_tracked_changes",
+        "native_engine_available": True,
+        "motor_auto": "docxodus" if redlines_available else "nativo",
     }
     if deep and sys.platform == "darwin" and WORD_APP.exists() and bool(osascript):
         result = _run_osascript(
@@ -274,7 +334,7 @@ if stderr:
 '''
     completed = subprocess.run(
         [
-            str(REDLINES_PYTHON),
+            str(_redlines_python() or REDLINES_PYTHON),
             "-c",
             runner,
             str(base),
@@ -471,7 +531,1360 @@ def _file_record(path: Path, state: str) -> dict[str, object]:
     }
 
 
+# ============================================================================
+# Motor nativo (sem dependências): alinhamento de parágrafos + diff por palavra
+# ============================================================================
+
+NATIVO_LIMIAR_PAR = 0.40
+"""Semelhança mínima (caracteres casados) para parear parágrafos base × limpa."""
+NATIVO_LIMIAR_REESCRITA = 0.50
+"""Abaixo desta semelhança o conteúdo do parágrafo é trocado inteiro (del + ins)."""
+NATIVO_PENALIDADE_PARTE = 8.0
+"""Custo, em caracteres, de cada parágrafo extra numa divisão ou fusão."""
+
+_TOKEN = re.compile(r"\s+|\w+(?:[.,/\-–]\w+)*|[^\w\s]")
+_STAG = re.compile(rb"<[^\"'>]*(?:(?:\"[^\"]*\"|'[^']*')[^\"'>]*)*>")
+_ID_ATTR = re.compile(rb'w:id="(-?\d+)"')
+_PARA_IDS = re.compile(rb'\s+w14:(?:paraId|textId)="[^"]*"')
+_RUN_SIMPLES = {
+    "w:tab",
+    "w:br",
+    "w:cr",
+    "w:noBreakHyphen",
+    "w:softHyphen",
+    "w:sym",
+    "w:ptab",
+    "w:footnoteReference",
+    "w:endnoteReference",
+    "w:footnoteRef",
+    "w:endnoteRef",
+    "w:separator",
+    "w:continuationSeparator",
+}
+_MARCADORES_INICIO = {"w:bookmarkStart", "w:permStart"}
+_MARCADORES_FIM = {"w:bookmarkEnd", "w:permEnd"}
+_MARCADORES = _MARCADORES_INICIO | _MARCADORES_FIM | {
+    "w:proofErr",
+    "w:commentRangeStart",
+    "w:commentRangeEnd",
+}
+_CHAVE_NOTA = {"w:footnoteReference": "\ue000", "w:endnoteReference": "\ue001"}
+_TIPO_NOTA = {"w:footnoteReference": "footnote", "w:endnoteReference": "endnote"}
+_RELACAO = re.compile(rb"<Relationship\b([^>]*?)/?>")
+_ATRIBUTO_REL = re.compile(rb'(r:(?:id|embed|link|pict|dm|lo|qs|cs))="([^"]+)"')
+
+
+class _No:
+    __slots__ = ("tag", "start", "stag_end", "end", "children")
+
+    def __init__(self, tag: str, start: int, stag_end: int) -> None:
+        self.tag = tag
+        self.start = start
+        self.stag_end = stag_end
+        self.end = stag_end
+        self.children: list[_No] = []
+
+    def filho(self, tag: str) -> "_No | None":
+        return next((c for c in self.children if c.tag == tag), None)
+
+    def iter(self) -> Iterator["_No"]:
+        yield self
+        for c in self.children:
+            yield from c.iter()
+
+
+def _arvore(data: bytes) -> _No:
+    """Árvore de posições (bytes) dos elementos, preservando o XML original."""
+
+    parser = expat.ParserCreate()
+    raiz = _No("#doc", 0, 0)
+    raiz.end = len(data)
+    pilha = [raiz]
+
+    def inicio(nome: str, _attrs: object) -> None:
+        pos = parser.CurrentByteIndex
+        casamento = _STAG.match(data, pos)
+        if casamento is None:
+            raise RedlineError(f"XML inesperado na posição {pos}")
+        no = _No(nome, pos, casamento.end())
+        pilha[-1].children.append(no)
+        pilha.append(no)
+
+    def fim(_nome: str) -> None:
+        no = pilha.pop()
+        pos = parser.CurrentByteIndex
+        vazio = data[no.stag_end - 2 : no.stag_end] == b"/>"
+        no.end = no.stag_end if vazio else data.index(b">", pos) + 1
+
+    parser.StartElementHandler = inicio
+    parser.EndElementHandler = fim
+    parser.Parse(data, True)
+    return raiz
+
+
+def _interno(data: bytes, no: _No) -> bytes:
+    if no.end == no.stag_end:
+        return b""
+    return data[no.stag_end : data.rindex(b"<", no.stag_end, no.end)]
+
+
+def _unesc(raw: bytes) -> str:
+    return html.unescape(raw.decode("utf-8"))
+
+
+def _esc(texto: str) -> bytes:
+    return html.escape(texto, quote=False).encode("utf-8")
+
+
+def _bruto(data: bytes, no: _No | None) -> bytes:
+    return b"" if no is None else data[no.start : no.end]
+
+
+def _texto_chave(data: bytes, no: _No) -> str:
+    """Texto visível com marcadores para notas e objetos (chave de alinhamento)."""
+
+    partes: list[str] = []
+
+    def visitar(atual: _No) -> None:
+        for filho in atual.children:
+            tag = filho.tag
+            if tag in {"w:pPr", "w:rPr", "w:txbxContent", "mc:Fallback", "w:instrText", "w:sdtPr", "w:tcPr", "w:trPr", "w:tblPr", "w:tblGrid"}:
+                continue
+            if tag == "w:t" or tag == "m:t":
+                partes.append(_unesc(_interno(data, filho)))
+            elif tag == "w:tab":
+                partes.append("\t")
+            elif tag in {"w:br", "w:cr"}:
+                partes.append("\n")
+            elif tag in _CHAVE_NOTA:
+                partes.append(_CHAVE_NOTA[tag])
+            elif tag in {"w:drawing", "w:pict", "w:object"}:
+                partes.append("\ue010")
+                visitar(filho)
+            else:
+                visitar(filho)
+
+    visitar(no)
+    return "".join(partes)
+
+
+def _refs_notas(data: bytes, no: _No) -> list[tuple[str, str]]:
+    refs = []
+    for item in no.iter():
+        if item.tag in _TIPO_NOTA:
+            casamento = _ID_ATTR.search(data, item.start, item.stag_end)
+            if casamento:
+                refs.append((_TIPO_NOTA[item.tag], casamento.group(1).decode()))
+    return refs
+
+
+@dataclasses.dataclass
+class _Atomo:
+    chave: str
+    rpr: bytes
+    texto: str | None = None
+    bruto: bytes | None = None
+    nota: tuple[str, str] | None = None
+    quebra: int | None = None
+
+    @property
+    def tamanho(self) -> int:
+        return len(self.texto) if self.texto is not None else 1
+
+
+@dataclasses.dataclass
+class _Item:
+    tipo: str  # "p", "tbl" ou "outro"
+    data: bytes
+    no: _No
+    chave: str
+    atomos: list[_Atomo] | None = None
+    motivo: str | None = None
+    marcadores_inicio: bytes = b""
+    marcadores_fim: bytes = b""
+
+    @property
+    def ppr(self) -> _No | None:
+        return self.no.filho("w:pPr") if self.tipo == "p" else None
+
+    @property
+    def stag(self) -> bytes:
+        return self.data[self.no.start : self.no.stag_end]
+
+    @property
+    def bruto(self) -> bytes:
+        return _bruto(self.data, self.no)
+
+
+def _analisar_paragrafo(data: bytes, no: _No) -> _Item:
+    item = _Item("p", data, no, _texto_chave(data, no))
+    atomos: list[_Atomo] = []
+    inicio: list[bytes] = []
+    fim: list[bytes] = []
+    motivo = None
+    for filho in no.children:
+        tag = filho.tag
+        if tag == "w:pPr":
+            continue
+        if tag == "w:r":
+            rpr = _bruto(data, filho.filho("w:rPr"))
+            for parte in filho.children:
+                if parte.tag in {"w:rPr", "w:lastRenderedPageBreak"}:
+                    continue
+                if parte.tag == "w:t":
+                    for token in _TOKEN.findall(_unesc(_interno(data, parte))):
+                        atomos.append(_Atomo(token, rpr, texto=token))
+                elif parte.tag in _RUN_SIMPLES:
+                    bruto = _bruto(data, parte)
+                    if parte.tag in _CHAVE_NOTA:
+                        casamento = _ID_ATTR.search(bruto)
+                        nota = (_TIPO_NOTA[parte.tag], casamento.group(1).decode()) if casamento else None
+                        atomos.append(_Atomo(_CHAVE_NOTA[parte.tag], rpr, bruto=bruto, nota=nota))
+                    elif parte.tag == "w:tab":
+                        atomos.append(_Atomo("\t", rpr, bruto=bruto))
+                    elif parte.tag == "w:cr" or (parte.tag == "w:br" and b"w:type" not in bruto):
+                        atomos.append(_Atomo("\n", rpr, bruto=bruto))
+                    else:
+                        atomos.append(_Atomo("\x00" + bruto.decode("utf-8"), rpr, bruto=bruto))
+                else:
+                    motivo = motivo or f"run com {parte.tag}"
+        elif tag in _MARCADORES_INICIO:
+            inicio.append(_bruto(data, filho))
+        elif tag in _MARCADORES_FIM:
+            fim.append(_bruto(data, filho))
+        elif tag == "w:proofErr":
+            continue
+        else:
+            motivo = motivo or f"elemento {tag}"
+    item.motivo = motivo
+    if motivo is None:
+        item.atomos = atomos
+        item.marcadores_inicio = b"".join(inicio)
+        item.marcadores_fim = b"".join(fim)
+    return item
+
+
+def _itens(data: bytes, container: _No, pular: frozenset[str] = frozenset()) -> list[_Item]:
+    itens: list[_Item] = []
+    for filho in container.children:
+        if filho.tag in pular:
+            continue
+        if filho.tag == "w:p":
+            itens.append(_analisar_paragrafo(data, filho))
+        elif filho.tag == "w:tbl":
+            itens.append(_Item("tbl", data, filho, "\ue020" + _texto_chave(data, filho)))
+        else:
+            itens.append(_Item("outro", data, filho, "\ue021" + _bruto(data, filho).decode("utf-8")))
+    return itens
+
+
+def _sem_espaco(texto: str) -> list[str]:
+    return [token for token in _TOKEN.findall(texto) if not token.isspace()]
+
+
+def _ler_rels(conteudo: bytes | None) -> dict[str, dict[str, str]]:
+    relacoes: dict[str, dict[str, str]] = {}
+    for casamento in _RELACAO.finditer(conteudo or b""):
+        atributos = {
+            chave.decode(): html.unescape(valor.decode("utf-8"))
+            for chave, valor in re.findall(rb'([\w:]+)="([^"]*)"', casamento.group(1))
+        }
+        if "Id" in atributos:
+            relacoes[atributos["Id"]] = atributos
+    return relacoes
+
+
+def _nome_rels(parte: str) -> str:
+    pasta, nome = posixpath.split(parte)
+    return f"{pasta}/_rels/{nome}.rels"
+
+
+class _MotorNativo:
+    """Constrói o ``document.xml`` (e notas) com marcas de revisão.
+
+    ``limpa`` é o pacote de saída (cópia da limpa); relações e mídias da base
+    usadas por conteúdo excluído são acrescentadas a ele quando faltarem.
+    """
+
+    def __init__(
+        self,
+        base: dict[str, bytes],
+        limpa: dict[str, bytes],
+        autor: str,
+        data: str,
+        detectar_formatacao: bool = False,
+    ) -> None:
+        self.base = base
+        self.limpa = limpa
+        self.detectar_formatacao = detectar_formatacao
+        self._attrs_fixos = b' w:author="%s" w:date="%s"' % (
+            html.escape(autor, quote=True).encode("utf-8"),
+            data.encode("ascii"),
+        )
+        maior = 0
+        for pacote in (base, limpa):
+            for nome, conteudo in pacote.items():
+                if nome.endswith(".xml") and nome.startswith("word/"):
+                    for casamento in _ID_ATTR.finditer(conteudo):
+                        maior = max(maior, int(casamento.group(1)))
+        self._proximo_id = maior + 1
+        self._cache_semelhanca: dict[tuple[str, str], tuple[float, int]] = {}
+        self._em_nota = False
+        self._parte = "word/document.xml"
+        self._cache_rels: dict[tuple[str, str], str] = {}
+        self.avisos: list[str] = []
+        self.relatorio: dict[str, object] = {
+            "paragrafos_iguais": 0,
+            "alterados_por_palavra": 0,
+            "divisoes": 0,
+            "paragrafos_acrescidos_por_divisao": 0,
+            "fusoes": 0,
+            "paragrafos_absorvidos_por_fusao": 0,
+            "inseridos": 0,
+            "excluidos": 0,
+            "tabelas_celula_a_celula": 0,
+            "tabelas_substituidas": 0,
+            "substituidos_inteiros": [],
+            "notas": {"alteradas": 0, "inseridas": 0, "excluidas": 0},
+        }
+        self._notas: dict[str, dict[str, object]] = {}
+        for tipo in ("footnote", "endnote"):
+            self._notas[tipo] = {
+                "base": self._mapa_notas(base.get(f"word/{tipo}s.xml"), tipo),
+                "limpa": self._mapa_notas(limpa.get(f"word/{tipo}s.xml"), tipo),
+                "pares": {},  # id limpa -> id base
+                "inseridas": set(),
+                "copias": {},  # id base -> novo id
+            }
+
+    # ------------------------------------------------------------------ util
+    def _rid(self) -> bytes:
+        valor = self._proximo_id
+        self._proximo_id += 1
+        return str(valor).encode()
+
+    def _attrs(self) -> bytes:
+        return b' w:id="%s"%s' % (self._rid(), self._attrs_fixos)
+
+    def _abre(self, estado: str) -> bytes:
+        return b"<w:%s%s>" % (estado.encode(), self._attrs())
+
+    @staticmethod
+    def _fecha(estado: str) -> bytes:
+        return b"</w:%s>" % estado.encode()
+
+    def _conta(self, chave: str, quantidade: int = 1) -> None:
+        if not self._em_nota:
+            self.relatorio[chave] = int(self.relatorio[chave]) + quantidade  # type: ignore[arg-type]
+
+    def _substituido(self, item: _Item, motivo: str) -> None:
+        if not self._em_nota:
+            lista = self.relatorio["substituidos_inteiros"]
+            assert isinstance(lista, list)
+            lista.append({"trecho": item.chave.replace("\ue000", "")[:80], "motivo": motivo})
+
+    @staticmethod
+    def _mapa_notas(conteudo: bytes | None, tipo: str) -> dict[str, object]:
+        if conteudo is None:
+            return {"data": None, "raiz": None, "notas": {}}
+        arvore = _arvore(conteudo)
+        raiz = next(no for no in arvore.children)
+        notas = {}
+        for no in raiz.children:
+            if no.tag == f"w:{tipo}":
+                casamento = _ID_ATTR.search(conteudo, no.start, no.stag_end)
+                if casamento:
+                    notas[casamento.group(1).decode()] = no
+        return {"data": conteudo, "raiz": raiz, "notas": notas}
+
+    # --------------------------------------------------------------- notas
+    def _nota_par(self, tipo: str, id_base: str, id_limpa: str) -> None:
+        pares = self._notas[tipo]["pares"]
+        assert isinstance(pares, dict)
+        pares.setdefault(id_limpa, id_base)
+
+    def _nota_inserida(self, tipo: str, id_limpa: str) -> None:
+        inseridas = self._notas[tipo]["inseridas"]
+        assert isinstance(inseridas, set)
+        inseridas.add(id_limpa)
+
+    def _nota_excluida(self, tipo: str, id_base: str) -> str:
+        info = self._notas[tipo]
+        copias = info["copias"]
+        assert isinstance(copias, dict)
+        if id_base not in copias:
+            usados = [int(i) for i in info["limpa"]["notas"]] + [int(v) for v in copias.values()]  # type: ignore[index]
+            copias[id_base] = str(max(usados + [0]) + 1)
+        return copias[id_base]
+
+    def _remapear_refs(self, bruto: bytes, estado: str) -> bytes:
+        def trocar(casamento: re.Match[bytes]) -> bytes:
+            tipo = casamento.group(1).decode()
+            ident = casamento.group(3).decode()
+            if estado == "del":
+                ident = self._nota_excluida(tipo, ident)
+            elif estado == "ins":
+                self._nota_inserida(tipo, ident)
+            return b"<w:%sReference%sw:id=\"%s\"" % (casamento.group(1), casamento.group(2), ident.encode())
+
+        return re.sub(rb'<w:(footnote|endnote)Reference(\b[^>]*?)w:id="(-?\d+)"', trocar, bruto)
+
+    def _parear_refs(self, velho: _Item, novo: _Item) -> None:
+        for (tipo_a, id_a), (tipo_b, id_b) in zip(_refs_notas(velho.data, velho.no), _refs_notas(novo.data, novo.no)):
+            if tipo_a == tipo_b:
+                self._nota_par(tipo_a, id_a, id_b)
+
+    # -------------------------------------------------------- semelhança
+    def _semelhanca(self, texto_a: str, texto_b: str) -> tuple[float, int]:
+        chave = (texto_a, texto_b)
+        if chave in self._cache_semelhanca:
+            return self._cache_semelhanca[chave]
+        tokens_a, tokens_b = _sem_espaco(texto_a), _sem_espaco(texto_b)
+        total = sum(map(len, tokens_a)) + sum(map(len, tokens_b))
+        resultado = (0.0, 0)
+        if total:
+            matcher = difflib.SequenceMatcher(None, tokens_a, tokens_b, autojunk=False)
+            if matcher.real_quick_ratio() >= NATIVO_LIMIAR_PAR / 2 and matcher.quick_ratio() >= NATIVO_LIMIAR_PAR / 2:
+                casados = sum(
+                    len(token)
+                    for bloco in matcher.get_matching_blocks()
+                    for token in tokens_a[bloco.a : bloco.a + bloco.size]
+                )
+                resultado = (2 * casados / total, casados)
+        self._cache_semelhanca[chave] = resultado
+        return resultado
+
+    def _semelhanca_partes(self, unico: str, partes: list[str]) -> float | None:
+        """Pontuação de ``unico`` ≈ concatenação de ``partes`` (divisão/fusão)."""
+
+        tokens_a = _sem_espaco(unico)
+        tokens_b: list[str] = []
+        dono: list[int] = []
+        for indice, parte in enumerate(partes):
+            tokens = _sem_espaco(parte)
+            tokens_b.extend(tokens)
+            dono.extend([indice] * len(tokens))
+        total = sum(map(len, tokens_a)) + sum(map(len, tokens_b))
+        if not total or not all(_sem_espaco(parte) for parte in partes):
+            return None
+        matcher = difflib.SequenceMatcher(None, tokens_a, tokens_b, autojunk=False)
+        if matcher.quick_ratio() < NATIVO_LIMIAR_PAR:
+            return None
+        por_parte = [0] * len(partes)
+        casados = 0
+        for bloco in matcher.get_matching_blocks():
+            for deslocamento in range(bloco.size):
+                tamanho = len(tokens_b[bloco.b + deslocamento])
+                por_parte[dono[bloco.b + deslocamento]] += tamanho
+                casados += tamanho
+        if 2 * casados / total < NATIVO_LIMIAR_PAR:
+            return None
+        for indice, parte in enumerate(partes):
+            if por_parte[indice] < 0.3 * sum(map(len, _sem_espaco(parte))):
+                return None
+        return float(casados)
+
+    def _par(self, velho: _Item, novo: _Item) -> float | None:
+        if velho.tipo != novo.tipo or velho.tipo == "outro":
+            return None
+        razao, casados = self._semelhanca(velho.chave, novo.chave)
+        return float(casados) if razao >= NATIVO_LIMIAR_PAR else None
+
+    # -------------------------------------------------------- alinhamento
+    def _alinhar(self, velhos: list[_Item], novos: list[_Item]) -> list[tuple[str, list[_Item], list[_Item]]]:
+        grupos: list[tuple[str, list[_Item], list[_Item]]] = []
+        matcher = difflib.SequenceMatcher(
+            None, [item.chave for item in velhos], [item.chave for item in novos], autojunk=False
+        )
+        for op, i1, i2, j1, j2 in matcher.get_opcodes():
+            if op == "equal":
+                grupos.extend(("eq", [velhos[i]], [novos[j]]) for i, j in zip(range(i1, i2), range(j1, j2)))
+            else:
+                grupos.extend(self._alinhar_bloco(velhos[i1:i2], novos[j1:j2]))
+        return grupos
+
+    def _alinhar_bloco(self, a: list[_Item], b: list[_Item]) -> list[tuple[str, list[_Item], list[_Item]]]:
+        n, m = len(a), len(b)
+        faixa = None if n * m <= 10000 else max(40, abs(n - m) + 10)
+        melhor = [[0.0] * (m + 1) for _ in range(n + 1)]
+        escolha: list[list[tuple[str, int, int]]] = [[("", 0, 0)] * (m + 1) for _ in range(n + 1)]
+        for i in range(n, -1, -1):
+            for j in range(m, -1, -1):
+                if i == n and j == m:
+                    continue
+                candidatos: list[tuple[float, tuple[str, int, int]]] = []
+                perto = faixa is None or abs(j - (i * m / n if n else 0)) <= faixa
+                if i < n and j < m and perto:
+                    pontos = self._par(a[i], b[j])
+                    if pontos is not None:
+                        candidatos.append((pontos + melhor[i + 1][j + 1], ("mod", 1, 1)))
+                    for k in (2, 3):
+                        if j + k <= m and a[i].atomos is not None and all(x.atomos is not None for x in b[j : j + k]):
+                            pontos = self._semelhanca_partes(a[i].chave, [x.chave for x in b[j : j + k]])
+                            if pontos is not None:
+                                total = pontos - NATIVO_PENALIDADE_PARTE * (k - 1) + melhor[i + 1][j + k]
+                                candidatos.append((total, ("div", 1, k)))
+                        if i + k <= n and b[j].atomos is not None and all(x.atomos is not None for x in a[i : i + k]):
+                            pontos = self._semelhanca_partes(b[j].chave, [x.chave for x in a[i : i + k]])
+                            if pontos is not None:
+                                total = pontos - NATIVO_PENALIDADE_PARTE * (k - 1) + melhor[i + k][j + 1]
+                                candidatos.append((total, ("fus", k, 1)))
+                if i < n:
+                    candidatos.append((melhor[i + 1][j], ("del", 1, 0)))
+                if j < m:
+                    candidatos.append((melhor[i][j + 1], ("ins", 0, 1)))
+                pontos, passo = candidatos[0]
+                for candidato in candidatos[1:]:
+                    if candidato[0] > pontos + 1e-9:
+                        pontos, passo = candidato
+                melhor[i][j] = pontos
+                escolha[i][j] = passo
+        grupos: list[tuple[str, list[_Item], list[_Item]]] = []
+        i = j = 0
+        while i < n or j < m:
+            tipo, di, dj = escolha[i][j]
+            grupos.append((tipo, a[i : i + di], b[j : j + dj]))
+            i, j = i + di, j + dj
+        # Exclusões antes das inserções em cada trecho contíguo, para leitura.
+        ordenados: list[tuple[str, list[_Item], list[_Item]]] = []
+        pendentes: list[tuple[str, list[_Item], list[_Item]]] = []
+        for grupo in grupos + [("fim", [], [])]:
+            if grupo[0] in {"del", "ins"}:
+                pendentes.append(grupo)
+                continue
+            ordenados.extend(sorted(pendentes, key=lambda g: g[0] != "del"))
+            pendentes = []
+            if grupo[0] != "fim":
+                ordenados.append(grupo)
+        return ordenados
+
+    # ------------------------------------------------------------ emissão
+    def emitir_itens(self, velhos: list[_Item], novos: list[_Item]) -> bytes:
+        saida: list[bytes] = []
+        for tipo, vs, ns in self._alinhar(velhos, novos):
+            if tipo == "eq":
+                saida.append(self._igual(vs[0], ns[0]))
+            elif tipo == "del":
+                saida.append(self._excluido(vs[0]))
+            elif tipo == "ins":
+                saida.append(self._inserido(ns[0]))
+            elif tipo == "mod":
+                saida.append(self._modificado(vs[0], ns[0]))
+            else:
+                if tipo == "div":
+                    self._conta("divisoes")
+                    self._conta("paragrafos_acrescidos_por_divisao", len(ns) - 1)
+                else:
+                    self._conta("fusoes")
+                    self._conta("paragrafos_absorvidos_por_fusao", len(vs) - 1)
+                saida.append(self._grupo(vs, ns))
+        return b"".join(saida)
+
+    def _igual(self, velho: _Item, novo: _Item) -> bytes:
+        if novo.tipo == "p":
+            self._conta("paragrafos_iguais")
+            if (
+                self.detectar_formatacao
+                and velho.atomos is not None
+                and novo.atomos is not None
+                and velho.bruto != novo.bruto
+            ):
+                # Mesmo texto, formatação possivelmente diferente: o diff gera
+                # apenas w:rPrChange/w:pPrChange onde houver mudança.
+                return self._grupo([velho], [novo], contar=False)
+        self._parear_refs(velho, novo)
+        return novo.bruto
+
+    def _ppr_marcado(self, item: _Item, marca: str) -> bytes:
+        tag = b"<w:%s%s/>" % (marca.encode(), self._attrs())
+        ppr, data = item.ppr, item.data
+        if ppr is None or ppr.end == ppr.stag_end:
+            return b"<w:pPr><w:rPr>" + tag + b"</w:rPr></w:pPr>"
+        rpr = ppr.filho("w:rPr")
+        if rpr is not None:
+            if rpr.end == rpr.stag_end:
+                return data[ppr.start : rpr.start] + b"<w:rPr>" + tag + b"</w:rPr>" + data[rpr.end : ppr.end]
+            return data[ppr.start : rpr.stag_end] + tag + data[rpr.stag_end : ppr.end]
+        posicao = next(
+            (c.start for c in ppr.children if c.tag in {"w:sectPr", "w:pPrChange"}),
+            data.rindex(b"<", ppr.start, ppr.end),
+        )
+        return data[ppr.start : posicao] + b"<w:rPr>" + tag + b"</w:rPr>" + data[posicao : ppr.end]
+
+    def _ppr_mudanca(self, velho: _Item, novo: _Item) -> bytes:
+        """``pPr`` novo, com ``w:pPrChange`` se a formatação mudou (opt-in)."""
+
+        bruto_novo = _bruto(novo.data, novo.ppr)
+        if not self.detectar_formatacao:
+            return bruto_novo
+
+        def normal(item: _Item) -> bytes:
+            ppr = item.ppr
+            if ppr is None:
+                return b""
+            return b"".join(_bruto(item.data, c) for c in ppr.children if c.tag not in {"w:rPr", "w:sectPr", "w:pPrChange"})
+
+        antigo = normal(velho)
+        if antigo == normal(novo):
+            return bruto_novo
+        mudanca = b"<w:pPrChange%s><w:pPr>%s</w:pPr></w:pPrChange>" % (self._attrs(), antigo)
+        if not bruto_novo or bruto_novo.endswith(b"/>"):
+            return b"<w:pPr>" + mudanca + b"</w:pPr>"
+        return bruto_novo[: -len(b"</w:pPr>")] + mudanca + b"</w:pPr>"
+
+    @staticmethod
+    def _stag_base(item: _Item) -> bytes:
+        return _PARA_IDS.sub(b"", item.stag)
+
+    # ------------------------------------------- relações do conteúdo-base
+    def _remapear_relacoes(self, bruto: bytes) -> bytes:
+        """Conteúdo excluído vem da base: seus ``r:id``/``r:embed`` precisam
+        existir no pacote de saída (o da limpa)."""
+
+        if b"r:" not in bruto:
+            return bruto
+        return _ATRIBUTO_REL.sub(
+            lambda m: m.group(1) + b'="' + self._relacao_saida(m.group(2).decode()).encode() + b'"', bruto
+        )
+
+    def _garantir_tipo(self, caminho: str, original: str) -> None:
+        tipos = self.limpa.get("[Content_Types].xml", b"")
+        override = re.search(
+            rb'<Override\b[^>]*PartName="/%s"[^>]*ContentType="([^"]+)"' % re.escape(original.encode()),
+            self.base.get("[Content_Types].xml", b""),
+        )
+        if override:
+            if f'PartName="/{caminho}"'.encode() not in tipos:
+                tipos = tipos.replace(
+                    b"</Types>",
+                    b'<Override PartName="/%s" ContentType="%s"/></Types>' % (caminho.encode(), override.group(1)),
+                )
+        else:
+            extensao = caminho.rsplit(".", 1)[-1].lower()
+            if f'Extension="{extensao}"'.encode() not in tipos.lower():
+                tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
+                tipos = tipos.replace(
+                    b"</Types>", b'<Default Extension="%s" ContentType="%s"/></Types>' % (extensao.encode(), tipo.encode())
+                )
+        self.limpa["[Content_Types].xml"] = tipos
+
+    def _relacao_saida(self, rid: str) -> str:
+        chave = (self._parte, rid)
+        if chave in self._cache_rels:
+            return self._cache_rels[chave]
+        nome_rels = _nome_rels(self._parte)
+        relacao = _ler_rels(self.base.get(nome_rels)).get(rid)
+        if relacao is None:
+            self.avisos.append(f"relação {rid} do conteúdo-base não encontrada em {nome_rels}")
+            return rid
+        alvo = relacao.get("Target", "")
+        externo = relacao.get("TargetMode") == "External"
+        if not externo:
+            pasta = posixpath.dirname(self._parte)
+            original = alvo[1:] if alvo.startswith("/") else posixpath.normpath(posixpath.join(pasta, alvo))
+            caminho = original
+            conteudo = self.base.get(original)
+            if conteudo is not None:
+                if self.limpa.get(caminho) not in (None, conteudo):
+                    dir_alvo, nome_alvo = posixpath.split(original)
+                    caminho = posixpath.join(dir_alvo, f"nativo_base_{nome_alvo}")
+                    alvo = posixpath.relpath(caminho, pasta)
+                if caminho not in self.limpa:
+                    self.limpa[caminho] = conteudo
+                    self._garantir_tipo(caminho, original)
+        saida = _ler_rels(self.limpa.get(nome_rels))
+        for ident, existente in saida.items():
+            if (
+                existente.get("Type") == relacao.get("Type")
+                and existente.get("Target") == alvo
+                and existente.get("TargetMode") == relacao.get("TargetMode")
+            ):
+                self._cache_rels[chave] = ident
+                return ident
+        numero = 1
+        while f"rIdNativo{numero}" in saida:
+            numero += 1
+        novo = f"rIdNativo{numero}"
+        elemento = '<Relationship Id="{}" Type="{}" Target="{}"{}/>'.format(
+            novo,
+            html.escape(relacao.get("Type", ""), quote=True),
+            html.escape(alvo, quote=True),
+            ' TargetMode="External"' if externo else "",
+        ).encode("utf-8")
+        atual = self.limpa.get(nome_rels)
+        if atual is None:
+            atual = (
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+            )
+        self.limpa[nome_rels] = atual.replace(b"</Relationships>", elemento + b"</Relationships>")
+        self._cache_rels[chave] = novo
+        return novo
+
+    def _run_marcado(self, data: bytes, run: _No, estado: str) -> bytes:
+        bruto = _bruto(data, run)
+        if estado == "del" and b"<w:commentReference" in bruto:
+            return b""  # o comentário da base não existe na limpa
+        if estado == "del":
+            bruto = re.sub(rb"<w:t(?=[\s>/])", b"<w:delText", bruto)
+            bruto = bruto.replace(b"</w:t>", b"</w:delText>")
+            bruto = re.sub(rb"<w:instrText(?=[\s>/])", b"<w:delInstrText", bruto)
+            bruto = bruto.replace(b"</w:instrText>", b"</w:delInstrText>")
+        return self._remapear_refs(bruto, estado)
+
+    def _transformar(self, data: bytes, filhos: list[_No], estado: str) -> bytes:
+        """Envolve todos os runs em ``w:del``/``w:ins``, preservando contêineres."""
+
+        saida: list[bytes] = []
+        runs: list[bytes] = []
+
+        def descarregar() -> None:
+            if runs:
+                saida.append(self._abre(estado) + b"".join(runs) + self._fecha(estado))
+                runs.clear()
+
+        for filho in filhos:
+            if filho.tag in {"w:pPr", "w:rPr", "w:sdtPr", "w:sdtEndPr", "w:fldData"}:
+                descarregar()
+                saida.append(_bruto(data, filho))
+                continue
+            if filho.tag == "w:r":
+                runs.append(self._run_marcado(data, filho, estado))
+                continue
+            descarregar()
+            if filho.tag in _MARCADORES:
+                if estado == "ins":
+                    saida.append(_bruto(data, filho))
+                continue
+            if filho.tag.startswith("m:"):
+                if estado == "ins":
+                    saida.append(_bruto(data, filho))
+                self.avisos.append("fórmula (OMML) alterada não é rastreada pelo motor nativo")
+                continue
+            if filho.children:
+                miolo = self._transformar(data, filho.children, estado)
+                saida.append(
+                    data[filho.start : filho.stag_end] + miolo + data[filho.children[-1].end : filho.end]
+                )
+            else:
+                saida.append(_bruto(data, filho))
+        descarregar()
+        return b"".join(saida)
+
+    def _paragrafo_inteiro(self, item: _Item, estado: str, marcar: bool = True) -> bytes:
+        conteudo = self._transformar(item.data, [c for c in item.no.children if c.tag != "w:pPr"], estado)
+        if estado == "del":
+            conteudo = self._remapear_relacoes(conteudo)
+        stag = self._stag_base(item) if estado == "del" else item.stag
+        ppr = self._ppr_marcado(item, estado) if marcar else _bruto(item.data, item.ppr)
+        return stag + ppr + conteudo + b"</w:p>"
+
+    def _excluido(self, item: _Item) -> bytes:
+        if item.tipo == "p":
+            self._conta("excluidos")
+            return self._paragrafo_inteiro(item, "del")
+        if item.tipo == "tbl":
+            self._conta("tabelas_substituidas")
+            return self._tabela_marcada(item.data, item.no, "del")
+        if item.chave.strip("\ue021").strip():
+            self.avisos.append(f"bloco {item.no.tag} da base omitido sem marca de revisão")
+        return b""
+
+    def _inserido(self, item: _Item) -> bytes:
+        if item.tipo == "p":
+            self._conta("inseridos")
+            return self._paragrafo_inteiro(item, "ins")
+        if item.tipo == "tbl":
+            self._conta("tabelas_substituidas")
+            return self._tabela_marcada(item.data, item.no, "ins")
+        if item.chave.strip("\ue021").strip():
+            self.avisos.append(f"bloco {item.no.tag} da limpa incluído sem marca de revisão")
+        return item.bruto
+
+    def _modificado(self, velho: _Item, novo: _Item) -> bytes:
+        if velho.chave == novo.chave:
+            return self._igual(velho, novo)
+        if novo.tipo == "tbl":
+            return self._tabela(velho, novo)
+        if velho.atomos is not None and novo.atomos is not None:
+            return self._grupo([velho], [novo])
+        motivo = velho.motivo or novo.motivo or "estrutura complexa"
+        self._substituido(novo, f"estrutura complexa ({motivo})")
+        filhos_velhos = [c for c in velho.no.children if c.tag != "w:pPr"]
+        filhos_novos = [c for c in novo.no.children if c.tag != "w:pPr"]
+        return (
+            novo.stag
+            + _bruto(novo.data, novo.ppr)
+            + self._remapear_relacoes(self._transformar(velho.data, filhos_velhos, "del"))
+            + self._transformar(novo.data, filhos_novos, "ins")
+            + b"</w:p>"
+        )
+
+    # ------------------------------------------------- diff por palavra
+    def _operacoes(self, a: list[_Atomo], b: list[_Atomo]) -> tuple[list[tuple[str, int, int, int, int]], bool]:
+        matcher = difflib.SequenceMatcher(None, [x.chave for x in a], [x.chave for x in b], autojunk=False)
+        ops = matcher.get_opcodes()
+        iguais = sum(sum(x.tamanho for x in a[i1:i2] if x.quebra is None) for op, i1, i2, _, _ in ops if op == "equal")
+        total = sum(x.tamanho for x in a if x.quebra is None) + sum(x.tamanho for x in b if x.quebra is None)
+        if total and 2 * iguais / total < NATIVO_LIMIAR_REESCRITA:
+            return [("replace", 0, len(a), 0, len(b))], True
+
+        def ilha(i1: int, i2: int) -> bool:
+            atomos = a[i1:i2]
+            if any(x.texto is None for x in atomos):
+                return False
+            palavras = [x.texto for x in atomos if x.texto and x.texto.strip() and re.match(r"\w", x.texto)]
+            return len(palavras) == 0 or (len(palavras) == 1 and len(palavras[0]) <= 3)
+
+        # Absorve "ilhas" mínimas (espaço, pontuação, artigo) entre alterações:
+        # o resultado lê como uma substituição contínua, e não como retalhos.
+        limpos: list[list[object]] = []
+        for indice, (op, i1, i2, j1, j2) in enumerate(ops):
+            entre = 0 < indice < len(ops) - 1 and ops[indice - 1][0] != "equal" and ops[indice + 1][0] != "equal"
+            if op == "equal" and entre and ilha(i1, i2):
+                op = "replace"
+            if op != "equal" and limpos and limpos[-1][0] != "equal":
+                limpos[-1][0] = "replace"
+                limpos[-1][2] = i2
+                limpos[-1][4] = j2
+            else:
+                limpos.append([op, i1, i2, j1, j2])
+        return [tuple(item) for item in limpos], False  # type: ignore[misc]
+
+    def _grupo(self, velhos: list[_Item], novos: list[_Item], contar: bool = True) -> bytes:
+        """Diff por palavra de 1:1, 1:k (divisão) ou k:1 (fusão)."""
+
+        a: list[_Atomo] = []
+        for indice, item in enumerate(velhos):
+            if indice:
+                a.append(_Atomo("\x00QUEBRA", b"", quebra=indice - 1))
+            a.extend(item.atomos or [])
+        b: list[_Atomo] = []
+        for indice, item in enumerate(novos):
+            if indice:
+                b.append(_Atomo("\x00QUEBRA", b"", quebra=indice - 1))
+            b.extend(item.atomos or [])
+        ops, reescrito = self._operacoes(a, b)
+        if reescrito:
+            self._substituido(novos[0], "reescrita (semelhança abaixo de 50%): conteúdo trocado inteiro")
+        elif contar and len(velhos) == len(novos) == 1:
+            self._conta("alterados_por_palavra")
+
+        paragrafos: list[bytes] = []
+        pecas: list[tuple[str, bytes, bytes | None, str | bytes]] = []
+        inicio = novos[0].marcadores_inicio
+
+        def fechar(stag: bytes, ppr: bytes, fim: bytes = b"") -> None:
+            nonlocal inicio
+            paragrafos.append(stag + ppr + inicio + self._runs(pecas) + fim + b"</w:p>")
+            pecas.clear()
+            inicio = b""
+
+        for op, i1, i2, j1, j2 in ops:
+            if op == "equal":
+                for x, y in zip(a[i1:i2], b[j1:j2]):
+                    if x.nota and y.nota and x.nota[0] == y.nota[0]:
+                        self._nota_par(x.nota[0], x.nota[1], y.nota[1])
+                    velho_rpr = x.rpr if self.detectar_formatacao and x.rpr != y.rpr else None
+                    pecas.append(("eq", y.rpr, velho_rpr, self._peca(y, "eq")))
+                continue
+            for x in a[i1:i2]:
+                if x.quebra is not None:
+                    origem = velhos[x.quebra]
+                    fechar(self._stag_base(origem), self._ppr_marcado(origem, "del"))
+                else:
+                    pecas.append(("del", x.rpr, None, self._peca(x, "del")))
+            for y in b[j1:j2]:
+                if y.quebra is not None:
+                    parte = novos[y.quebra]
+                    fechar(parte.stag, self._ppr_marcado(parte, "ins"), parte.marcadores_fim)
+                    inicio = novos[y.quebra + 1].marcadores_inicio
+                else:
+                    pecas.append(("ins", y.rpr, None, self._peca(y, "ins")))
+        ultimo = novos[-1]
+        ppr_final = self._ppr_mudanca(velhos[0], ultimo) if len(velhos) == len(novos) == 1 else _bruto(ultimo.data, ultimo.ppr)
+        fechar(ultimo.stag, ppr_final, ultimo.marcadores_fim)
+        return b"".join(paragrafos)
+
+    def _peca(self, atomo: _Atomo, estado: str) -> str | bytes:
+        """Texto (``str``, fundido depois num só ``w:t``) ou elemento bruto."""
+
+        if atomo.texto is not None:
+            return atomo.texto
+        bruto = atomo.bruto or b""
+        if atomo.nota and estado in {"del", "ins"}:
+            bruto = self._remapear_refs(bruto, estado)
+        return bruto
+
+    def _rpr_mudanca(self, novo: bytes, velho: bytes) -> bytes:
+        interno = b""
+        if velho and not velho.endswith(b"/>"):
+            interno = velho[velho.index(b">") + 1 : velho.rindex(b"<")]
+        mudanca = b"<w:rPrChange%s><w:rPr>%s</w:rPr></w:rPrChange>" % (self._attrs(), interno)
+        if not novo or novo.endswith(b"/>"):
+            return b"<w:rPr>" + mudanca + b"</w:rPr>"
+        return novo[: novo.rindex(b"<")] + mudanca + b"</w:rPr>"
+
+    def _runs(self, pecas: list[tuple[str, bytes, bytes | None, str | bytes]]) -> bytes:
+        saida: list[bytes] = []
+        for estado, grupo in itertools.groupby(pecas, key=lambda p: p[0]):
+            runs = []
+            for (rpr, velho_rpr), subgrupo in itertools.groupby(grupo, key=lambda p: (p[1], p[2])):
+                propriedades = self._rpr_mudanca(rpr, velho_rpr) if velho_rpr is not None else rpr
+                conteudo = []
+                tag = b"w:delText" if estado == "del" else b"w:t"
+                for e_texto, pedacos in itertools.groupby((p[3] for p in subgrupo), key=lambda x: isinstance(x, str)):
+                    if e_texto:
+                        texto = _esc("".join(pedacos))  # type: ignore[arg-type]
+                        conteudo.append(b'<%s xml:space="preserve">%s</%s>' % (tag, texto, tag))
+                    else:
+                        conteudo.extend(pedacos)  # type: ignore[arg-type]
+                runs.append(b"<w:r>" + propriedades + b"".join(conteudo) + b"</w:r>")
+            corpo = b"".join(runs)
+            saida.append(corpo if estado == "eq" else self._abre(estado) + corpo + self._fecha(estado))
+        return b"".join(saida)
+
+    # ------------------------------------------------------------ tabelas
+    @staticmethod
+    def _forma(data: bytes, tabela: _No) -> list[int]:
+        return [len([c for c in linha.children if c.tag == "w:tc"]) for linha in tabela.children if linha.tag == "w:tr"]
+
+    def _tabela(self, velho: _Item, novo: _Item) -> bytes:
+        if self._forma(velho.data, velho.no) != self._forma(novo.data, novo.no):
+            self._conta("tabelas_substituidas")
+            return self._tabela_marcada(velho.data, velho.no, "del") + self._tabela_marcada(novo.data, novo.no, "ins")
+        self._conta("tabelas_celula_a_celula")
+        linhas_velhas = [c for c in velho.no.children if c.tag == "w:tr"]
+        saida = [novo.stag]
+        indice_linha = 0
+        for filho in novo.no.children:
+            if filho.tag != "w:tr":
+                saida.append(_bruto(novo.data, filho))
+                continue
+            linha_velha = linhas_velhas[indice_linha]
+            indice_linha += 1
+            celulas_velhas = [c for c in linha_velha.children if c.tag == "w:tc"]
+            saida.append(novo.data[filho.start : filho.stag_end])
+            indice_celula = 0
+            for parte in filho.children:
+                if parte.tag != "w:tc":
+                    saida.append(_bruto(novo.data, parte))
+                    continue
+                celula_velha = celulas_velhas[indice_celula]
+                indice_celula += 1
+                saida.append(novo.data[parte.start : parte.stag_end])
+                saida.append(_bruto(novo.data, parte.filho("w:tcPr")))
+                saida.append(
+                    self.emitir_itens(
+                        _itens(velho.data, celula_velha, frozenset({"w:tcPr"})),
+                        _itens(novo.data, parte, frozenset({"w:tcPr"})),
+                    )
+                )
+                saida.append(b"</w:tc>")
+            saida.append(b"</w:tr>")
+        saida.append(b"</w:tbl>")
+        return b"".join(saida)
+
+    def _tabela_marcada(self, data: bytes, tabela: _No, estado: str) -> bytes:
+        """Tabela inteira inserida/excluída: linhas com ``w:trPr/w:ins|del``."""
+
+        saida = [data[tabela.start : tabela.stag_end]]
+        for filho in tabela.children:
+            if filho.tag != "w:tr":
+                saida.append(_bruto(data, filho))
+                continue
+            marca = b"<w:%s%s/>" % (estado.encode(), self._attrs())
+            trpr = filho.filho("w:trPr")
+            linha = [data[filho.start : filho.stag_end]]
+            if trpr is None:
+                linha.append(b"<w:trPr>" + marca + b"</w:trPr>")
+            for parte in filho.children:
+                if parte is trpr:
+                    if parte.end == parte.stag_end:
+                        linha.append(b"<w:trPr>" + marca + b"</w:trPr>")
+                    else:
+                        posicao = next((c.start for c in parte.children if c.tag == "w:trPrChange"), data.rindex(b"<", parte.start, parte.end))
+                        linha.append(data[parte.start : posicao] + marca + data[posicao : parte.end])
+                elif parte.tag == "w:tc":
+                    linha.append(data[parte.start : parte.stag_end])
+                    for bloco in parte.children:
+                        if bloco.tag == "w:p":
+                            item = _analisar_paragrafo(data, bloco)
+                            linha.append(self._paragrafo_inteiro(item, estado, marcar=False))
+                        elif bloco.tag == "w:tbl":
+                            linha.append(self._tabela_marcada(data, bloco, estado))
+                        else:
+                            linha.append(_bruto(data, bloco))
+                    linha.append(b"</w:tc>")
+                else:
+                    linha.append(_bruto(data, parte))
+            linha.append(b"</w:tr>")
+            saida.extend(linha)
+        saida.append(b"</w:tbl>")
+        return b"".join(saida)
+
+    # ------------------------------------------------------------ partes
+    def documento(self) -> bytes:
+        self._parte = "word/document.xml"
+        dados_base = self.base["word/document.xml"]
+        dados_limpa = self.limpa["word/document.xml"]
+        for nome, dados in (("base", dados_base), ("limpa", dados_limpa)):
+            if f'xmlns:w="{W_NS}"'.encode() not in dados[:4000]:
+                raise RedlineError(f"motor nativo exige o prefixo w: do WordprocessingML ({nome})")
+        corpo_base = next(no for no in _arvore(dados_base).iter() if no.tag == "w:body")
+        corpo_limpa = next(no for no in _arvore(dados_limpa).iter() if no.tag == "w:body")
+        sem_secao = frozenset({"w:sectPr"})
+        miolo = self.emitir_itens(
+            _itens(dados_base, corpo_base, sem_secao),
+            _itens(dados_limpa, corpo_limpa, sem_secao),
+        )
+        secao = b"".join(_bruto(dados_limpa, c) for c in corpo_limpa.children if c.tag == "w:sectPr")
+        fim = corpo_limpa.children[-1].end if corpo_limpa.children else corpo_limpa.stag_end
+        return dados_limpa[: corpo_limpa.stag_end] + miolo + secao + dados_limpa[fim:]
+
+    def notas(self, tipo: str) -> bytes | None:
+        """Parte de notas com alterações; ``None`` se a da limpa serve como está."""
+
+        info = self._notas[tipo]
+        self._parte = f"word/{tipo}s.xml"
+        base_info, limpa_info = info["base"], info["limpa"]
+        pares, inseridas, copias = info["pares"], info["inseridas"], info["copias"]
+        assert isinstance(pares, dict) and isinstance(inseridas, set) and isinstance(copias, dict)
+        assert isinstance(base_info, dict) and isinstance(limpa_info, dict)
+        if not (pares or inseridas or copias):
+            return None
+        self._em_nota = True
+        try:
+            dados_limpa = limpa_info["data"]
+            dados_base = base_info["data"]
+            if dados_limpa is None:
+                if not copias:
+                    return None
+                raiz = base_info["raiz"]
+                partes = [dados_base[: raiz.stag_end]]
+                for no in raiz.children:
+                    if no.tag == f"w:{tipo}" and b"w:type=" in dados_base[no.start : no.stag_end]:
+                        partes.append(_bruto(dados_base, no))
+                partes.extend(self._copias_excluidas(tipo))
+                partes.append(dados_base[raiz.children[-1].end if raiz.children else raiz.stag_end :])
+                return b"".join(partes)
+            raiz = limpa_info["raiz"]
+            notas_base = base_info["notas"]
+            partes = [dados_limpa[: raiz.stag_end]]
+            posicao = raiz.stag_end
+            for no in raiz.children:
+                partes.append(dados_limpa[posicao : no.start])
+                posicao = no.end
+                casamento = _ID_ATTR.search(dados_limpa, no.start, no.stag_end)
+                ident = casamento.group(1).decode() if casamento else None
+                if ident in pares and pares[ident] in notas_base:
+                    velha = notas_base[pares[ident]]
+                    if _texto_chave(dados_base, velha) != _texto_chave(dados_limpa, no):
+                        self.relatorio["notas"]["alteradas"] += 1  # type: ignore[index]
+                        partes.append(
+                            dados_limpa[no.start : no.stag_end]
+                            + self.emitir_itens(_itens(dados_base, velha), _itens(dados_limpa, no))
+                            + b"</w:%s>" % tipo.encode()
+                        )
+                        continue
+                elif ident in inseridas:
+                    self.relatorio["notas"]["inseridas"] += 1  # type: ignore[index]
+                    miolo = b"".join(
+                        self._paragrafo_inteiro(_analisar_paragrafo(dados_limpa, c), "ins", marcar=False)
+                        if c.tag == "w:p"
+                        else _bruto(dados_limpa, c)
+                        for c in no.children
+                    )
+                    partes.append(dados_limpa[no.start : no.stag_end] + miolo + b"</w:%s>" % tipo.encode())
+                    continue
+                partes.append(_bruto(dados_limpa, no))
+            partes.extend(self._copias_excluidas(tipo))
+            partes.append(dados_limpa[posicao:])
+            return b"".join(partes)
+        finally:
+            self._em_nota = False
+
+    def _copias_excluidas(self, tipo: str) -> list[bytes]:
+        info = self._notas[tipo]
+        base_info, copias = info["base"], info["copias"]
+        assert isinstance(base_info, dict) and isinstance(copias, dict)
+        dados = base_info["data"]
+        saida = []
+        for id_base, id_novo in copias.items():
+            no = base_info["notas"].get(id_base)
+            if no is None:
+                self.avisos.append(f"nota {tipo} {id_base} da base não encontrada")
+                continue
+            self.relatorio["notas"]["excluidas"] += 1  # type: ignore[index]
+            stag = _ID_ATTR.sub(b'w:id="%s"' % id_novo.encode(), dados[no.start : no.stag_end], count=1)
+            miolo = b"".join(
+                self._paragrafo_inteiro(_analisar_paragrafo(dados, c), "del", marcar=False)
+                if c.tag == "w:p"
+                else _bruto(dados, c)
+                for c in no.children
+            )
+            saida.append(stag + miolo + b"</w:%s>" % tipo.encode())
+        return saida
+
+
+def _garantir_parte_notas(pacote: dict[str, bytes], tipo: str) -> None:
+    """Registra ``word/{tipo}s.xml`` em [Content_Types] e nas relações do documento."""
+
+    nome = f"word/{tipo}s.xml"
+    tipos = pacote["[Content_Types].xml"]
+    if f'PartName="/{nome}"'.encode() not in tipos:
+        tipos = tipos.replace(
+            b"</Types>",
+            b'<Override PartName="/%s" ContentType="application/vnd.openxmlformats-officedocument.'
+            b'wordprocessingml.%ss+xml"/></Types>' % (nome.encode(), tipo.encode()),
+        )
+        pacote["[Content_Types].xml"] = tipos
+    rels_nome = "word/_rels/document.xml.rels"
+    rels = pacote.get(rels_nome, b"")
+    if f'Target="{tipo}s.xml"'.encode() not in rels:
+        rels = rels.replace(
+            b"</Relationships>",
+            b'<Relationship Id="rIdNativo%ss" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+            b'relationships/%ss" Target="%ss.xml"/></Relationships>' % (tipo.encode(), tipo.encode(), tipo.encode()),
+        )
+        pacote[rels_nome] = rels
+
+
+def comparar_nativo(
+    base: Path,
+    limpa: Path,
+    saida: Path,
+    autor: str,
+    data: str,
+    detectar_formatacao: bool = False,
+) -> dict[str, object]:
+    """Gera ``saida`` (DOCX com marcas) a partir de ``base`` e ``limpa``.
+
+    Devolve o relatório do motor (contagens, substituições inteiras, avisos).
+    Não confere a integridade; use ``integridade_docx.conferir`` em seguida.
+    """
+
+    with zipfile.ZipFile(base) as arquivo:
+        pacote_base = {nome: arquivo.read(nome) for nome in arquivo.namelist()}
+    with zipfile.ZipFile(limpa) as arquivo:
+        infos = arquivo.infolist()
+        pacote = {info.filename: arquivo.read(info.filename) for info in infos}
+    motor = _MotorNativo(pacote_base, pacote, autor, data, detectar_formatacao)
+    pacote["word/document.xml"] = motor.documento()
+    for tipo in ("footnote", "endnote"):
+        conteudo = motor.notas(tipo)
+        if conteudo is None:
+            continue
+        nome = f"word/{tipo}s.xml"
+        if nome not in pacote:
+            _garantir_parte_notas(pacote, tipo)
+            motor.avisos.append(f"{nome} criado para abrigar notas excluídas da base")
+        pacote[nome] = conteudo
+    partes_base = {n for n in pacote_base if re.match(r"word/(header|footer)\d*\.xml$", n)}
+    for nome in sorted(partes_base | {n for n in pacote if re.match(r"word/(header|footer)\d*\.xml$", n)}):
+        if pacote_base.get(nome) != pacote.get(nome):
+            texto_base = _texto_chave(pacote_base[nome], _arvore(pacote_base[nome])) if nome in pacote_base else ""
+            texto_limpa = _texto_chave(pacote[nome], _arvore(pacote[nome])) if nome in pacote else ""
+            if texto_base != texto_limpa:
+                motor.avisos.append(f"{nome} difere entre base e limpa e não foi marcado (vale o da limpa)")
+    with zipfile.ZipFile(saida, "w", zipfile.ZIP_DEFLATED) as destino:
+        nomes = [info.filename for info in infos]
+        for nome in nomes + sorted(set(pacote) - set(nomes)):
+            destino.writestr(nome, pacote[nome], compress_type=zipfile.ZIP_DEFLATED)
+    relatorio = dict(motor.relatorio)
+    relatorio["avisos"] = sorted(set(motor.avisos))
+    return relatorio
+
+
+def normalizar_data(valor: str | None) -> str:
+    """Data das revisões em ISO 8601 UTC (``AAAA-MM-DDTHH:MM:SSZ``)."""
+
+    if not valor:
+        return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        momento = dt.datetime.fromisoformat(valor.strip().replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RedlineError("--data deve estar em ISO 8601 (AAAA-MM-DD ou AAAA-MM-DDTHH:MM:SSZ)") from exc
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=dt.timezone.utc)
+    return momento.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def resolver_motor(motor: str) -> tuple[str, list[str]]:
+    """Traduz ``auto|docxodus|nativo`` no motor efetivo, com avisos."""
+
+    if motor not in {"auto", "docxodus", "nativo"}:
+        raise RedlineError(f"motor desconhecido: {motor}")
+    if motor == "nativo":
+        return "nativo", []
+    if motor == "docxodus":
+        _require_redline_engine()
+        return "docxodus", []
+    if docxodus_disponivel():
+        return "docxodus", []
+    return "nativo", [
+        "Docxodus (python-redlines) indisponível neste ambiente; usado o motor nativo "
+        "(diff por palavra, divisões e fusões de parágrafo). Revise o comparativo no Word antes de circular."
+    ]
+
+
+def _integridade():
+    try:
+        import integridade_docx  # type: ignore[import-not-found]
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import integridade_docx  # type: ignore[import-not-found,no-redef]
+    return integridade_docx
+
+
+def _generate_native(
+    *,
+    base: Path,
+    current: Path,
+    output: Path,
+    author: str,
+    comparison: str,
+    date: str,
+    manifest_path: Path | None,
+    detect_format_changes: bool,
+    force: bool,
+    motor: str,
+    avisos: list[str],
+    divididos: int | None,
+    fundidos: int | None,
+) -> dict[str, object]:
+    base = validate_clean_input(base, "versão-base")
+    current = validate_clean_input(current, "versão corrente")
+    output = output.expanduser().resolve()
+    if output in {base, current}:
+        raise RedlineError("o redline não pode sobrescrever a base nem o canônico limpo")
+    if output.exists() and not force:
+        raise RedlineError(f"saída já existe; use --force para substituir: {output}")
+    if not author.strip():
+        raise RedlineError("autor do redline não pode ser vazio")
+    integridade = _integridade()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="word-redline-nativo-") as temp_dir_name:
+        redline_temp = Path(temp_dir_name) / "comparison.docx"
+        relatorio = comparar_nativo(base, current, redline_temp, author.strip(), date, detect_format_changes)
+        ensure_docx_valid(redline_temp)
+        resultado = integridade.conferir(base, current, redline_temp, divididos, fundidos)
+        if not resultado["ok"]:
+            raise RedlineError(
+                "a conferência de integridade do redline nativo falhou:\n" + integridade.formatar(resultado)
+            )
+        _atomic_copy(redline_temp, output, force=force)
+
+    avisos = avisos + list(relatorio.pop("avisos", []))  # type: ignore[arg-type]
+    avisos += [f"integridade: {aviso}" for aviso in resultado.get("avisos", [])]  # type: ignore[union-attr]
+    for aviso in avisos:
+        print(f"aviso: {aviso}", file=sys.stderr)
+    payload: dict[str, object] = {
+        "contract": "legal_word_redline_v1",
+        "generated_at": utc_now(),
+        "comparison": comparison,
+        "author": author.strip(),
+        "revision_date": date,
+        "engine": {
+            "name": "nativo_diff_por_palavra",
+            "requested": motor,
+            "native_word_track_changes": True,
+            "local_offline_processing": True,
+            "detect_format_changes": detect_format_changes,
+        },
+        "base": _file_record(base, "base_imutavel"),
+        "canonical_clean": _file_record(current, "canonico_limpo"),
+        "redline": {
+            **_file_record(output, "derivado_nao_canonico"),
+            "revision_count": count_revisions(output),
+        },
+        "verification": {
+            "accept_all_matches_current": True,
+            "reject_all_matches_base": True,
+            "scope": "texto_visivel_corpo_tabelas_notas_referenciadas",
+            "integridade": {
+                "ok": resultado["ok"],
+                "contagens": resultado["contagens"],
+                "verificacoes": [
+                    {"nome": item["nome"], "ok": item["ok"]} for item in resultado["verificacoes"]  # type: ignore[union-attr]
+                ],
+            },
+        },
+        "relatorio": relatorio,
+        "avisos": avisos,
+        "governance": {
+            "approval_attaches_to": "canonical_clean.sha256",
+            "redline_is_canonical": False,
+            "manual_resolution_creates_new_version": True,
+        },
+    }
+    if manifest_path is not None:
+        _write_json(manifest_path.expanduser().resolve(), payload, force=force)
+    return payload
+
+
 def generate_comparison(
+    *,
+    base: Path,
+    current: Path,
+    output: Path,
+    author: str,
+    comparison: str,
+    manifest_path: Path | None = None,
+    detect_format_changes: bool = False,
+    force: bool = False,
+    motor: str = "auto",
+    date: str | None = None,
+    divididos: int | None = None,
+    fundidos: int | None = None,
+) -> dict[str, object]:
+    """Gera o redline ``base`` → ``current`` com o motor escolhido."""
+
+    efetivo, avisos = resolver_motor(motor)
+    if efetivo == "nativo":
+        return _generate_native(
+            base=base,
+            current=current,
+            output=output,
+            author=author,
+            comparison=comparison,
+            date=normalizar_data(date),
+            manifest_path=manifest_path,
+            detect_format_changes=detect_format_changes,
+            force=force,
+            motor=motor,
+            avisos=avisos,
+            divididos=divididos,
+            fundidos=fundidos,
+        )
+    payload = _generate_docxodus(
+        base=base,
+        current=current,
+        output=output,
+        author=author,
+        comparison=comparison,
+        manifest_path=None,
+        detect_format_changes=detect_format_changes,
+        force=force,
+    )
+    payload["avisos"] = list(avisos)
+    if date:
+        payload["avisos"].append("--data é ignorada pelo Docxodus (o comparador grava a própria data)")  # type: ignore[union-attr]
+    # Conferência adicional apenas informativa: o gate do Docxodus continua
+    # sendo a verificação bidirecional por hash textual acima.
+    try:
+        resultado = _integridade().conferir(base, current, output, divididos, fundidos)
+        payload["integridade_informativa"] = {"ok": resultado["ok"], "contagens": resultado["contagens"]}
+        if not resultado["ok"]:
+            payload["avisos"].append("integridade_docx apontou divergência (informativo no Docxodus)")  # type: ignore[union-attr]
+    except Exception as exc:  # pragma: no cover - diagnóstico apenas
+        payload["integridade_informativa"] = {"erro": str(exc)}
+    if manifest_path is not None:
+        _write_json(manifest_path.expanduser().resolve(), payload, force=force)
+    return payload
+
+
+def _generate_docxodus(
     *,
     base: Path,
     current: Path,
@@ -573,6 +1986,8 @@ def finalize_outputs(
     base_policy: str = "first",
     detect_format_changes: bool = False,
     force: bool = False,
+    motor: str = "auto",
+    date: str | None = None,
 ) -> dict[str, object]:
     names = final_output_names(stem)
     out_dir = out_dir.expanduser().resolve()
@@ -602,6 +2017,8 @@ def finalize_outputs(
         comparison=f"cumulative:{base_policy}->final",
         detect_format_changes=detect_format_changes,
         force=force,
+        motor=motor,
+        date=date,
     )
     incremental: dict[str, object] | None = None
     if previous is not None:
@@ -613,6 +2030,8 @@ def finalize_outputs(
             comparison="incremental:previous->final",
             detect_format_changes=detect_format_changes,
             force=force,
+            motor=motor,
+            date=date,
         )
 
     payload: dict[str, object] = {
@@ -626,6 +2045,10 @@ def finalize_outputs(
             "cumulative": cumulative["verification"],
             "incremental": incremental["verification"] if incremental else None,
         },
+        "engine": cumulative.get("engine"),
+        "avisos": sorted(
+            set(cumulative.get("avisos", [])) | set(incremental.get("avisos", []) if incremental else [])  # type: ignore[arg-type]
+        ),
         "governance": {
             "consensus_and_audit_hash": sha256_file(clean_output),
             "redlines_are_derivatives": True,
@@ -652,6 +2075,21 @@ def finalize_outputs(
                 f"- Revisões incrementais: `{incremental['redline']['revision_count']}`",
             ]
         )
+    report_lines.append(f"- Motor: `{cumulative['engine']['name']}` (solicitado: `{motor}`)")  # type: ignore[index]
+    for aviso in payload["avisos"]:  # type: ignore[union-attr]
+        report_lines.append(f"- Aviso: {aviso}")
+    for rotulo, resultado in (("acumulado", cumulative), ("incremental", incremental)):
+        relatorio = resultado.get("relatorio") if resultado else None
+        if not relatorio:
+            continue
+        report_lines.append(
+            f"- Motor nativo ({rotulo}): {relatorio['alterados_por_palavra']} parágrafo(s) com diff por palavra, "
+            f"{relatorio['divisoes']} divisão(ões), {relatorio['fusoes']} fusão(ões), "
+            f"{relatorio['inseridos']} inserido(s), {relatorio['excluidos']} excluído(s), "
+            f"{len(relatorio['substituidos_inteiros'])} substituído(s) inteiro(s)"
+        )
+        for item in relatorio["substituidos_inteiros"]:
+            report_lines.append(f"  - substituído inteiro ({item['motivo']}): «{item['trecho']}»")
     report_lines.extend(
         [
             "",
@@ -692,25 +2130,53 @@ def inject_revision_marker_for_test(path: Path | str) -> None:
             target.writestr(info, document_bytes if info.filename == "word/document.xml" else data)
 
 
+def _add_motor_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--motor",
+        choices=("auto", "docxodus", "nativo"),
+        default="auto",
+        help="auto (padrão): Docxodus se disponível, senão nativo (com aviso); "
+        "nativo: diff por palavra embutido, com divisões/fusões e conferência de integridade",
+    )
+    parser.add_argument(
+        "--data",
+        help="data das revisões em ISO 8601 (ex.: 2026-11-04T21:00:00Z); padrão: agora (UTC); "
+        "ignorada pelo Docxodus",
+    )
+    parser.add_argument(
+        "--author",
+        "--autor",
+        dest="author",
+        default="Redator responsável",
+        help="autor gravado nas marcas de revisão",
+    )
+    parser.add_argument("--detect-format-changes", action="store_true", help="marca também mudanças de formatação")
+    parser.add_argument("--force", action="store_true")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    doctor = sub.add_parser("doctor", help="verifica Microsoft Word e osascript")
+    doctor = sub.add_parser("doctor", help="verifica Docxodus, Microsoft Word e osascript")
     doctor.add_argument("--deep", action="store_true")
 
     inspect = sub.add_parser("inspect", help="inspeciona hash textual e revisões")
     inspect.add_argument("docx")
 
-    compare = sub.add_parser("compare", help="gera um redline nativo entre dois DOCX limpos")
-    compare.add_argument("--base", required=True)
-    compare.add_argument("--current", required=True)
-    compare.add_argument("--out", required=True)
+    compare = sub.add_parser(
+        "compare",
+        help="gera um redline nativo entre dois DOCX limpos",
+        description="Compara a versão aprovada (--base, obrigatória e explícita) com a limpa corrente.",
+    )
+    compare.add_argument("--base", required=True, help="versão aprovada indicada pelo usuário (base do redline)")
+    compare.add_argument("--current", "--limpa", dest="current", required=True, help="versão limpa corrente")
+    compare.add_argument("--out", "--saida", dest="out", required=True, help="DOCX com alterações controladas")
     compare.add_argument("--manifest")
-    compare.add_argument("--author", default="Redator responsável")
     compare.add_argument("--comparison", default="incremental")
-    compare.add_argument("--detect-format-changes", action="store_true")
-    compare.add_argument("--force", action="store_true")
+    compare.add_argument("--divididos", type=int, help="parágrafos acrescidos por divisão (confere a contagem)")
+    compare.add_argument("--fundidos", type=int, help="parágrafos absorvidos por fusão (confere a contagem)")
+    _add_motor_args(compare)
 
     finalize = sub.add_parser("finalize", help="publica minuta limpa e redlines finais")
     finalize.add_argument("--first", required=True)
@@ -720,9 +2186,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize.add_argument("--base-policy", choices=("first", "original"), default="first")
     finalize.add_argument("--out-dir", required=True)
     finalize.add_argument("--stem", default="minuta")
-    finalize.add_argument("--author", default="Redator responsável")
-    finalize.add_argument("--detect-format-changes", action="store_true")
-    finalize.add_argument("--force", action="store_true")
+    _add_motor_args(finalize)
     return parser
 
 
@@ -760,6 +2224,10 @@ def main(argv: list[str] | None = None) -> int:
                 comparison=args.comparison,
                 detect_format_changes=args.detect_format_changes,
                 force=args.force,
+                motor=args.motor,
+                date=args.data,
+                divididos=args.divididos,
+                fundidos=args.fundidos,
             )
             print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
@@ -774,10 +2242,12 @@ def main(argv: list[str] | None = None) -> int:
             author=args.author,
             detect_format_changes=args.detect_format_changes,
             force=args.force,
+            motor=args.motor,
+            date=args.data,
         )
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (RedlineError, subprocess.TimeoutExpired) as exc:
+    except (RedlineError, subprocess.TimeoutExpired, _integridade().IntegridadeErro) as exc:
         print(f"erro: {exc}", file=sys.stderr)
         return 2
 

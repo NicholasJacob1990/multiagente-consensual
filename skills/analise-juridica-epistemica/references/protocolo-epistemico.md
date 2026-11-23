@@ -44,6 +44,7 @@ Usar uma linha por proposição material:
 - id: E-001
   proposicao: ""
   classe: fato_comprovado | alegacao | fonte_juridica_verificada | fonte_persuasiva | inferencia | premissa | controversia | desconhecido | objetivo
+  origem: consulente | parte | terceiro | fonte_primaria | modelo
   suporte:
     - fonte_id: ""
       localizacao: ""
@@ -57,6 +58,8 @@ Usar uma linha por proposição material:
   responsavel_por_esclarecer: ""
   observacao: ""
 ```
+
+O campo `origem` indica de onde vem a proposição. Proposição de origem diversa de `fonte_primaria` (consulente, parte, terceiro ou modelo) só passa a `fato_comprovado` quando o `suporte` aponta fonte primária e sua localização.
 
 Não preencher campos com aparência de precisão quando a informação não existir. Em resposta conversacional, mostrar somente as linhas materiais e converter a matriz em prosa ou tabela legível.
 
@@ -96,6 +99,8 @@ Aplicar os testes pertinentes:
 - dependência de ato futuro, terceiro ou prova ainda não obtida;
 - custo de reversão caso a recomendação esteja errada;
 - resultado se a premissa central for rejeitada;
+- para cada indício de comportamento (cobrança, pagamento, inércia), a explicação alternativa compatível com ele (por exemplo, titularidade própria ou mera administração por força de lei), mantida como ramo até que a fonte a exclua, com a ressalva que a enuncia registrada no mapa argumentativo como `rebuttal` obrigatório, para que o `persuasion-gate` bloqueie sua remoção nas reescritas;
+- linha do tempo até a data de corte, em busca de conduta posterior silente ou contrária ao indício, sem tratar o silêncio posterior como renúncia, extinção ou reconhecimento na falta de regra que lhe dê esse efeito;
 - informação que refutaria a conclusão.
 
 Uma tese sobrevive melhor quando mantém utilidade mesmo após a rejeição de sua premissa mais frágil. Não multiplicar teses ou pedidos como substituto de robustez.

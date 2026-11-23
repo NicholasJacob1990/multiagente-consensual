@@ -140,6 +140,8 @@ Runs comuns preservam seus limites confirmados. Quando o usuário pedir trabalho
 - Não reutilizar saída ou aprovação de outro hash.
 - Não permitir que juiz, votação ou roteador dispensem auditoria solicitada.
 
+**Prazo por agente e status.** Ao lançar painel, verificadores ou qualquer fan-out, informe ao usuário o prazo esperado de cada etapa. Se um agente não retornar no dobro do prazo, avise, mostre o que já retornou e ofereça retomar, substituir (só com autorização) ou cancelar. Nunca deixe uma etapa "pendente" sem prazo nem relate como concluída etapa que não retornou. Grave o resultado de cada fase antes da seguinte (checkpoint em pasta persistente do projeto, não em diretório temporário) para retomar após reinício do ambiente.
+
 Parar por sucesso, limite, cancelamento, dependência impossível, falta de quórum, ciclo inválido, ausência de progresso ou expansão não autorizada.
 
 ## Entregar

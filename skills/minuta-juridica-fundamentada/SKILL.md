@@ -7,10 +7,15 @@ description: "Produzir e reescrever minutas completas de parecer jurídico, peti
 
 Entregar o texto integral da minuta solicitada, adequado ao destinatário e ao efeito pretendido. Um roteiro, lista de teses, pesquisa ou relatório de auditoria não substitui a minuta. A redação direta é o padrão; a invocação desta skill não inicia chamadas a outros agentes.
 
+## Modo de execução: pergunte sempre
+
+Antes de redigir ou reescrever, pergunte, numa só pergunta, o **estilo** (executivo ou clássico, pelo destinatário; `../redacao-juridica-consensual/references/estilos-de-redacao.md`) e se o trabalho será **conciso** (redação direta, verificação só determinística, nota curta) ou **profundo** (redação por seção com revisor de fidelidade e verificadores com contraprova, por composição com a Redação Jurídica Consensual), com recomendação e custo estimado; dispense só se o pedido já declarar o modo. Regras, invariantes, caixa de ferramentas e escalonamento: `../redacao-juridica-consensual/references/modos-de-execucao.md`.
+
 ## Definir o produto com o contexto disponível
 
 Reaproveitar documentos, escolhas e autorizações da conversa. Identificar objeto, destinatário, posição representada, resultado pretendido, jurisdição, fase e formato. Havendo modelo ou minuta, respeitar sua função e suas convenções úteis. Não presumir que o nome `final` identifica a versão vigente.
 - **Parecer, nota ou orientação consultiva:** ler [parecer](references/parecer.md). Responder às questões e oferecer conclusão operacional, com premissas e condições. Em parecer da GENES/DIJUR (Codemge e Codemig), ou quando o usuário pedir "o estilo do rascunho", aplicar também o [perfil GENES](references/perfil-parecer-genes.md): prosa contínua com parágrafos numerados em sequência, sem informações soltas, até 15 páginas, fecho "sob censura" e auditoria final só com o Gemini 4 Argon quando pedida.
+- **Minuta normativa ou redação sugerida para norma** (regulamento, edital, estatuto, política, cláusula articulada): ler [técnica legislativa](references/tecnica-legislativa.md) antes de redigir o dispositivo. Pedido só de melhoria de redação de documento pronto, sem mudança de conteúdo, segue o modo de revisão de redação da Redação Jurídica Consensual (`references/revisao-redacional.md` daquela skill).
 - **Petição ou recurso de parte:** ler [petição](references/peticao.md). Definir instrumento e construir ligação entre fatos, fundamentos, provas e pedidos.
 - **Consenso ou trabalho multiagente solicitado:** ler [composição](references/composicao.md) e usar o contrato da Redação Jurídica Consensual disponível. O pedido de dois documentos, por si só, não exige vários agentes.
 - **Somente auditoria:** encaminhar à skill correspondente, se disponível. Minuta de decisão, sentença ou voto demanda a estrutura imparcial própria, disponível na Redação Jurídica Consensual; não adaptar automaticamente a defesa de uma parte.
@@ -37,6 +42,8 @@ Usar paráfrase fiel por padrão. Reservar transcrição literal a passagens con
 
 ## Redigir e incorporar a revisão
 
+Antes de entregar petição ou parecer, medir e costurar: `../redacao-juridica-consensual/scripts/medir_densidade.py` (frases e volume; pedido de texto mais enxuto se cumpre cortando conteúdo) e `../redacao-juridica-consensual/scripts/conferir_orfaos.py` (julgado citado sem referência, instrução editorial esquecida, referência sem citação), conforme a seção "Densidade e pontas soltas" do perfil forense.
+
 Adotar como preferência de redação o perfil [forense clássico e analítico](references/estilo-forense.md): registro culto e formal, argumentação desenvolvida por teses, referências documentais precisas e tom firme, com adjetivação calibrada. Ler o perfil antes de redigir ou reescrever; aplicar sua adaptação consultiva aos pareceres. Instrução específica do usuário ou modelo expressamente escolhido para a tarefa prevalece. Em composição multiagente, levar o perfil ao briefing de redação e revisão, sem mudar o motor, a rubrica ou seus gates.
 
 Organizar a exposição para o leitor compreender o problema e decidir. Cada seção deve cumprir função: demonstrar fato, estabelecer regra, aplicá-la, enfrentar objeção ou justificar providência. Desenvolver o raciocínio; não preencher o corpo com instruções como “inserir jurisprudência” quando a análise já puder ser feita.
@@ -52,7 +59,14 @@ Antes de entregar, fazer revisão substantiva e incorporar as correções cabív
 3. se a melhor objeção foi enfrentada e a conclusão depende de premissa frágil;
 4. se as questões foram respondidas ou os pedidos são congruentes, compatíveis e executáveis;
 5. se a tese ficou dependente de evento futuro, diligência ou documento que não precisaria;
-6. se a revisão preservou conteúdo necessário, remissões, notas e integridade documental.
+6. se a revisão preservou conteúdo necessário, remissões, notas e integridade documental (`inventario_fatos.py`, `verificar_remissoes.py conferir` e, em DOCX, `integridade_docx.py`);
+7. se a peça anexa (requerimento, ofício, minuta de contrato) é coerente com a conclusão do parecer: não pede o que ela desaconselha e pede o que ela manda pedir;
+8. se reaparece afirmação já refutada no caso (`checar_refutadas.py` com o registro da pasta do caso), inclusive em texto colado pelo usuário ou vindo de outro modelo;
+9. em peça dirigida a terceiro, se há referência a documento interno sem sentido para o destinatário e se cada dado cadastral tem origem identificada;
+10. se o que se atribui à consulente está na peça dela, com os termos dela, e se os quesitos foram reproduzidos sem acréscimo nem omissão de alternativa (`conferir_atribuicao.py`);
+11. se alguma sugestão aplicada reabre decisão já tomada pelo usuário (`checar_decisoes.py` com o `decisoes.json` do caso).
+
+Em parecer a gestor, o relatório segue ordem narrativa (quem consulta → objeto → fato que gerou a dúvida → quesitos enumerados → pedidos → natureza e data de corte → base documental → premissa), com siglas por extenso na primeira ocorrência, glosa do termo técnico decisivo na primeira vez em que aparece no corpo e remissões rotuladas na conclusão ("na resposta objetiva (parágrafo 1)"). Detalhes: `legal-br:parecer`, Etapa 6, e o perfil GENES.
 
 O produto principal continua sendo a minuta corrigida. Evitar auditoria avulsa que apenas devolva problemas solucionáveis já abrangidos pelo pedido de produção. Reexaminar os pontos afetados por correções materiais; não inventar contador, pontuação, aprovação ou ciclo interminável. Distinguir revisão pelo próprio redator de avaliação independente ou consenso realmente executados.
 

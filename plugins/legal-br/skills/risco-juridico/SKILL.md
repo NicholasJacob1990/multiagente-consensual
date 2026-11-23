@@ -358,3 +358,4 @@ Contratar advogado externo quando:
 - Para riscos trabalhistas, verificar sumulas do TST aplicaveis
 - Para riscos regulatorios, considerar o historico de atuacao do orgao regulador (ANPD, CADE, etc.)
 - Atualizar a avaliacao sempre que houver mudanca material nas circunstancias, legislacao ou jurisprudencia
+- Quando a probabilidade depender de fato nao provado, pontuar por hipotese (quadro de hipoteses do /parecer, Etapa 6), sem score unico

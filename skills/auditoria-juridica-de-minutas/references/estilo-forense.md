@@ -27,7 +27,7 @@ Tratar repetições por sua função. Preservar a retomada de uma tese quando el
 
 **Petição e recurso:** exposição de parte, formal, analítica e firme; reconstrução dos fatos relevantes, confronto específico dos fundamentos adversos e pedidos articulados. Respeito institucional e crítica incisiva podem coexistir. A linguagem deve permitir localizar o erro alegado e compreender o resultado solicitado.
 
-**Parecer e nota consultiva:** conservar o registro culto, a profundidade e o encadeamento demonstrativo, com voz ponderada e orientada à decisão. Desenvolver alternativas, limites e providências; evitar importar a combatividade própria da impugnação de uma sentença para uma consulta.
+**Parecer e nota consultiva:** conservar o registro culto, a profundidade e o encadeamento demonstrativo, com voz ponderada e orientada à decisão. Desenvolver alternativas, limites e providências; evitar importar a combatividade própria da impugnação de uma sentença para uma consulta. Em parecer dirigido a área técnica ou a gestor, a profundidade não dispensa legibilidade: frase-tópico em cada parágrafo, parágrafos de tamanho alternado conforme a função, termo técnico explicado no primeiro uso decisivo e conclusão que diga, em linguagem direta, o que fazer, em que ordem e sob que premissas.
 
 **Auditoria:** avaliar a fidelidade ao perfil e o efeito de cada escolha sobre compreensão, precisão e persuasão. Distinguir preferência editorial, inadequação de tom, imprecisão vocabular e afirmação sem suporte; a última ultrapassa o estilo e exige avaliação substantiva. Relatar achados com linguagem direta e precisa. Corrigir a minuta somente no escopo autorizado.
 

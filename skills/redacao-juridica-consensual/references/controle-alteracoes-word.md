@@ -46,7 +46,8 @@ controle_alteracoes_word:
   autor_revisoes: consolidador_responsavel
   canonico: limpo
   versoes_maximas_por_artefato: 20
-  indisponibilidade: pausar      # nunca simular controle nativo
+  motor: auto                    # auto | docxodus | nativo (nativo grava w:ins/w:del reais)
+  indisponibilidade: pausar      # só se nenhum motor rodar; nunca simular controle nativo
 ```
 
 - `primeira`: compara a primeira minuta criada no run com a final aprovada.
@@ -89,8 +90,16 @@ incorporados e alterações estruturais incomuns exigem inspeção visual no Wor
   após uma nova configuração explícita, sem reutilizar aprovações anteriores.
 - Se não houver aprovação, use `minuta-melhor-versao-nao-aprovada.docx` e não a
   denomine `final`, `aprovada` ou `consensual`.
-- Se o runtime estiver indisponível, pause e explique. Não produza destaque,
-  cor, tachado ou comentário fingindo ser alteração controlada nativa.
+- Se o runtime Docxodus estiver indisponível, use o motor nativo do próprio
+  script (`--motor nativo`, ou `auto`, que escolhe sozinho e registra a escolha):
+  grava `w:ins`/`w:del` reais, por palavra quando há correspondência entre
+  parágrafos, marca divisão e fusão de parágrafo como tais e substitui o
+  parágrafo inteiro só quando a estrutura de runs não permitir diff seguro (o
+  relatório lista esses casos). Em ambos os motores, feche com
+  `integridade_docx.py`. Não produza destaque, cor, tachado ou comentário
+  fingindo ser alteração controlada nativa.
+- **Base do comparativo:** a última versão aprovada pelo usuário (`--base`), e
+  não a primeira minuta, salvo pedido expresso de comparativo acumulado.
 
 ## Comandos do utilitário
 
@@ -105,8 +114,19 @@ python3 scripts/word_redline.py compare \
   --base minuta-v01-limpa.docx \
   --current minuta-v02-limpa.docx \
   --out minuta-v02-alteracoes-v01-v02.docx \
-  --author "Redator Claude"
+  --author "Redator Claude" \
+  --motor auto --data 2026-11-04T21:00:00Z   # opcionais; --divididos/--fundidos N para a conferência
 ```
+
+```bash
+python3 scripts/integridade_docx.py --base APROVADA.docx --limpa NOVA.docx \
+  --redline NOVA-alteracoes.docx [--divididos N] [--fundidos N] [--json saida.json]
+```
+
+O `compare` chama a integridade ao final e não grava a saída se ela falhar. O
+validador genérico de DOCX confere só o lado "rejeitar": aprova um redline que
+marque como excluídas referências que a limpa mantém. Por isso, a integridade é
+obrigatória.
 
 ```bash
 python3 scripts/word_redline.py finalize \
@@ -133,3 +153,16 @@ aprovada. A aprovação deve aderir ao hash da limpa. Se eu aceitar, rejeitar ou
 editar alterações manualmente, trate o resultado como nova versão e repita os
 gates.
 ```
+
+## Base com marcas pendentes e comparativo desde o original
+
+Quando o arquivo recebido já traz alterações controladas de outra pessoa, "o original" tem dois sentidos, e o comparativo "com todas as alterações" depende de qual se adota:
+
+| Base | Como obter | O comparativo mostra |
+|---|---|---|
+| Texto anterior às marcas | `resolver_revisoes.py RECEBIDO.docx BASE.docx --modo rejeitar` | a revisão de quem enviou e as revisões posteriores |
+| Texto como foi enviado | `resolver_revisoes.py RECEBIDO.docx BASE.docx --modo aceitar` | só as revisões posteriores |
+
+Na dúvida, entregue os dois, com nome que diga a base. O `resolver_revisoes.py` preserva o prefixo `w:` do XML (o motor nativo recusa base reserializada) e confere o texto resultante contra a leitura lógica de `integridade_docx.py`. No comparativo regenerado, todas as marcas saem com um autor só: avise que a autoria original das marcas não é preservada.
+
+Para o comparativo acumulado de várias versões, compare a base escolhida com a limpa mais recente: `word_redline.py compare --base BASE.docx --current vN.docx --motor nativo`. Use `--force` ao regerar para o mesmo nome; o manifesto antigo também é substituído.

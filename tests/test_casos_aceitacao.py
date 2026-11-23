@@ -212,7 +212,7 @@ def test_caso_08_reescrita_que_perde_a_ressalva(tmp_path: Path) -> None:
 def test_caso_09_estimativa_vira_teto(tmp_path: Path) -> None:
     achados = _pre(tmp_path, PARECER, PARECER.replace("pode levar cerca de dez dias úteis", "leva até dez dias úteis"))
     msg = next(a["mensagem"] for a in achados if a["regra"] == "alcance")
-    assert "«até» acrescentado" in msg and "«pode» retirado" in msg and "«cerca de» retirado" in msg
+    assert "«até» acrescentado" in msg and "«pode/podem/poderá/poderão» retirado" in msg and "«cerca de» retirado" in msg
 
 
 def test_caso_08b_frase_que_evaporou(tmp_path: Path) -> None:

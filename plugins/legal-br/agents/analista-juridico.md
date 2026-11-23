@@ -1,7 +1,15 @@
 ---
 name: analista-juridico
 description: Agente especializado em analise juridica brasileira. Usa MCPs de tribunais, legislacao e dados publicos para pesquisar, analisar e gerar documentos juridicos.
-tools: [Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch]
+tools:
+- Read
+- Write
+- Edit
+- Bash
+- Glob
+- Grep
+- WebFetch
+- WebSearch
 ---
 
 # Agente Analista Juridico

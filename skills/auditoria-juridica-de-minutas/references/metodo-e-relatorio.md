@@ -26,6 +26,8 @@ Registrar fatos cronológicos separadamente. Publicações próximas podem ter o
 
 Calibração não é enfraquecimento automático: usar “corrobora” quando a fonte só oferece suporte parcial; manter afirmação forte quando a prova a sustenta. Para “não há nos autos”, delimitar quais peças e período foram examinados.
 
+Toda página citada é conferida extraindo-se a própria página, no sistema de numeração declarado (página do PDF, fls. impressa ou ID SEI). Intervalo (pp. X–Y) só quando todas as páginas sustentam a afirmação; nos demais casos, enumerar uma a uma as páginas que a sustentam.
+
 ## Fontes e aplicabilidade
 
 | Proposição | Fonte e identificação | Verificação | Vigência/data de corte | Regra extraída | Aplicação/distinção | Uso admissível |
@@ -119,9 +121,13 @@ Ficha mínima:
   "evidencia": "fonte e trecho efetivamente examinados",
   "impacto": "efeito na conclusão ou providência",
   "proposta": "correção dentro do escopo",
+  "afirmacao_nova": true,
+  "fonte_da_proposta": "localizador da fonte que sustenta a correção",
   "condicao_resolucao": "o que precisa ser verificado",
   "estado": "aberta"
 }
 ```
+
+`afirmacao_nova` indica se a proposta afirma algo que a minuta não afirmava (`true` ou `false`); quando `true`, `fonte_da_proposta` traz o localizador conferido. Afirmação nova sem fonte conferida não entra como correção: a proposta é reformulada de modo condicionado ou a afirmação é registrada em ficha própria com `classe_achado: lacuna_de_verificacao`, sem rebaixar o achado original já confirmado.
 
 No loop, anexar ao ledger existente conforme seu schema e usar `base_sha256` da versão criticada para patches. Fora dele, a ficha é evidência da auditoria, não aprovação canônica. Nunca escrever valor ilustrativo como se fosse hash real.
