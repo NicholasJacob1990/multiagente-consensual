@@ -7,7 +7,7 @@ Usar `roteamento_adaptativo_v1` para escolher ou trocar modelos por métricas ob
 ```json
 {
   "pool": [
-    {"id": "claude-opus", "cli": "claude", "modelo": "claude-opus-5", "familia": "anthropic/claude"},
+    {"id": "claude-opus", "cli": "claude", "modelo": "claude-opus-5-5", "familia": "anthropic/claude"},
     {"id": "gpt-codex", "modelo": "opencode/gpt-5.3-codex", "familia": "openai/gpt"},
     {"id": "gemini", "modelo": "gemini-3.8-flash-high", "familia": "google/gemini"}
   ],

@@ -37,11 +37,11 @@ Nome recomendado: `<uuid>.request.json`.
   "bridge_version": 1,
   "request_id": "uuid",
   "participant": "grok",
-  "model": "cursor-grok-4.6-high",
-  "route": "cursor",
+  "model": "grok-4.7",
+  "route": "grok_official",
   "root_id": "processo-123",
   "prompt_rel": ".multiagent/prompts/critica.md",
-  "effort": "high",
+  "effort": "xhigh",
   "output_policy": "adaptive_up_to_native_max",
   "persistir_sessoes_nativas": true,
   "timeout": 1800,
@@ -52,7 +52,7 @@ Nome recomendado: `<uuid>.request.json`.
 ```
 
 `route` é opcional e só faz sentido nas cadeiras que declaram mais de uma rota no manifesto; hoje
-apenas `grok`, com `cursor` (modelo `cursor-grok-4.6-high`) e `grok_official` (modelo `grok-4.6`).
+apenas `grok`, com `cursor` (modelo `cursor-grok-4.6-high`) e `grok_official` (modelo `grok-4.7`).
 Omitido, o host usa a rota padrão da cadeira e, quando o `model` pedido é o modelo fixo de outra
 rota permitida, seleciona essa rota. Uma rota fora das `allowed_routes` da cadeira é recusada, assim
 como um modelo que não seja o fixo daquela rota nem um alias da cadeira: não há troca silenciosa.

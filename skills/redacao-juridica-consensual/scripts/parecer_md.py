@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PAR_RE = re.compile(r"^(\d+)\. (.*)$")
+PAR_RE = re.compile(r"^(\d+)\.[ \t]+(.*)$")  # o texto exportado pelo LibreOffice separa com tabulação
 MARCA_RE = re.compile(r"^@(CAB|EMENTA|DATA|ASS\+?|ASN\+?) (.*)$")
 TITULO_RE = re.compile(r"^(#{1,6}) (.*)$")
 MARCAS_ASSINATURA = {"DATA", "ASS", "ASS+", "ASN", "ASN+"}

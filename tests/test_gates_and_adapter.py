@@ -721,7 +721,7 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertFalse(any("segredo" in item for item in command))
         command, stdin, _env = adapter.build_invocation(
             "grok", "grok_official", "grok", root, prompt_path, "segredo",
-            "grok-4.6", "xhigh", "adaptive_up_to_native_max",
+            "grok-4.7", "xhigh", "adaptive_up_to_native_max",
         )
         self.assertIsNone(stdin)
         self.assertIn("--prompt-file", command)
@@ -796,7 +796,7 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertNotIn("MULTIAGENT_ATTESTATION_KEY", env)
         claude, _stdin, _env = adapter.build_invocation(
             "claude", "claude", "claude", root, prompt, "teste",
-            "claude-opus-5", None, "adaptive_up_to_native_max",
+            "claude-opus-5-5", None, "adaptive_up_to_native_max",
         )
         self.assertNotIn(str(Path.home()), claude)
         with self.assertRaises(RuntimeError):
@@ -819,7 +819,7 @@ class AdapterAndGateTests(unittest.TestCase):
             "saida_sha256": "c" * 64,
             "artefato_sha256": "d" * 64,
             "emitido_em": "2026-08-14T12:00:00Z",
-            "modelo_efetivo": "gpt-5.6-sol",
+            "modelo_efetivo": "gpt-6.1-sol",
             "modelo_confirmado": True,
             "execucao_efetiva": True,
             "execucao_id": "execucao-isolada-0001",
@@ -836,36 +836,36 @@ class AdapterAndGateTests(unittest.TestCase):
 
     def test_structured_model_confirmation_is_observed_not_requested(self) -> None:
         observed, rendered, models = adapter.structured_observation(
-            json.dumps({"model": "claude-opus-5", "result": "ok"}),
-            "claude-opus-5",
+            json.dumps({"model": "claude-opus-5-5", "result": "ok"}),
+            "claude-opus-5-5",
         )
-        self.assertEqual(observed, "claude-opus-5")
+        self.assertEqual(observed, "claude-opus-5-5")
         self.assertEqual(rendered, "ok")
-        self.assertEqual(models, ["claude-opus-5"])
+        self.assertEqual(models, ["claude-opus-5-5"])
         not_observed, _rendered, models = adapter.structured_observation(
             json.dumps({"model": "fallback-model", "result": "ok"}),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(not_observed)
         self.assertEqual(models, ["fallback-model"])
         echoed, _rendered, models = adapter.structured_observation(
             json.dumps({
                 "model": "fallback-model",
-                "result": {"text": "ok", "model": "claude-opus-5"},
+                "result": {"text": "ok", "model": "claude-opus-5-5"},
             }),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(echoed)
         self.assertEqual(models, ["fallback-model"])
         mixed, _rendered, models = adapter.structured_observation(
             json.dumps({
-                "modelUsage": {"claude-opus-5": {}, "fallback-model": {}},
+                "modelUsage": {"claude-opus-5-5": {}, "fallback-model": {}},
                 "result": "ok",
             }),
-            "claude-opus-5",
+            "claude-opus-5-5",
         )
         self.assertIsNone(mixed)
-        self.assertEqual(models, ["claude-opus-5", "fallback-model"])
+        self.assertEqual(models, ["claude-opus-5-5", "fallback-model"])
 
     def test_native_session_confirmation_reads_only_cli_envelope(self) -> None:
         self.assertIsNone(adapter.structured_session_observation("", "claude"))
@@ -887,17 +887,18 @@ class AdapterAndGateTests(unittest.TestCase):
         gemini = adapter.resolve_seat(manifest, "gemini", None)
         muse = adapter.resolve_seat(manifest, "muse", None)
         opencode = adapter.resolve_seat(manifest, "opencode", None)
-        grok_cursor = adapter.resolve_seat(manifest, "grok", None)
+        grok_padrao = adapter.resolve_seat(manifest, "grok", None)
+        grok_cursor = adapter.resolve_seat(manifest, "grok", None, "cursor")
         grok_official = adapter.resolve_seat(
-            manifest, "grok", "grok-4.6", "grok_official"
+            manifest, "grok", "grok-4.7", "grok_official"
         )
         self.assertEqual(claude["route"], "claude")
-        self.assertEqual(claude["model"], "claude-opus-5")
-        self.assertEqual(adapter.resolve_seat(manifest, "claude", "opus")["model"], "claude-opus-5")
+        self.assertEqual(claude["model"], "claude-opus-5-5")
+        self.assertEqual(adapter.resolve_seat(manifest, "claude", "opus")["model"], "claude-opus-5-5")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "claude", "claude-sonnet-5")
         self.assertEqual(codex["route"], "codex")
-        self.assertEqual(codex["model"], "gpt-5.6-sol")
+        self.assertEqual(codex["model"], "gpt-6.1-sol")
         self.assertEqual(codex["default_effort"], "xhigh")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "codex", "outro-modelo")
@@ -912,6 +913,35 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(kimi_opencode["model"], "opencode-go/kimi-k3")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(manifest, "kimi", "opencode-go/kimi-k2.6")
+        kimi_cursor = adapter.resolve_seat(manifest, "kimi", "kimi-k3-max")
+        self.assertEqual(kimi_cursor["route"], "cursor")
+        self.assertEqual(kimi_cursor["model"], "kimi-k3-max")
+        self.assertEqual(adapter.resolve_effort(kimi_cursor, None), "max")
+        with self.assertRaises(RuntimeError):
+            adapter.resolve_seat(manifest, "kimi", "kimi-code/k3", "opencode")
+        grok_build = adapter.resolve_seat(manifest, "grok", None)
+        self.assertEqual(grok_build["effective_model_aliases"], ["grok-4.7-build"])
+        uso = '{"modelUsage": {"grok-4.7-build": {"inputTokens": 1}}}'
+        observado, _, _ = adapter.structured_observation(
+            uso, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertEqual(observado, "grok-4.7")
+        outro = '{"modelUsage": {"grok-4.7-build-fast": {"inputTokens": 1}}}'
+        observado, _, _ = adapter.structured_observation(
+            outro, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertIsNone(observado)
+        fluxo = "\n".join([
+            '{"type": "thought", "data": "pensando"}',
+            '{"type": "text", "data": "1. Primeiro "}',
+            '{"type": "text", "data": "parágrafo."}',
+            '{"type": "end", "modelUsage": {"grok-4.7-build": {"inputTokens": 1}}}',
+        ])
+        observado, renderizado, _ = adapter.structured_observation(
+            fluxo, "grok-4.7", grok_build["effective_model_aliases"]
+        )
+        self.assertEqual(renderizado, "1. Primeiro parágrafo.")
+        self.assertEqual(observado, "grok-4.7")
         self.assertEqual(gemini["route"], "antigravity")
         self.assertEqual(gemini["model"], "gemini-3.8-flash-high")
         self.assertEqual(muse["route"], "opencode")
@@ -919,10 +949,12 @@ class AdapterAndGateTests(unittest.TestCase):
         self.assertEqual(muse["default_effort"], "max")
         self.assertEqual(opencode["route"], "opencode")
         self.assertEqual(opencode["model"], "opencode-go/glm-5.3")
+        self.assertEqual(grok_padrao["route"], "grok_official")
+        self.assertEqual(grok_padrao["model"], "grok-4.7")
         self.assertEqual(grok_cursor["route"], "cursor")
         self.assertEqual(grok_cursor["model"], "cursor-grok-4.6-high")
         self.assertEqual(grok_official["route"], "grok_official")
-        self.assertEqual(grok_official["model"], "grok-4.6")
+        self.assertEqual(grok_official["model"], "grok-4.7")
         self.assertEqual(grok_official["default_effort"], "xhigh")
         with self.assertRaises(RuntimeError):
             adapter.resolve_seat(
@@ -959,7 +991,7 @@ class AdapterAndGateTests(unittest.TestCase):
             "artefato_sha256": digest,
             "participantes": [
                 {"cadeira": "A", "rota": "codex", "modelo": "gpt", "provedor": "openai"},
-                {"cadeira": "A", "rota": "claude", "modelo": "claude-opus-5", "provedor": "anthropic"},
+                {"cadeira": "A", "rota": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic"},
             ],
             "bloqueadores": [],
             "dissensos": [],
@@ -1051,11 +1083,11 @@ class AdapterAndGateTests(unittest.TestCase):
             participants = [
                 {
                     "cadeira": "codex", "rota": "codex",
-                    "modelo": "gpt-5.6-sol", "provedor": "openai",
+                    "modelo": "gpt-6.1-sol", "provedor": "openai",
                 },
                 {
-                    "cadeira": "grok", "rota": "cursor",
-                    "modelo": "cursor-grok-4.6-high", "provedor": "xai",
+                    "cadeira": "grok", "rota": "grok_official",
+                    "modelo": "grok-4.7", "provedor": "xai",
                 },
             ]
             receipts = []
@@ -1544,9 +1576,9 @@ class AdapterAndGateTests(unittest.TestCase):
                     "fundamento_divergencia": None,
                 })).hexdigest()
             identities = {
-                "codex": ("codex", "openai", "gpt-5.6-sol"),
-                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
-                "claude": ("claude", "anthropic", "claude-opus-5"),
+                "codex": ("codex", "openai", "gpt-6.1-sol"),
+                "grok": ("grok_official", "xai", "grok-4.7"),
+                "claude": ("claude", "anthropic", "claude-opus-5-5"),
             }
             receipts = []
             for index, vote in enumerate(verdict["votos"], start=1):
@@ -1774,9 +1806,9 @@ class AdapterAndGateTests(unittest.TestCase):
                 "derivacao_sha256": verdict["derivacao_sha256"],
             })).hexdigest()
             identities = {
-                "codex": ("codex", "openai", "gpt-5.6-sol"),
-                "grok": ("cursor", "xai", "cursor-grok-4.6-high"),
-                "claude": ("claude", "anthropic", "claude-opus-5"),
+                "codex": ("codex", "openai", "gpt-6.1-sol"),
+                "grok": ("grok_official", "xai", "grok-4.7"),
+                "claude": ("claude", "anthropic", "claude-opus-5-5"),
             }
             receipts = []
             for index, vote in enumerate(verdict["votos"], start=1):
@@ -1845,8 +1877,8 @@ class AdapterAndGateTests(unittest.TestCase):
             artifact.write_text("decisão colegiada\n", encoding="utf-8")
             digest = provenance.hash_file(artifact)["sha256"]
             seats = [
-                ("codex", "codex", "openai", "gpt-5.6-sol"),
-                ("grok", "cursor", "xai", "cursor-grok-4.6-high"),
+                ("codex", "codex", "openai", "gpt-6.1-sol"),
+                ("grok", "grok_official", "xai", "grok-4.7"),
             ]
             votes = []
             receipts = []
@@ -1964,8 +1996,8 @@ class AdapterAndGateTests(unittest.TestCase):
             "simulacao": False,
             "artefato_sha256": "a" * 64,
             "participantes": [
-                {"cadeira": "codex", "rota": "codex", "modelo": "gpt-5.6-sol", "provedor": "openai"},
-                {"cadeira": "grok", "rota": "cursor", "modelo": "cursor-grok-4.6-high", "provedor": "xai"},
+                {"cadeira": "codex", "rota": "codex", "modelo": "gpt-6.1-sol", "provedor": "openai"},
+                {"cadeira": "grok", "rota": "grok_official", "modelo": "grok-4.7", "provedor": "xai"},
             ],
             "bloqueadores": ["divergência material"],
             "dissensos": ["tese A versus B"],

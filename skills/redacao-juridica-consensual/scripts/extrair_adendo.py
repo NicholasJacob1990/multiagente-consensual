@@ -19,9 +19,12 @@ Exemplo::
     extrair_adendo.py parecer_v30.md --fontes fontes/ --mapa mapa.json --saida adendo.md --json adendo.json
 
 Citações sem norma identificável ficam fora, salvo com ``--padrao APELIDO``
-(útil quando "art. 31", sem mais, é da minuta analisada). Artigo citado e não
-localizado na fonte é listado no fim do adendo: é sinal de citação errada ou de
-fonte incompleta, e deve ser resolvido antes da auditoria.
+(útil quando "art. 31", sem mais, é da minuta analisada); elas são listadas à
+parte, para conferir. Artigo citado e não localizado na fonte é listado no fim do
+adendo: é sinal de citação errada ou de fonte incompleta, e deve ser resolvido
+antes da auditoria. O artigo vai inteiro até o cabeçalho do seguinte; sem artigo
+seguinte, e longo demais, sai marcado TRUNCADO. Truncado ou não localizado, o
+script sai com 1: o adendo não certifica texto integral.
 """
 
 from __future__ import annotations
@@ -38,7 +41,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parecer_md as pm  # noqa: E402
 
 NUM = r"\d+(?:\.\d{3})*(?:-[A-Z])?"
-LISTA = rf"{NUM}(?:\s*(?:,|\be\b)\s*{NUM}(?!\d))*"
+_ORD = r"(?:\s*[º°ª])?"
+LISTA = rf"{NUM}{_ORD}(?:\s*(?:,|\be\b)\s*{NUM}{_ORD}(?!\d))*"  # "7º e 8º", "7, 8 e 9", "17 e 19"
+LIMITE_SEM_FIM = 20000  # último artigo da fonte, sem cabeçalho seguinte: corta aqui e marca como truncado
 
 
 def ler_fonte(path: Path) -> str:
@@ -74,14 +79,27 @@ ART_INICIO = (r"(?:(?im:^[\s>*#_\-–]*(?:art|artigo)\.?\s*)"
 TERMINO = r"(?:\s*[º°ª]|o(?=[\s.\-–]))?(?=\s*[.\-–—:]|\*\*|\s|$)"
 
 
-def artigo(texto_fonte: str, num: str) -> str | None:
+def artigo_completo(texto_fonte: str, num: str) -> tuple[str, bool] | None:
+    """(texto do artigo, integral?). Vai do cabeçalho do artigo ao do seguinte, sem corte; sem
+    artigo seguinte, até o fim da fonte, ou até ``LIMITE_SEM_FIM`` caracteres, e aí não é integral."""
     m = re.search(ART_INICIO + _num_padrao(num) + TERMINO, texto_fonte)
     if not m:
         return None
     prox = re.search(ART_INICIO + r"\d+" + TERMINO, texto_fonte[m.end():])
-    fim = m.end() + prox.start() if prox else min(len(texto_fonte), m.end() + 6000)
+    integral = True
+    if prox:
+        fim = m.end() + prox.start()
+    elif len(texto_fonte) - m.start() <= LIMITE_SEM_FIM:
+        fim = len(texto_fonte)
+    else:
+        fim, integral = m.start() + LIMITE_SEM_FIM, False
     trecho = texto_fonte[m.start():fim].strip(" \n*>#")
-    return trecho if len(trecho) <= 6000 else trecho[:6000] + " […]"
+    return (trecho if integral else trecho + " […]"), integral
+
+
+def artigo(texto_fonte: str, num: str) -> str | None:
+    r = artigo_completo(texto_fonte, num)
+    return r[0] if r else None
 
 
 def citacoes(doc: pm.Documento, apelidos: list[str], padrao: str | None = None) -> list[dict]:
@@ -99,18 +117,20 @@ def citacoes(doc: pm.Documento, apelidos: list[str], padrao: str | None = None) 
                 ocupados.append(m.span("lista"))
                 for n in re.findall(NUM, m.group("lista")):
                     achados.append({"norma": m.group("alias"), "artigo": n, "paragrafo": b.numero})
-        if padrao:
-            for m in solto.finditer(b.texto):
-                if not any(a <= m.start("lista") < z for a, z in ocupados):
-                    for n in re.findall(NUM, m.group("lista")):
-                        achados.append({"norma": padrao, "artigo": n, "paragrafo": b.numero})
+        for m in solto.finditer(b.texto):
+            if not any(a <= m.start("lista") < z for a, z in ocupados):
+                for n in re.findall(NUM, m.group("lista")):
+                    achados.append({"norma": padrao, "artigo": n, "paragrafo": b.numero,
+                                    "trecho": b.texto[max(0, m.start() - 40):m.end() + 60].strip()})
     return achados
 
 
 def montar(doc: pm.Documento, mapa: dict[str, str], base: Path, padrao: str | None = None) -> tuple[str, dict]:
     arquivos = {a: (base / f) for a, f in mapa.items()}
     textos = {f: ler_fonte(f) for f in set(arquivos.values()) if f.exists()}
-    cits = citacoes(doc, list(mapa), padrao)
+    todas = citacoes(doc, list(mapa), padrao)
+    cits = [c for c in todas if c["norma"]]
+    sem_norma = [c for c in todas if not c["norma"]]
     # agrupa por arquivo (apelidos diferentes da mesma norma se fundem) e artigo
     grupos: dict[tuple[Path, str], dict] = {}
     for c in cits:
@@ -123,7 +143,7 @@ def montar(doc: pm.Documento, mapa: dict[str, str], base: Path, padrao: str | No
             g["paragrafos"].append(c["paragrafo"])
     linhas = ["# Adendo de fontes literais", "",
               f"Minuta: sha256 `{doc.sha256}`. Texto integral de cada artigo citado, copiado das fontes indicadas.", ""]
-    nao_localizados, sem_fonte, relat = [], [], []
+    nao_localizados, sem_fonte, truncados, relat = [], [], [], []
     por_arquivo: dict[Path, list] = {}
     for (f, _), g in grupos.items():
         por_arquivo.setdefault(f, []).append(g)
@@ -134,23 +154,37 @@ def montar(doc: pm.Documento, mapa: dict[str, str], base: Path, padrao: str | No
         sha = hashlib.sha256(f.read_bytes()).hexdigest()
         linhas += [f"## {' / '.join(gs[0]['normas'])} — `{f.name}` (sha256 `{sha[:16]}…`)", ""]
         for g in sorted(gs, key=lambda g: int(re.sub(r"\D", "", g["artigo"]) or 0)):
-            literal = artigo(textos[f], g["artigo"])
-            relat.append({**g, "arquivo": str(f), "localizado": literal is not None})
-            if literal is None:
+            achado = artigo_completo(textos[f], g["artigo"])
+            if achado is None:
+                relat.append({**g, "arquivo": str(f), "localizado": False, "integral": False})
                 nao_localizados.append(g)
                 continue
-            linhas += [f"### Art. {g['artigo']} — citado nos parágrafos {', '.join(map(str, g['paragrafos']))}", "",
+            literal, integral = achado
+            relat.append({**g, "arquivo": str(f), "localizado": True, "integral": integral, "caracteres": len(literal),
+                          "sha256_trecho": hashlib.sha256(literal.encode("utf-8")).hexdigest()})
+            if not integral:
+                truncados.append(g)
+            marca = "" if integral else " — TRUNCADO (sem o artigo seguinte na fonte; não é texto integral)"
+            linhas += [f"### Art. {g['artigo']} — citado nos parágrafos {', '.join(map(str, g['paragrafos']))}{marca}", "",
                        *("> " + l if l else ">" for l in literal.split("\n")), ""]
+    if sem_norma:
+        linhas += ["## Citações sem norma identificável (fora do adendo)", "",
+                   "Conferir se são da própria minuta (use --padrao) ou de norma que falta no mapa.", ""]
+        for c in sem_norma:
+            linhas.append(f"- Art. {c['artigo']}, parágrafo {c['paragrafo']}: «{c['trecho']}»")
+        linhas.append("")
     if nao_localizados or sem_fonte:
         linhas += ["## Citações não localizadas nas fontes", ""]
         for g in nao_localizados:
             linhas.append(f"- Art. {g['artigo']} ({' / '.join(g['normas'])}), parágrafos {', '.join(map(str, g['paragrafos']))}: artigo não encontrado no arquivo.")
         for g, f in sem_fonte:
-            relat.append({**g, "arquivo": str(f) if f else None, "localizado": False})
+            relat.append({**g, "arquivo": str(f) if f else None, "localizado": False, "integral": False})
             linhas.append(f"- Art. {g['artigo']} ({' / '.join(g['normas'])}), parágrafos {', '.join(map(str, g['paragrafos']))}: "
                           + ("arquivo da fonte ausente." if f else "norma sem arquivo no mapa."))
     resumo = {"sha256_minuta": doc.sha256, "citacoes": len(cits), "artigos": len(grupos),
-              "localizados": sum(r["localizado"] for r in relat), "itens": relat}
+              "localizados": sum(r["localizado"] for r in relat), "integrais": sum(r.get("integral", False) for r in relat),
+              "truncados": len(truncados), "sem_norma": [{k: c[k] for k in ("artigo", "paragrafo", "trecho")} for c in sem_norma],
+              "limite_sem_fim": LIMITE_SEM_FIM, "itens": relat}
     return "\n".join(linhas) + "\n", resumo
 
 
@@ -171,11 +205,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         args.json.write_text(json.dumps(resumo, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     faltam = resumo["artigos"] - resumo["localizados"]
-    print(f"{resumo['citacoes']} citações, {resumo['artigos']} artigos distintos, {resumo['localizados']} localizados, {faltam} não localizados")
+    print(f"{resumo['citacoes']} citações, {resumo['artigos']} artigos distintos, {resumo['localizados']} localizados "
+          f"({resumo['integrais']} integrais, {resumo['truncados']} truncados), {faltam} não localizados, "
+          f"{len(resumo['sem_norma'])} citações sem norma identificável")
     for r in resumo["itens"]:
         if not r["localizado"]:
             print(f"  não localizado: art. {r['artigo']} ({' / '.join(r['normas'])}), parágrafos {r['paragrafos']}")
-    return 1 if faltam else 0
+        elif not r["integral"]:
+            print(f"  truncado: art. {r['artigo']} ({' / '.join(r['normas'])}): o adendo não traz o texto integral")
+    return 1 if faltam or resumo["truncados"] else 0
 
 
 if __name__ == "__main__":

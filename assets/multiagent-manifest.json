@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "plugin_version": "1.14.1",
+  "plugin_version": "1.17.2",
   "contract": "multiagent_local_v1",
   "policy": "strict",
   "fallback": "pause_and_report",
@@ -105,12 +105,12 @@
     "kimi": {"binary": "kimi-secure", "host": "kimi-code-cli", "filesystem_control": {"mode": "config_auto_prompt", "access": "full_tools_host_identity", "directory_scope": "explicit_advisory", "auto_approve": true}, "output_control": {"mode": "native_route_ceiling", "max_output_tokens_flag": null}}
   },
   "seats": {
-    "claude": {"route": "claude", "provider": "anthropic", "default_model": "claude-opus-5", "model_policy": "fixed_default", "aliases": ["opus", "opus-5", "claude-opus", "claude-opus-5"]},
-    "codex": {"route": "codex", "provider": "openai", "default_model": "gpt-5.6-sol", "default_effort": "xhigh", "model_policy": "fixed_default", "aliases": ["gpt-5.6-sol"]},
+    "claude": {"route": "claude", "provider": "anthropic", "default_model": "claude-opus-5-5", "model_policy": "fixed_default", "aliases": ["opus", "opus-5.5", "opus-5-5", "claude-opus", "claude-opus-5-5"]},
+    "codex": {"route": "codex", "provider": "openai", "default_model": "gpt-6.1-sol", "default_effort": "xhigh", "model_policy": "fixed_default", "aliases": ["gpt-6.1-sol"]},
     "gemini": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.8-flash-high", "model_policy": "preserve_requested", "aliases": ["gemini-3.8", "gemini-3.8-flash-high"]},
     "antigravity": {"route": "antigravity", "provider": "google", "default_model": "gemini-3.8-flash-high", "model_policy": "preserve_requested", "aliases": ["agy", "gemini-3.8-antigravity"]},
-    "grok": {"route": "cursor", "allowed_routes": ["cursor", "grok_official"], "provider": "xai", "default_model": "cursor-grok-4.6-high", "models_by_route": {"cursor": "cursor-grok-4.6-high", "grok_official": "grok-4.6"}, "effort_by_route": {"cursor": "high", "grok_official": "xhigh"}, "model_policy": "fixed_per_route", "silent_fallback": false, "aliases": ["grok-4.6-high", "cursor-grok-4.6-high", "grok-4.6", "grok-official"]},
-    "kimi": {"route": "kimi", "provider": "moonshot", "credential_providers": ["managed:kimi-code", "opencode-go"], "upstream_model_family": "moonshot/kimi", "default_model": "kimi-code/k3", "allowed_models": ["kimi-code/k3", "opencode-go/kimi-k3"], "default_effort": "max", "effort_policy": "fixed_max", "context_window_tokens": 1048576, "model_policy": "preserve_requested", "aliases": ["kimi-k3", "k3"]},
+    "grok": {"route": "grok_official", "allowed_routes": ["cursor", "grok_official"], "provider": "xai", "default_model": "grok-4.7", "models_by_route": {"cursor": "cursor-grok-4.6-high", "grok_official": "grok-4.7"}, "effort_by_route": {"cursor": "high", "grok_official": "xhigh"}, "model_policy": "fixed_per_route", "silent_fallback": false, "aliases": ["cursor-grok-4.6-high", "grok-4.7", "grok-official"], "effective_model_aliases": {"grok-4.7": ["grok-4.7-build"]}},
+    "kimi": {"route": "kimi", "provider": "moonshot", "credential_providers": ["managed:kimi-code", "opencode-go", "cursor"], "upstream_model_family": "moonshot/kimi", "default_model": "kimi-code/k3", "allowed_models": ["kimi-code/k3", "opencode-go/kimi-k3", "kimi-k3-max"], "default_effort": "max", "effort_policy": "fixed_max", "context_window_tokens": 1048576, "model_policy": "preserve_requested", "aliases": ["kimi-k3", "k3"], "allowed_routes": ["kimi", "cursor"], "route_by_model": {"kimi-k3-max": "cursor"}},
     "opencode": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "model_policy": "preserve_requested", "aliases": ["opencode"]},
     "glm": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/glm-5.3", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["glm-5.3", "opencode-go/glm-5.3"]},
     "deepseek": {"route": "opencode", "provider": "opencode-go", "default_model": "opencode-go/deepseek-v4-pro", "default_effort": "max", "effort_policy": "fixed_max", "model_policy": "fixed_default", "aliases": ["deepseek-v4-pro", "opencode-go/deepseek-v4-pro"]},

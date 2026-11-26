@@ -210,6 +210,11 @@ Parecer da GENES/DIJUR (Codemge e Codemig): aplicar `${CLAUDE_PLUGIN_ROOT}/refer
 auditoria final só com o Gemini 4 Argon quando pedida). Ele registra a divergência entre o
 formato da v07 aprovada (corpo 10,5) e o padrão abaixo (corpo 12): pergunte qual vale.
 
+Parecer sobre norma em elaboração (regulamento, edital, estatuto, política): as redações
+sugeridas seguem `${CLAUDE_PLUGIN_ROOT}/references/tecnica-legislativa.md` — técnica legislativa
+(LC nº 95/1998 por analogia), Anexo de Redações Sugeridas com blocos `(NR)`/`(AC)`, mesmo
+texto no anexo e na minuta revisada, remissão ao item integrada à frase do parecer.
+
 A numeração de parágrafos é **automática** (campo de lista do Word), nunca
 digitada. Padrão, comandos e armadilhas de OOXML:
 `${CLAUDE_PLUGIN_ROOT}/references/parecer-docx.md`.
@@ -237,9 +242,11 @@ Depois, a conferência que só o modelo faz:
 5. Gradação presente e **simétrica**? (regras 3 e 4)
 6. Premissas não provadas declaradas, e o parecer marcado como preliminar quando
    for o caso? (regra 6)
-7. Passou pelas **armadilhas recorrentes**?
+7. Redações sugeridas para a norma examinada coincidem com a minuta revisada e o parecer
+   não cita redação superada? (`tecnica-legislativa.md`, seção 6)
+8. Passou pelas **armadilhas recorrentes**?
    → `${CLAUDE_PLUGIN_ROOT}/references/armadilhas-direito-br.md`
-8. Disclaimer presente?
+9. Disclaimer presente?
 
 ### Etapa 9 (opcional): revisão adversarial
 

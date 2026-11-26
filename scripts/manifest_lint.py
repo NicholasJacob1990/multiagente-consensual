@@ -25,16 +25,16 @@ REQUIRED_COMMANDS = {
 }
 REQUIRED_SEAT_ROUTES = {
     "claude": "claude",
-    "grok": "cursor",
+    "grok": "grok_official",
     "kimi": "kimi",
     "gemini": "antigravity",
     "muse": "opencode",
 }
-REQUIRED_CLAUDE_MODEL = "claude-opus-5"
+REQUIRED_CLAUDE_MODEL = "claude-opus-5-5"
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
-REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
+REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.7"
 REQUIRED_KIMI_MODEL = "kimi-code/k3"
-REQUIRED_KIMI_MODELS = ["kimi-code/k3", "opencode-go/kimi-k3"]
+REQUIRED_KIMI_MODELS = ["kimi-code/k3", "opencode-go/kimi-k3", "kimi-k3-max"]
 REQUIRED_GEMINI_MODEL = "gemini-3.8-flash-high"
 REQUIRED_OPENCODE_MODEL = "opencode-go/glm-5.3"
 REQUIRED_MUSE_MODEL = "opencode-go/muse-spark-1.3-contributor"
@@ -139,20 +139,20 @@ def expected_routing_yaml(data: dict[str, Any]) -> str:
     ]
     lines += route_block(
         "claude", "claude",
-        "Claude deve usar Claude Opus 5 exclusivamente pelo Claude Code CLI.",
+        "Claude deve usar Claude Opus 5.5 exclusivamente pelo Claude Code CLI.",
     )
     lines += route_block(
         "codex", "codex",
-        "Codex deve usar gpt-5.6-sol com esforço xhigh pelo Codex CLI.",
+        "Codex deve usar gpt-6.1-sol com esforço xhigh pelo Codex CLI.",
     )
     grok_lines = route_block(
-        "grok", "cursor",
-        "Grok usa Cursor por padrão; a rota grok_official pode ser selecionada explicitamente. "
+        "grok", "grok_official",
+        "Grok usa a CLI oficial da xAI por padrão; a rota cursor pode ser selecionada explicitamente. "
         "Cada rota preserva seu modelo fixo e nunca há fallback silencioso.",
     )
     grok_lines[-1:-1] = [
         "    allowed_routes: [cursor, grok_official]",
-        "    models_by_route: {cursor: cursor-grok-4.6-high, grok_official: grok-4.6}",
+        "    models_by_route: {cursor: cursor-grok-4.6-high, grok_official: grok-4.7}",
         "    effort_by_route: {cursor: high, grok_official: xhigh}",
         "    silent_fallback: false",
     ]
@@ -253,8 +253,8 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
         errors.append("Claude deve usar model_policy=fixed_default")
 
     grok = seats.get("grok", {}) if isinstance(seats.get("grok"), dict) else {}
-    if grok.get("default_model") != REQUIRED_GROK_MODEL:
-        errors.append(f"modelo obrigatório do Grok deve ser {REQUIRED_GROK_MODEL}")
+    if grok.get("default_model") != REQUIRED_GROK_OFFICIAL_MODEL:
+        errors.append(f"modelo obrigatório do Grok deve ser {REQUIRED_GROK_OFFICIAL_MODEL}")
     if grok.get("model_policy") != "fixed_per_route":
         errors.append("Grok deve usar model_policy=fixed_per_route")
     if grok.get("allowed_routes") != ["cursor", "grok_official"]:
@@ -271,7 +271,7 @@ def validate_manifest(data: dict[str, Any], check_binaries: bool = False) -> dic
     if kimi.get("default_model") != REQUIRED_KIMI_MODEL:
         errors.append(f"modelo padrão do Kimi deve ser {REQUIRED_KIMI_MODEL}")
     if kimi.get("allowed_models") != REQUIRED_KIMI_MODELS:
-        errors.append("Kimi deve permitir exatamente OAuth e OpenCode Go para o K3")
+        errors.append("Kimi deve permitir exatamente OAuth, OpenCode Go e Cursor para o K3")
     if kimi.get("context_window_tokens") != 1048576:
         errors.append("Kimi K3 deve declarar a janela integral de 1.048.576 tokens")
 

@@ -149,3 +149,89 @@ conclusões que ele fixou, fecho, assinatura) vai para um `travados.json`
 (`[{"id": ..., "paragrafo": N, "texto": "..."}]`). A pré-auditoria reprova a versão em que um trecho
 travado mudou, e o modo de emendas recusa emenda sobre ele. Se um auditor objetar a trecho travado,
 a objeção é levada ao usuário como dissenso; o texto só muda com nova autorização dele.
+
+## 5. Conferência por frentes depois de reorganizar o pacote
+
+Depois de dividir parágrafos, renumerar dispositivos ou regenerar anexos, a conferência mecânica
+(`verificar_remissoes.py conferir`, `espelho_redacoes.py`, pré-auditoria) acha o que não existe, mas
+não acha a remissão que existe e aponta para o parágrafo vizinho. Para isso, usar verificadores em
+paralelo, só de leitura, cada um com escopo fechado e o texto integral dos arquivos:
+
+1. **Remissões a parágrafos no parecer**, corpo e conclusão: o parágrafo citado trata da matéria? Atenção
+   às partes de parágrafo dividido, aos intervalos da conclusão e aos numerais romanos.
+2. **Remissões a itens do anexo e a dispositivos** no parecer: o item trata da matéria? O dispositivo
+   existe na norma examinada ou está marcado como sugerido? O artigo de outra norma leva o diploma?
+3. **Anexo e comentários da minuta revisada**: fundamento, classificação e observação de cada item;
+   remissões internas dos blocos; comentário de cada alteração (existe, remete ao item certo, tem a
+   classificação do bloco).
+4. **Comentários do documento** (`exportar_comentarios.py`): cada resposta do autor continua verdadeira
+   diante do texto atual? Algum comentário da revisora ficou ancorado em trecho que mudou de assunto?
+
+Cada verificador devolve tabela com local, trecho atual, problema, correção proposta e confiança.
+Conferir cada achado na fonte antes de aplicar; aplicar as correções de dados (JSON do anexo e dos
+comentários) com um agente que também confira cada uma contra o parecer, e as do parecer com controle
+de alterações. Depois, um **verificador novo, sobre o resultado**, faz a reconferência: o mesmo agente
+que corrigiu não certifica a própria correção. Os achados de mérito que surgirem (rol incompleto,
+ressalva que mudou o alvo da remissão) seguem o portão de integridade; os que contrariarem decisão do
+usuário vão a ele como dissenso.
+
+Na auditoria por modelo externo, mandar também a exportação dos comentários
+(`pacote_auditoria.py montar --comentarios`): sem ela, o auditor só pode certificar o texto.
+
+## 6. Fontes do ente e mapa de competências, antes de redigir
+
+Duas lacunas desta natureza só apareceram na auditoria final ou quando o usuário perguntou, e cada
+uma reabriu parágrafos já aprovados:
+
+1. **Orientação do órgão jurídico do ente.** Para cada dispositivo da constituição estadual ou de lei
+   estadual que o documento interprete, procurar no início os pareceres normativos da advocacia pública
+   (AGE, PGE) sobre ele. Achada orientação contrária, enfrentá-la no texto: aderir, distinguir ou
+   divergir de modo fundamentado. A omissão é portão bloqueante (rubrica).
+2. **Varredura das normas internas.** Rodar `scripts/varrer_fontes.py PASTA termos…` com os termos da
+   controvérsia (por exemplo: concurso, carreira, efetivo, comiss, "eleg\w+ pel[oa]", destitu, opina) e
+   ler a íntegra de cada artigo ou item apontado. A varredura indica onde ler; não prova ausência. Levar
+   os artigos ao adendo de fontes literais.
+3. **Mapa de competências.** Montar, a partir do estatuto, dos regimentos e das políticas, uma tabela
+   com quem elege, destitui, indica, opina, instrui, homologa e dá posse, com o artigo de cada regra.
+   Conferir contra ela toda frase que atribui um ato ("caberá ao X", "a Secretaria informará"). Exemplo
+   do caso de referência: a Assembleia elege os conselheiros (Estatuto, art. 22), o Conselho elege os
+   Diretores (art. 30), o comitê de auditoria só opina (regimento, itens 8.1 e 8.6) e a análise de
+   elegibilidade é informada aos acionistas antes da Assembleia (política de indicação, art. 21, § 3º).
+
+## 7. Sondagem das cadeiras externas e conferência do hash
+
+Antes de mandar pacote grande, sondar cada rota com prompt mínimo e tempo limite (`perl -e 'alarm
+120; exec @ARGV' …`). Falhas observadas e o que fazer:
+
+| Sintoma | Causa | Ação |
+|---|---|---|
+| `IneligibleTierError` no `gemini` | CLI antigo descontinuado para contas individuais | usar o Antigravity (`agy`) |
+| `agy -p` sem resposta; log "MCP: 1 server(s) still connecting" | um MCP configurado não conecta, e o modo de impressão espera todos | `agy mcp disable NOME` só com autorização do usuário (muda a configuração permanente) e `agy mcp enable NOME` ao fim; o `--settings` não aceita `mcpServers` |
+| "Your AI credits balance is too low" (429) | saldo da conta | avisar o usuário; não trocar de modelo em silêncio |
+| texto narrado antes da linha do hash (Grok) | o CLI imprime o andamento | `pacote_auditoria.py verificar` procura o hash nas 20 primeiras linhas e avisa do preâmbulo; descartá-lo |
+
+Na consulta com instruções escritas à mão, rodar `pacote_auditoria.py montar` com elas: o script avisa
+remissão a parágrafo inexistente e correção da conclusão posta no parágrafo errado ("correção (ii) no
+§ 170", quando ela está no § 169).
+
+## 8. Pasta de trabalho, aplicação e fontes do anexo
+
+- **Pasta persistente.** A pasta temporária da sessão pode ser apagada pelo sistema; nela se perderam,
+  no caso de referência, as fontes JSON do anexo. Trabalhar numa subpasta da pasta do caso (por exemplo,
+  `trabalho/`) e registrar ali como recriar o ambiente: Python 3.10 ou mais recente com `lxml` e
+  `defusedxml` (`python3 -m venv venv && venv/bin/pip install lxml defusedxml`).
+- **Aplicar alterações.** `scripts/aplicar_overlay.py ENTRADA.docx SAIDA.docx --alteracoes alt.json
+  --autor NOME --aceito ACEITO.docx --original REVISAO.docx --validador …/validate.py`: localiza o
+  parágrafo pela numeração do Word, exige trecho único, aplica o diff por palavras em controle de
+  alterações sobre as revisões de outra pessoa (sem aceitá-las nem rejeitá-las), recusa parágrafo acima
+  do limite de palavras, confere a preimagem (`atual`) quando dada, só reescreve respostas do próprio autor,
+  valida o provisório antes de gravar (reprovado, nada é gravado) e gera a visão "tudo aceito".
+- **Reinstalação.** A partir da 1.17.1, o instalador não sobrescreve arquivo de skill alterado localmente
+  (nem o `references/perfil-*.md` diferente do distribuído, na primeira vez): a versão nova fica em
+  `<arquivo>.distribuido`, para mesclar, e o Codex registra também o Legal BR.
+- **Fontes do anexo.** Se o anexo foi editado à mão ou a fonte de dados se perdeu, recuperá-la com
+  `scripts/extrair_anexo_json.py ANEXO.docx --base anexo_itens_antigo.json --saida anexo_itens.json`
+  antes de regenerar: regenerar a partir do JSON antigo apaga as correções posteriores.
+- **Depois de cada rodada.** `verificar_remissoes.py conferir … --anterior VERSAO_ANTERIOR --autor NOME`
+  lista as respostas presas a parágrafos alterados, ou que os citam, para reconferir; o mesmo comando
+  acusa parágrafo de correção necessária que remete a item só de recomendação.

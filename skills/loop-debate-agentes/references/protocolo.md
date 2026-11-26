@@ -76,7 +76,7 @@ Gravar no início do run e congelar:
   "painel_auditoria": 1,
   "motor": "codex",
   "escritor": "claude",
-  "redator": {"cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic"},
+  "redator": {"cli": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic"},
   "consolidacao_iterativa": {
     "politica": "redator_original",
     "consolidador": null,
@@ -91,7 +91,7 @@ Gravar no início do run e congelar:
   },
   "ensemble_nxn": null,
   "participantes_consenso": [
-    {"agente": "@Estrategista", "papel": "estrategista", "cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic"},
+    {"agente": "@Estrategista", "papel": "estrategista", "cli": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic"},
     {"agente": "@Oponente", "papel": "oponente", "cli": "grok", "modelo": "cursor-grok-4.6-high", "provedor": "xai"},
     {"agente": "@Revisor", "papel": "revisor", "cli": "gemini", "modelo": "", "provedor": "google"}
   ],
@@ -99,7 +99,7 @@ Gravar no início do run e congelar:
     {"cli": "grok", "modelo": "cursor-grok-4.6-high", "provedor": "xai"}
   ],
   "revisor": {"cli": "gemini", "modelo": "", "provedor": "google"},
-  "avaliador": {"cli": "codex", "modelo": "gpt-5.6-sol", "esforco": "xhigh", "provedor": "openai", "funcoes": ["avaliar", "criticar", "sugerir"]},
+  "avaliador": {"cli": "codex", "modelo": "gpt-6.1-sol", "esforco": "xhigh", "provedor": "openai", "funcoes": ["avaliar", "criticar", "sugerir"]},
   "contribuicao_revisor": {
     "formatos_permitidos": ["parecer", "patch", "artefato_alternativo"],
     "pode_gerar_alternativo": true,
@@ -109,11 +109,11 @@ Gravar no início do run e congelar:
     "substituicao_automatica": false
   },
   "painel_avaliacao": [
-    {"id": "painel-1", "cli": "codex", "modelo": "gpt-5.6-sol", "esforco": "xhigh", "provedor": "openai", "lente": "iniciante"},
+    {"id": "painel-1", "cli": "codex", "modelo": "gpt-6.1-sol", "esforco": "xhigh", "provedor": "openai", "lente": "iniciante"},
     {"id": "painel-2", "cli": "gemini", "modelo": "", "provedor": "google", "lente": "especialista"},
     {"id": "painel-3", "cli": "grok", "modelo": "cursor-grok-4.6-high", "provedor": "xai", "lente": "editor"}
   ],
-  "decisor": {"agente": "@Supervisor", "cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic", "rota": "claude"},
+  "decisor": {"agente": "@Supervisor", "cli": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic", "rota": "claude"},
   "auditor": {"cli": "antigravity", "modelo": "", "esforco": "high", "provedor": "google"},
   "painel_avaliacao_cega": [
     {"id": "auditoria-final", "cli": "antigravity", "modelo": "", "esforco": "high", "provedor": "google", "lente": "integral"}
@@ -140,7 +140,7 @@ Gravar no início do run e congelar:
     "sintese": "somente_se_solicitada",
     "escolha_automatica": false,
     "candidatos": [
-      {"id": "claude-final", "arquivo": "candidatos/finais/claude.md", "autor": {"cli": "claude", "modelo": "claude-opus-5", "provedor": "anthropic", "sessao": "nova-sessao-claude"}},
+      {"id": "claude-final", "arquivo": "candidatos/finais/claude.md", "autor": {"cli": "claude", "modelo": "claude-opus-5-5", "provedor": "anthropic", "sessao": "nova-sessao-claude"}},
       {"id": "gemini-final", "arquivo": "candidatos/finais/gemini.md", "autor": {"cli": "gemini", "modelo": "modelo-escolhido", "provedor": "google", "sessao": "nova-sessao-gemini"}},
       {"id": "grok-final", "arquivo": "candidatos/finais/grok.md", "autor": {"cli": "grok", "modelo": "modelo-escolhido", "provedor": "xai", "sessao": "nova-sessao-grok"}}
     ]
@@ -301,7 +301,7 @@ Se o usuário não indicar redator, detectar o host atual e usar o CLI correspon
 | Kimi K3 pelo Kimi Code CLI | `kimi` |
 | OpenCode | `opencode` |
 
-Ler `~/.agents/multiagent-manifest.json` e distinguir seat semântica, modelo e rota de execução. A política local resolve Codex exclusivamente pelo Codex CLI com `gpt-5.6-sol` e esforço `xhigh`; Grok pelo Cursor com `cursor-grok-4.6-high` por padrão ou pela CLI oficial xAI com `grok-4.6` quando escolhida explicitamente; Claude exclusivamente pelo Claude Code com `claude-opus-5`; Kimi K3 pelo Kimi Code; Gemini 3.8 pelo Antigravity; e Muse Spark 1.3 pelo OpenCode Go. Para novas chamadas Claude, Codex ou Grok, rejeitar modelo incompatível com a rota; runs já congelados preservam sua configuração histórica. A configuração efetiva registra modelo, esforço, rota e provedor. Manifesto ausente/inválido ou indisponibilidade pausa em vez de trocar a rota silenciosamente. `model-routing.yaml` é visão gerada e não pode prevalecer sobre o JSON.
+Ler `~/.agents/multiagent-manifest.json` e distinguir seat semântica, modelo e rota de execução. A política local resolve Codex exclusivamente pelo Codex CLI com `gpt-6.1-sol` e esforço `xhigh`; Grok pela CLI oficial xAI com `grok-4.7` e esforço `xhigh` por padrão ou pelo Cursor com `cursor-grok-4.6-high` quando escolhido explicitamente; Claude exclusivamente pelo Claude Code com `claude-opus-5-5`; Kimi K3 pelo Kimi Code; Gemini 3.8 pelo Antigravity; e Muse Spark 1.3 pelo OpenCode Go. Para novas chamadas Claude, Codex ou Grok, rejeitar modelo incompatível com a rota; runs já congelados preservam sua configuração histórica. A configuração efetiva registra modelo, esforço, rota e provedor. Manifesto ausente/inválido ou indisponibilidade pausa em vez de trocar a rota silenciosamente. `model-routing.yaml` é visão gerada e não pode prevalecer sobre o JSON.
 
 Sem avaliador explícito, usar Codex para um redator Claude e Claude para os demais redatores. Se o modelo/provedor efetivo do redator tornar essa escolha coincidente, trocar o padrão para Codex. No modo simples, esse único agente acumula avaliação, crítica e sugestões. No perfil `debate_agents_v1`, preencher três cadeiras elegíveis em `painel_avaliacao`, preservando diversidade conforme a política e sem chamar todos os CLIs. Para o auditor, preferir um modelo/provedor diferente do redator e do painel, sempre em sessão nova e cega. Se isso não for possível, usar uma cadeira elegível em sessão nova e registrar que a auditoria é cega, mas não independente de modelo. Não criar críticos adicionais ou revisor separado sem pedido explícito.
 
@@ -342,7 +342,7 @@ Interpretações naturais:
 - “X e Y fazem versões finais independentes” → `consolidacao_final.modo = dupla_cega`, exatamente os dois modelos solicitados, duas candidatas preservadas, visibilidade cega e escolha humana.
 - “X, Y e Z fazem versões finais independentes” → `consolidacao_final.modo = multipla_cega`, exatamente os modelos solicitados, uma candidata por modelo, visibilidade cega e escolha humana.
 - “combine as versões ao final” → permitir síntese somente depois de confirmação explícita; a síntese recebe novo hash e repete todos os gates finais.
-- “use Opus 5 como avaliador” → `avaliador.cli = claude`, `avaliador.modelo = claude-opus-5`.
+- “use Opus 5.5 como avaliador” → `avaliador.cli = claude`, `avaliador.modelo = claude-opus-5-5`.
 - “OpenCode audita com provider/model” → `auditor.cli = opencode`, modelo conforme informado.
 - “você redige” → host atual como `redator`.
 - “ensemble N×N” ou “todos geram e todos revisam todos” → `perfil = ensemble_nxn_v1`, `estrategia_da_equipe.tipo = ensemble_nxn` e configuração conforme `ensemble-nxn.md`.
@@ -445,7 +445,7 @@ Estados válidos:
 Cada linha de `ledger/decisoes.jsonl` deve conter pelo menos:
 
 ```json
-{"id":"obj-001","artefato_id":"principal","tentativa":1,"base_sha256":"...","autor":{"cli":"codex","modelo":"gpt-5.6-sol","provedor":"openai","sessao":"..."},"tipo":"problema_factual","problema":"...","evidencia":["fonte:linha"],"proposta":"...","resposta_responsavel":{"papel":"redator_original","cli":"claude","modelo":"claude-opus-5","status":"aceita_parcialmente","justificativa":"...","evidencia":["fonte:linha"]},"estado":"resolvida"}
+{"id":"obj-001","artefato_id":"principal","tentativa":1,"base_sha256":"...","autor":{"cli":"codex","modelo":"gpt-6.1-sol","provedor":"openai","sessao":"..."},"tipo":"problema_factual","problema":"...","evidencia":["fonte:linha"],"proposta":"...","resposta_responsavel":{"papel":"redator_original","cli":"claude","modelo":"claude-opus-5-5","status":"aceita_parcialmente","justificativa":"...","evidencia":["fonte:linha"]},"estado":"resolvida"}
 ```
 
 Usar para `resposta_responsavel.status`: `aceita`, `aceita_parcialmente`, `rejeitada_com_evidencia` ou `esclarecimento_solicitado`. Aceitar `resposta_redator` como alias de compatibilidade em ledgers antigos. Objeção material só fica `resolvida` quando a versão corrente incorpora a decisão ou apresenta evidência suficiente para rejeitá-la.

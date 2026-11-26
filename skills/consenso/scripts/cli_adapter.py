@@ -32,7 +32,7 @@ EFFORT_PATTERN = re.compile(r"^[A-Za-z0-9._+\-]+$")
 MAX_PROMPT_BYTES = 512 * 1024
 OUTPUT_POLICIES = ("adaptive_up_to_native_max", "concise_soft_target")
 REQUIRED_GROK_MODEL = "cursor-grok-4.6-high"
-REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.6"
+REQUIRED_GROK_OFFICIAL_MODEL = "grok-4.7"
 REQUIRED_GROK_OFFICIAL_EFFORT = "xhigh"
 
 
@@ -133,7 +133,7 @@ def load_manifest(raw: str | None) -> dict[str, Any]:
         raise RuntimeError("O manifesto não aplica ferramentas completas com escopos explícitos.")
     required = {
         "claude": "claude",
-        "grok": "cursor",
+        "grok": "grok_official",
         "kimi": "kimi",
         "gemini": "antigravity",
     }
@@ -222,6 +222,14 @@ def resolve_seat(
         model = fixed
         default_effort = efforts.get(route)
     else:
+        route_by_model = seat.get("route_by_model", {})
+        if requested_route is None and model in route_by_model:
+            route = route_by_model[model]
+        allowed = seat.get("allowed_routes")
+        if allowed and route not in allowed:
+            raise RuntimeError(
+                f"Rota incompatível para {canonical}: escolha uma de {', '.join(allowed)}."
+            )
         default_effort = seat.get("default_effort")
     if route not in data["routes"]:
         raise RuntimeError(f"Rota inexistente para {canonical}: {route}")
@@ -250,6 +258,11 @@ def resolve_seat(
         "default_effort": default_effort,
         "effort_policy": seat.get("effort_policy"),
         "context_window_tokens": seat.get("context_window_tokens"),
+        # Nomes que a CLI devolve para o mesmo modelo (ex.: grok-4.7 -> grok-4.7-build);
+        # só valem os declarados no manifesto, nunca uma família inteira.
+        "effective_model_aliases": list(
+            seat.get("effective_model_aliases", {}).get(model or seat.get("default_model"), [])
+        ),
     }
 
 
@@ -414,7 +427,7 @@ def recursive_value(value: Any, keys: tuple[str, ...]) -> str | None:
 
 
 def structured_observation(
-    raw: str, requested_model: str | None
+    raw: str, requested_model: str | None, equivalents: list[str] | None = None
 ) -> tuple[str | None, str | None, list[str]]:
     values = json_objects(raw)
     model_candidates: list[str] = []
@@ -432,11 +445,20 @@ def structured_observation(
                     candidate for candidate in usage if isinstance(candidate, str) and candidate
                 )
     unique_models = sorted(set(model_candidates))
+    accepted = {requested_model, *(equivalents or [])} if requested_model else set()
     observed = (
         requested_model
-        if requested_model and unique_models == [requested_model]
+        if requested_model and unique_models and set(unique_models) <= accepted
         else None
     )
+    fragmentos = [
+        value["data"] for value in values
+        if isinstance(value, dict) and value.get("type") == "text" and isinstance(value.get("data"), str)
+    ]
+    if fragmentos:
+        # A CLI oficial do Grok transmite a resposta em fragmentos {"type": "text", "data": ...};
+        # o último fragmento, sozinho, não é a resposta.
+        return observed, "".join(fragmentos), unique_models
     rendered: str | None = None
     for value in reversed(values):
         rendered = recursive_value(
@@ -567,6 +589,9 @@ def build_invocation(
             command += ["--model", model]
         if effort:
             command += ["-c", f"model_reasoning_effort={effort}"]
+        if os.environ.get("MULTIAGENTE_CODEX_MULTI_AGENT") == "1":
+            # Subagentes nativos do Codex (spawn_agent), só quando o run pede expressamente.
+            command += ["-c", "features.multi_agent=true"]
         command.append("-")
         stdin = governed_prompt
     elif route == "claude":
@@ -956,7 +981,9 @@ def run_invoke(args: argparse.Namespace, manifest: dict[str, Any]) -> int:
             returncode = 124
 
         rendered_stdout = stdout
-        observed_model, structured_render, model_candidates = structured_observation(stdout, model)
+        observed_model, structured_render, model_candidates = structured_observation(
+            stdout, model, resolved.get("effective_model_aliases")
+        )
         if structured_render:
             rendered_stdout = structured_render
         if native_output_path and native_output_path.is_file():
